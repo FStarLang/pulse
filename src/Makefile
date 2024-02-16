@@ -68,7 +68,7 @@ extract: extract-ocaml
 .PHONY: boot
 boot:
 	+$(MAKE) extract
-	+$(MAKE) build
+	+$(MAKE) build-ocaml
 
 .PHONY: boot-checker
 boot-checker:
