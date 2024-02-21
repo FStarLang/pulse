@@ -17,6 +17,7 @@
 module Pulse.Lib.GhostMonotonicReference
 
 open Pulse.Lib.Core
+open PulseCore.Observability
 open PulseCore.FractionalPermission
 open FStar.Ghost
 open FStar.Preorder
@@ -61,18 +62,22 @@ val witnessed (#a:Type) (#p:preorder a) (r:ref a p) (f : predicate a)
 val witness (#a:_) (#p:_) (#f:perm) (r : ref a p)
     (fact : predicate a{stable p fact})
     (v : erased a{fact v})
-    : stt_ghost (witnessed r fact)
-                (pts_to r #f v)
-                (fun _ -> pts_to r #f v)
+    : stt_atomic (witnessed r fact)
+                 #Unobservable
+                 emp_inames
+                 (pts_to r #f v)
+                 (fun _ -> pts_to r #f v)
                 
 val recall (#a:_) (#p:_) (r : ref a p)
     (#f:perm)
     (fact : predicate a)
     (w : witnessed r fact)
     (v : erased a)
-    : stt_ghost unit
-                (pts_to r #f v)
-                (fun _ -> pts_to r #f v ** pure (fact v))
+    : stt_atomic unit
+                 #Unobservable
+                 emp_inames
+                 (pts_to r #f v)
+                 (fun _ -> pts_to r #f v ** pure (fact v))
 
 val share (#a:Type) (#p:preorder a) (r:ref a p) (#v:erased a) (#p:perm)
   : stt_ghost unit
