@@ -298,6 +298,26 @@ let (leftmost_head :
                   FStar_Pervasives_Native.Some t1
               | FStar_Pervasives_Native.None -> FStar_Pervasives_Native.None))
     | uu___ -> FStar_Pervasives_Native.None
+let rec (is_fvar_app_n :
+  Pulse_Syntax_Base.term ->
+    (FStar_Reflection_Types.name * Pulse_Syntax_Base.universe Prims.list *
+      (Pulse_Syntax_Base.qualifier FStar_Pervasives_Native.option *
+      Pulse_Syntax_Base.term) Prims.list) FStar_Pervasives_Native.option)
+  =
+  fun t ->
+    match is_fvar t with
+    | FStar_Pervasives_Native.Some (l, us) ->
+        FStar_Pervasives_Native.Some (l, us, [])
+    | FStar_Pervasives_Native.None ->
+        (match is_pure_app t with
+         | FStar_Pervasives_Native.Some (head, q, a) ->
+             Pulse_Elaborate_Pure.op_let_Bang (is_fvar_app_n head)
+               (fun uu___ ->
+                  match uu___ with
+                  | (l, us, args) ->
+                      FStar_Pervasives_Native.Some
+                        (l, us, (FStar_List_Tot_Base.append args [(q, a)])))
+         | uu___ -> FStar_Pervasives_Native.None)
 let (is_fvar_app :
   Pulse_Syntax_Base.term ->
     (FStar_Reflection_Types.name * Pulse_Syntax_Base.universe Prims.list *
@@ -306,19 +326,19 @@ let (is_fvar_app :
       FStar_Pervasives_Native.option)
   =
   fun t ->
-    match is_fvar t with
-    | FStar_Pervasives_Native.Some (l, us) ->
-        FStar_Pervasives_Native.Some
-          (l, us, FStar_Pervasives_Native.None, FStar_Pervasives_Native.None)
-    | FStar_Pervasives_Native.None ->
-        (match is_pure_app t with
-         | FStar_Pervasives_Native.Some (head, q, arg) ->
-             (match is_fvar head with
-              | FStar_Pervasives_Native.Some (l, us) ->
+    Pulse_Elaborate_Pure.op_let_Bang (is_fvar_app_n t)
+      (fun uu___ ->
+         match uu___ with
+         | (l, us, args) ->
+             (match args with
+              | [] ->
                   FStar_Pervasives_Native.Some
-                    (l, us, q, (FStar_Pervasives_Native.Some arg))
-              | FStar_Pervasives_Native.None -> FStar_Pervasives_Native.None)
-         | uu___ -> FStar_Pervasives_Native.None)
+                    (l, us, FStar_Pervasives_Native.None,
+                      FStar_Pervasives_Native.None)
+              | (q, a)::[] ->
+                  FStar_Pervasives_Native.Some
+                    (l, us, q, (FStar_Pervasives_Native.Some a))
+              | uu___1 -> FStar_Pervasives_Native.None))
 let (is_arrow :
   Pulse_Syntax_Base.term ->
     (Pulse_Syntax_Base.binder * Pulse_Syntax_Base.qualifier
