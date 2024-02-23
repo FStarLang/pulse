@@ -474,36 +474,58 @@ let pulse_lib_higher_gref = ["Pulse"; "Lib"; "HigherGhostReference"]
 let mk_pulse_lib_higher_gref_lid s = pulse_lib_higher_gref@[s]
 let higher_gref_lid = mk_pulse_lib_higher_gref_lid "ref"
 
+let pulse_lib_mono_gref = ["Pulse"; "Lib"; "GhostMonotonicReference"]
+let mk_pulse_lib_mono_gref_lid s = pulse_lib_mono_gref@[s]
+let mono_gref_lid = mk_pulse_lib_mono_gref_lid "ref"
+
+let pulse_lib_higher_mono_gref = ["Pulse"; "Lib"; "GhostMonotonicHigherReference"]
+let mk_pulse_lib_higher_mono_gref_lid s = pulse_lib_higher_mono_gref@[s]
+let higher_mono_gref_lid = mk_pulse_lib_higher_mono_gref_lid "ref"
+
 let try_get_non_informative_witness g u t
   : T.Tac (option (non_informative_t g u t))
   = let eopt =
-      let ropt = is_fvar_app t in
+      let ropt = is_fvar_app_n t in
       match ropt with
-      | Some (l, us, _, arg_opt) ->
+      | Some (l, us, []) ->
         if l = R.unit_lid
         then Some (tm_fvar (as_fv (mk_pulse_lib_core_lid "unit_non_informative")))
         else if l = R.prop_qn
         then Some (tm_fvar (as_fv (mk_pulse_lib_core_lid "prop_non_informative")))
-        else if l = R.squash_qn && Some? arg_opt
+        else None
+      | Some (l, us, [(q, a)]) ->
+        if l = R.squash_qn
         then Some (tm_pureapp
                      (tm_uinst (as_fv (mk_pulse_lib_core_lid "squash_non_informative")) us)
                      None
-                     (Some?.v arg_opt))
-        else if l = erased_lid && Some? arg_opt
+                     a)
+        else if l = erased_lid
         then Some (tm_pureapp
                      (tm_uinst (as_fv (mk_pulse_lib_core_lid "erased_non_informative")) us)
                      None
-                     (Some?.v arg_opt))
-        else if l = gref_lid && Some? arg_opt
+                     a)
+        else if l = gref_lid
         then Some (tm_pureapp
                      (tm_uinst (as_fv (mk_pulse_lib_gref_lid "gref_non_informative")) us)
                      None
-                     (Some?.v arg_opt))
-        else if l = higher_gref_lid && Some? arg_opt
+                     a)
+        else if l = higher_gref_lid
         then Some (tm_pureapp
                      (tm_uinst (as_fv (mk_pulse_lib_higher_gref_lid "gref_non_informative")) us)
                      None
-                     (Some?.v arg_opt))
+                     a)
+        else None
+      | Some (l, us, [(q1, a1); (q2, a2)]) ->
+        if l = mono_gref_lid
+        then Some (tm_pureapp (tm_pureapp
+                     (tm_uinst (as_fv (mk_pulse_lib_mono_gref_lid "ref_non_informative")) us)
+                     None
+                     a1) None a2)
+        else if l = higher_mono_gref_lid
+        then Some (tm_pureapp (tm_pureapp
+                     (tm_uinst (as_fv (mk_pulse_lib_higher_mono_gref_lid "ref_non_informative")) us)
+                     None
+                     a1) None a2)
         else None
       | _ -> None
     in

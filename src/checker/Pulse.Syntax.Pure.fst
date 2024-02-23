@@ -182,19 +182,28 @@ let leftmost_head (t:term) : option term =
      | None -> None)
   | _ -> None
 
+let rec is_fvar_app_n (t:term) : option (R.name &
+                                   list universe &
+                                   list (option qualifier & term)) =
+  match is_fvar t with
+  | Some (l, us) -> Some (l, us, [])
+  | None ->
+    match is_pure_app t with
+    | Some (head, q, a) ->
+      assume (head << t); // FIXME
+      let! (l, us, args) = is_fvar_app_n head in
+      Some (l, us, args @ [(q, a)])
+    | _ -> None
+
 let is_fvar_app (t:term) : option (R.name &
                                    list universe &
                                    option qualifier &
                                    option term) =
-  match is_fvar t with
-  | Some (l, us) -> Some (l, us, None, None)
-  | None ->
-    match is_pure_app t with
-    | Some (head, q, arg) ->
-      (match is_fvar head with
-       | Some (l, us) -> Some (l, us, q, Some arg)
-       | None -> None)
-    | _ -> None
+  let! (l, us, args) = is_fvar_app_n t in
+  match args with
+  | [] -> Some (l, us, None, None)
+  | [(q, a)] -> Some (l, us, q, Some a)
+  | _ -> None
 
 let is_arrow (t:term) : option (binder & option qualifier & comp) =
   match t.t with

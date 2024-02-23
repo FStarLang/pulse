@@ -27,6 +27,8 @@ module T = FStar.Tactics
 [@@erasable]
 val ref ([@@@unused]a:Type u#1) (p:preorder a): Type u#0
 
+val ref_non_informative (a:Type u#1) (p:preorder a) : non_informative_witness (ref a p)
+
 val pts_to (#a:Type) (#p:preorder a) (r:ref a p) (#[T.exact (`full_perm)] p:perm) (n:a) : vprop
 
 val alloc (#a:Type) (#p:preorder a) (x:a)
