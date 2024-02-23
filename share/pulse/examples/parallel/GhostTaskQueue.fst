@@ -242,8 +242,14 @@ ensures M.pts_to res._1 #one_half []
   M.share2 r;
   fold tasks_res [];
   rewrite each (half_perm full_perm) as one_half;
+  // show_proof_state;
   assert (exists* l. M.pts_to r #one_half l ** tasks_res l);
-  //show_proof_state;
+
+  // FIXME: Somehow needed, as in other files.
+  rewrite (exists* l. M.pts_to r #one_half l ** tasks_res l)
+       as (exists* l. M.pts_to (reveal (hide r)) #one_half l ** tasks_res l);
+
+  assert (exists* l. M.pts_to (reveal (hide r)) #one_half l ** tasks_res l);
   fold inv_ghost_queue r;
   let i: inv (inv_ghost_queue r) = new_invariant (inv_ghost_queue r);
   let res: (r: ghost_mono_ref & inv (inv_ghost_queue r)) = Mkdtuple2 #_ #(fun r -> inv (inv_ghost_queue r)) r i;
