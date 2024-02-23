@@ -36,7 +36,7 @@ let rec pop_todo_task (l: mono_list{~(get_actual_queue l == [])})
 | t::q -> let (| x, q', pos |) = pop_todo_task q in (| x, t::q', pos |)
 
 (** 3. concluding the task: when the worker is done **)
-let rec close_task_bis (t: task) (pos: nat) (l: mono_list{task_in_queue t pos l /\ L.length l >= 1}): mono_list
+let rec close_task_bis (t: task) (pos: nat) (l: mono_list{task_in_queue t pos l}): mono_list
 = let (t', s)::q = l in
 if pos + 1 = L.length l
   then (t', Done)::q // if s is not Ongoing, then we have too much permission
@@ -46,40 +46,50 @@ if pos + 1 = L.length l
 Part 2: Instantiation as a ghost monotonic reference
 ------------------------------------------------------ **)
 
-module M = Pulse.Lib.GhostMonotonicHigherReference
+module M = Pulse.Lib.GhostMonotonicReference
 open Pulse.Lib.Pervasives
 
 //unfold
-let ghost_mono_ref = M.ref mono_list is_mono_suffix
+let ghost_mono_ref = erased (M.ref mono_list is_mono_suffix)
 
 (** Part 3: Associated permissions: Reasoning done here **)
 
 val certificate (r:ghost_mono_ref) (t: task) (pos: nat): Type0
 
 let inv_ghost_queue (r: ghost_mono_ref): vprop =
-  exists* l. M.pts_to r one_half l ** tasks_res l
+  exists* l. M.pts_to r #one_half l ** tasks_res l
 
 val create_ghost_queue (_: unit):
 stt_atomic (r: ghost_mono_ref & inv (inv_ghost_queue r)) #Unobservable emp_inames emp
-(fun res -> M.pts_to res._1 one_half [])
+(fun res -> M.pts_to res._1 #one_half [])
 
 val add_todo_task_to_queue
 (r: ghost_mono_ref) (i: inv (inv_ghost_queue r)) (t: task) (l: mono_list):
 stt_atomic (pos:nat & certificate r t pos) #Unobservable (singleton i)
-(M.pts_to r one_half l ** GR.pts_to t._1 #one_half true ** GR.pts_to t._2 #one_half false ** pts_to t._4._1 #one_half false ** GR.pts_to t._5 #one_half false)
-(fun _ -> M.pts_to r one_half (enqueue_todo l t)._1)
+(M.pts_to r #one_half l ** GR.pts_to t._1 #one_half true ** GR.pts_to t._2 #one_half false ** pts_to t._4._1 #one_half false ** GR.pts_to t._5 #one_half false)
+(fun _ -> M.pts_to r #one_half (enqueue_todo l t)._1)
 
 val pop_task_ghost (r: ghost_mono_ref) (i: inv (inv_ghost_queue r)) (l: mono_list{~(get_actual_queue l == [])}):
 stt_atomic (pos:nat & certificate r (pop_todo_task l)._1 pos) #Unobservable (singleton i)
-(M.pts_to r one_half l)
-(fun _ -> M.pts_to r one_half (pop_todo_task l)._2 ** ongoing_condition (pop_todo_task l)._1 ** GR.pts_to (pop_todo_task l)._1._1 #one_half true ** GR.pts_to (pop_todo_task l)._1._2 #one_half false)
+(M.pts_to r #one_half l)
+(fun _ -> M.pts_to r #one_half (pop_todo_task l)._2 ** ongoing_condition (pop_todo_task l)._1 ** GR.pts_to (pop_todo_task l)._1._1 #one_half true ** GR.pts_to (pop_todo_task l)._1._2 #one_half false)
 
+(*
+the `task_done t` in the postcondition is actually not needed, because it's the worker that calls this function
+*)
 val conclude_task (t: task) (pos: nat) (r: ghost_mono_ref) (i: inv (inv_ghost_queue r)) (l: mono_list{task_in_queue t pos l}):
 stt_atomic unit (singleton i)
-(M.pts_to r one_half l ** GR.pts_to t._1 #one_half false ** GR.pts_to t._2 #one_half true ** ongoing_condition t ** (exists* v. pts_to t._4._1 #one_half v))
-(fun () -> M.pts_to r one_half (close_task_bis t pos l) ** pts_to t._4._1 #one_half true ** task_done t)
+(M.pts_to r #one_half l ** GR.pts_to t._1 #one_half false ** GR.pts_to t._2 #one_half true ** ongoing_condition t ** (exists* v. pts_to t._4._1 #one_half v))
+(fun () -> M.pts_to r #one_half (close_task_bis t pos l) ** pts_to t._4._1 #one_half true ** task_done t
+  ** pure (get_actual_queue (close_task_bis t pos l) == get_actual_queue l /\ count_ongoing l > 0 /\ count_ongoing (close_task_bis t pos l) = count_ongoing l - 1)
+)
 
-val get_free_task_done (t: task) (pos: nat) (r: ghost_mono_ref) (i: inv (inv_ghost_queue r)) (l: mono_list{task_in_queue t pos l}):
-stt_atomic unit (singleton i)
-(M.pts_to r one_half l)
-(fun () -> M.pts_to r one_half l ** task_done t)
+val get_free_task_done (t: task) (pos: nat) (r: ghost_mono_ref) (i: inv (inv_ghost_queue r)) (ll: mono_list{task_in_queue t pos ll}):
+stt_atomic unit #Unobservable (singleton i)
+(M.pts_to r #one_half ll ** pure (get_actual_queue ll == [] /\ count_ongoing ll = 0))
+(fun () -> M.pts_to r #one_half ll ** task_done t)
+
+val get_task_in_queue (r: ghost_mono_ref) (f: perm) (l: mono_list) (t: task) (pos: nat) (w: certificate r t pos):
+stt_atomic unit #Unobservable emp_inames
+(M.pts_to r #f l)
+(fun () -> M.pts_to r #f l ** pure (task_in_queue t pos l))

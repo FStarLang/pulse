@@ -87,7 +87,7 @@ stt_ghost unit (task_res t ** GR.pts_to t._1._1 #one_half false ** GR.pts_to t._
 val from_ongoing_to_done (t: extended_task):
 stt_atomic unit emp_inames
 (task_res t ** GR.pts_to t._1._1 #one_half false ** GR.pts_to t._1._2 #one_half true ** ongoing_condition t._1 ** (exists* v. pts_to t._1._4._1 #one_half v))
-(fun () -> task_res (t._1, Done) ** pts_to t._1._4._1 #one_half true ** task_done t._1)
+(fun () -> task_res (t._1, Done) ** pts_to t._1._4._1 #one_half true ** task_done t._1 ** pure (t._2 == Ongoing))
 
 (* Easy to prove done: Either q = [] and c = 0, or we
 just wait on it and change its status... *)
@@ -106,6 +106,8 @@ stt_atomic unit #Unobservable (singleton i)
 
 val get_free_task_done_single (t: task):
 stt_ghost unit (task_res (t, Done)) (fun ()-> task_res (t, Done) ** task_done t)
+
+
 
 (* Monotonic lists of extended tasks *)
 

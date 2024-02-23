@@ -266,16 +266,17 @@ ensures task_res t ** GR.pts_to t._1._1 #one_half false ** GR.pts_to t._1._2 #on
 }
 ```
 
-// GM: I assume this is what write_atomic_bool was meant to be
-assume
-val write_atomic_bool (r : ref bool) (b : bool)
-  : stt_atomic unit emp_inames (exists* b. pts_to r b) (fun _ -> pts_to r b)
+let write_atomic_bool (r:ref bool) (x:bool) (#n:erased bool)
+  : stt_atomic unit #Observable emp_inames
+        (pts_to r #full_perm n)
+        (fun _ -> pts_to r #full_perm (hide x))
+= admit()
 
 (* needs to update done... *)
 ```pulse
 atomic fn from_ongoing_to_done_ (t: extended_task)
 requires task_res t ** GR.pts_to t._1._1 #one_half false ** GR.pts_to t._1._2 #one_half true ** ongoing_condition t._1 ** (exists* v. pts_to t._1._4._1 #one_half v)
-ensures task_res (t._1, Done) ** pts_to t._1._4._1 #one_half true ** task_done t._1
+ensures task_res (t._1, Done) ** pts_to t._1._4._1 #one_half true ** task_done t._1 ** pure (t._2 == Ongoing)
 {
     prove_ongoing t;
     rewrite task_res t as emp;
@@ -306,6 +307,7 @@ ensures task_res (t._1, Done) ** pts_to t._1._4._1 #one_half true ** task_done t
     ()
 }
 ```
+let x = ()
 
 let from_ongoing_to_done = from_ongoing_to_done_
 
