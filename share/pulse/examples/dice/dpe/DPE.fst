@@ -39,6 +39,21 @@ open Pulse.Lib.HashTable.Type
 open Pulse.Lib.HashTable
 open Pulse.Lib.Mutex
 
+//
+// Sketch of the top-level theorem:
+
+// The top-level state will be the mutex protecting the hashtable and a ghost pcm ref (e.g., pcm map where every session pcm is a trace
+// preorder with fractional permissions).
+
+// The mutex holds permission to the hashtable. For the ghost state, for a session if its trace is empty, the mutex holds full permission to its trace,
+// else it holds half permission, and the other half is with the client.
+
+// This means, when the global state is initialized and every session trace is empty, we can put full permission in the mutex. When a session is
+// initialized and the trace becomes non-empty, half permission can be given to the client, who can pass it for subsequent derive child calls.
+
+// For API calls, we don't need to return any snapshot the the client, since they have half the permission, they can witness and recall the
+// snapshot using it.
+//
 
 assume
 val run_stt (#a:Type) (#post:a -> vprop) (f:stt a emp post) : a
