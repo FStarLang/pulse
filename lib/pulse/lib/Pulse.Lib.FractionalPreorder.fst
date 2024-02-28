@@ -83,3 +83,19 @@ let fp_pcm (#a:Type) (p:preorder a) : pcm (pcm_carrier p) = {
   is_unit = fp_lem_is_unit p;
   refine = (fun (p, _) -> p == Some full_perm);
 }
+
+let mk_frame_preserving_upd (#a:Type) (p:preorder a)
+  (t0:hist p) (v:a { qhistory p (v::t0) })
+  : frame_preserving_upd (fp_pcm p) (Some full_perm, t0) (Some full_perm, v::t0) =
+  fun _ -> Some full_perm, v::t0
+
+let snapshot (#a:Type) (#p:preorder a) (x:pcm_carrier p) : pcm_carrier p =
+  None, snd x
+
+let snapshot_idempotent (#a:Type) (#p:preorder a) (x:pcm_carrier p)
+  : Lemma (snapshot x == snapshot (snapshot x)) = ()
+
+let snapshot_duplicable (#a:Type) (#p:preorder a) (x:pcm_carrier p)
+  : Lemma
+      (requires True)
+      (ensures x `pcm_composable p` snapshot x) = ()
