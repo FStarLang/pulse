@@ -39,6 +39,9 @@ open Pulse.Lib.HashTable.Type
 open Pulse.Lib.HashTable
 open Pulse.Lib.Mutex
 
+module Trace = DPE.Trace
+module PM = Pulse.Lib.PCMMap
+
 //
 // Sketch of the top-level theorem:
 

@@ -101,15 +101,13 @@ let trace_extension (t0 t1:trace)
 let trace_preorder
   : FStar.Preorder.preorder trace
   = FStar.ReflexiveTransitiveClosure.closure trace_extension
-module FRAP = Pulse.Lib.FractionalAnchoredPreorder
-let degenerate_anchor
-  : FRAP.anchor_rel trace_preorder
-  = fun x y -> trace_preorder x y /\ True
-let carrier = FRAP.knowledge degenerate_anchor
-let trace_pcm
-  : FStar.PCM.pcm carrier
-  = FRAP.pcm #trace #trace_preorder #degenerate_anchor
-module PM = Pulse.Lib.PCMMap
-let session_trace_pcm : PCM.pcm (PM.map sid_t carrier) = PM.pointwise sid_t trace_pcm
-// let trace_ref = 
-// let snapshot_value (t:trace) = (None, None), 
+// module FRAP = Pulse.Lib.FractionalAnchoredPreorder
+// let degenerate_anchor
+//   : FRAP.anchor_rel trace_preorder
+//   = fun x y -> trace_preorder x y /\ True
+// let carrier = FRAP.knowledge degenerate_anchor
+// let trace_pcm
+//   : FStar.PCM.pcm carrier
+//   = FRAP.pcm #trace #trace_preorder #degenerate_anchor
+// module PM = Pulse.Lib.PCMMap
+// let session_trace_pcm : PCM.pcm (PM.map sid_t carrier) = PM.pointwise sid_t trace_pcm
