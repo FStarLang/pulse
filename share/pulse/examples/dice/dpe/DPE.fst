@@ -41,6 +41,7 @@ open Pulse.Lib.Mutex
 
 module Trace = DPE.Trace
 module PM = Pulse.Lib.PCMMap
+module FP = Pulse.Lib.FractionalPreorder
 
 //
 // Sketch of the top-level theorem:
@@ -159,14 +160,57 @@ type global_state_t = {
   session_table:ht_t sid_t session_state;
 }
 
-let global_state_mutex_pred (gst:option global_state_t) : vprop =
-  match gst with
-  | None -> emp
-  | Some gst ->
-    exists* stm.
-      models gst.session_table stm **
-      on_range (session_perm stm) 0 (U32.v gst.session_id_counter)
+let session_state_and_trace_related
+  (s:session_state)
+  (trace:PulseCore.Preorder.hist Trace.trace_preorder)
+  : prop =
 
+  True  // TODO: fill-in, functional correctness spec
+
+let session_trace_is_initialized
+  (k:sid_t)
+  (s:session_state)
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  : prop =
+  let p, trace = Map.sel m k in
+  p == Some (half_perm full_perm) /\
+  Cons? trace /\
+  session_state_and_trace_related s trace
+
+let pht_pm_related
+  (pht:PHT.pht_t sid_t session_state)
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  (k:sid_t)
+  : prop =
+
+  let vopt = PHT.lookup_spec pht.spec k in
+  match vopt with
+  | None -> Map.sel m k == (Some full_perm, [])
+  | Some s -> session_trace_is_initialized k s m
+
+let state_inv
+  (gst:option global_state_t)
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder)) =
+
+  match gst with
+  | None -> pure (forall k. Map.sel m k == (Some full_perm, []))
+  | Some gst ->
+    exists* pht.
+      models gst.session_table pht **
+      on_range (session_perm pht) 0 (U32.v gst.session_id_counter) **
+      pure (forall k. pht_pm_related pht m k)
+
+let global_state_mutex_pred
+  (r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)))
+  (gst:option global_state_t)
+  : vprop =
+  exists* (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder)).
+    ghost_pcm_pts_to r m **
+    state_inv gst m
+
+type st =
+  r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)) &
+  mutex (global_state_mutex_pred r)
 
 // assume Fits_size_t_u32 : squash (US.fits_u32)
 // let sid_hash (x:sid_t) : US.t = US.of_u32 x
@@ -177,12 +221,23 @@ assume val sid_hash : sid_t -> SZ.t  // TODO
 ```pulse
 fn initialize_global_state ()
   requires emp
-  returns m:mutex global_state_mutex_pred
+  returns _:st
   ensures emp
 {
   let res = None #global_state_t;
-  rewrite emp as (global_state_mutex_pred res);
-  new_mutex global_state_mutex_pred res
+  let r = ghost_alloc
+    #_
+    #(PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder))
+    (Map.const (Some full_perm, []));
+  with m. assert (ghost_pcm_pts_to r m);
+  // assume_ (global_state_mutex_pred r res);
+  fold (state_inv (None #global_state_t) m);
+  fold (global_state_mutex_pred r (None #global_state_t));
+  let m = new_mutex (global_state_mutex_pred r) (None #global_state_t);
+  (| r, m |)
+  // admit ()
+  // rewrite emp as (global_state_mutex_pred res);
+  // new_mutex global_state_mutex_pred res
 }
 ```
 

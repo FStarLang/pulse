@@ -28,7 +28,7 @@ let uds_t = lbytes (SZ.v uds_len)
 val ctxt_hndl_t : Type0
 val sid_t : eqtype
 noeq
-type state_t =
+type state_t : Type u#1 =  // this is in u0, but we add u1 annotation as needed by the ghost_pcm APIs in ghost_pcm_ref
   | SessionStart:
       history:option state_t ->
       state_t

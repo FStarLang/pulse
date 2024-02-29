@@ -22,7 +22,7 @@ open PulseCore.FractionalPermission
 
 module L = FStar.List.Tot
 
-type pcm_carrier (#a:Type) (p:preorder a) = option perm & hist p
+type pcm_carrier (#a:Type u#a) (p:preorder a) : Type u#a = option perm & hist p
 
 let pcm_composable (#a:Type) (p:preorder a) : symrel (pcm_carrier p) =
   fun x0 x1 ->
@@ -81,7 +81,7 @@ let fp_pcm (#a:Type) (p:preorder a) : pcm (pcm_carrier p) = {
   assoc = fp_lem_assoc_l p;
   assoc_r = fp_lem_assoc_r p;
   is_unit = fp_lem_is_unit p;
-  refine = (fun (p, _) -> p == Some full_perm);
+  refine = (fun _ -> True);
 }
 
 let mk_frame_preserving_upd (#a:Type) (p:preorder a)
