@@ -310,3 +310,17 @@ let lift_composable #k #a (p:pcm a)
                    composable (pointwise k p) m0 m1)
          (ensures  composable (pointwise k p) (Map.upd m0 key v0) (Map.upd m1 key v1))
  = ()
+
+let lift_compatibility_to_const_map
+  (k:eqtype)
+  (#a:Type)
+  (p:pcm a)
+  (x y:a)
+  : Lemma (requires compatible p x y)
+          (ensures compatible (pointwise k p) (Map.const x) (Map.const y)) =
+  
+  eliminate exists frame_p. composable p x frame_p /\ op p frame_p x == y
+  returns _
+  with _. introduce exists frame. compatible (pointwise k p) (Map.const x) (Map.const y)
+          with (Map.const #k #_ frame_p)
+          and assert (Map.equal (op (pointwise k p) (Map.const frame_p) (Map.const x)) (Map.const y))

@@ -224,20 +224,19 @@ fn initialize_global_state ()
   returns _:st
   ensures emp
 {
-  let res = None #global_state_t;
+  PM.lift_compatibility_to_const_map sid_t
+    (FP.fp_pcm Trace.trace_preorder)
+    (Some full_perm, [])
+    (Some full_perm, []);
   let r = ghost_alloc
     #_
     #(PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder))
     (Map.const (Some full_perm, []));
   with m. assert (ghost_pcm_pts_to r m);
-  // assume_ (global_state_mutex_pred r res);
   fold (state_inv (None #global_state_t) m);
   fold (global_state_mutex_pred r (None #global_state_t));
   let m = new_mutex (global_state_mutex_pred r) (None #global_state_t);
-  (| r, m |)
-  // admit ()
-  // rewrite emp as (global_state_mutex_pred res);
-  // new_mutex global_state_mutex_pred res
+  ((| r, m |) <: st)
 }
 ```
 

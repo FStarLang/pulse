@@ -59,8 +59,10 @@ let fp_lem_commutative (#a:Type) (p:preorder a) : lem_commutative (fp_pcm' p) =
 let fp_lem_assoc_l (#a:Type) (p:preorder a) : lem_assoc_l (fp_pcm' p) =
   fun x y z -> ()
 
+#push-options "--z3rlimit_factor 4"
 let fp_lem_assoc_r (#a:Type) (p:preorder a) : lem_assoc_r (fp_pcm' p) =
   fun x y z -> ()
+#pop-options
 
 let rec extends_nil (#a:Type) (#p:preorder a) (l:hist p)
   : Lemma (l `extends` []) =
@@ -99,3 +101,7 @@ let snapshot_duplicable (#a:Type) (#p:preorder a) (x:pcm_carrier p)
   : Lemma
       (requires True)
       (ensures x `pcm_composable p` snapshot x) = ()
+
+let full_perm_empty_history_compatible (#a:Type) (p:preorder a)
+  : Lemma (compatible (fp_pcm p) (Some full_perm, []) (Some full_perm, [])) =
+  ()
