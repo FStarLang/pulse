@@ -240,14 +240,16 @@ fn initialize_global_state ()
 }
 ```
 
-let global_state : mutex global_state_mutex_pred = run_stt (initialize_global_state ())
+let global_state : st = run_stt (initialize_global_state ())
 
 ```pulse
-fn mk_global_state ()
-  requires emp
+fn mk_global_state (r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)))
+  requires exists* m. ghost_pcm_pts_to r m **
+                      pure (forall k. Map.sel m k == (Some full_perm, []))
   returns st:global_state_t
-  ensures global_state_mutex_pred (Some st)
+  ensures global_state_mutex_pred r (Some st)
 {
+  with m. assert (ghost_pcm_pts_to r m);
   let session_table = HT.alloc #sid_t #session_state sid_hash 256sz;
   let st = {
     session_id_counter = 0ul;
@@ -256,7 +258,8 @@ fn mk_global_state ()
   with pht. assert (models session_table pht);
   rewrite (models session_table pht) as (models st.session_table pht);
   Pulse.Lib.OnRange.on_range_empty (session_perm pht) 0;
-  fold (global_state_mutex_pred (Some st));
+  fold (state_inv (Some st) m);
+  fold (global_state_mutex_pred r (Some st));
   st
 }
 ```
