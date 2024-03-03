@@ -266,7 +266,6 @@ fn mk_global_state (r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_p
 
 #push-options "--ext 'pulse:env_on_err' --print_implicits --warn_error -342"
 
-
 (* Utilities to work with on_range (session_perm stm) *)
 (* <utilities on on_range> *)
 noextract  // TODO: why do we extract this at all, it is a prop
@@ -449,14 +448,191 @@ fn insert_if_not_full
 assume val safe_add (i j:U32.t)
   : o:option U32.t { Some? o ==> U32.v (Some?.v o) == U32.v i + U32.v j }
 
-#push-options "--z3rlimit_factor 2"
+let singleton_map (sid:sid_t) (tr:PulseCore.Preorder.hist Trace.trace_preorder)
+  : PM.map sid_t (FP.pcm_carrier Trace.trace_preorder) =
+  
+  Map.upd (Map.const (None, [])) sid (Some (half_perm full_perm), tr)
+
+let sid_pts_to_aux
+  (r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)))
+  (sid:sid_t) (tr:PulseCore.Preorder.hist Trace.trace_preorder)
+  : vprop =
+  
+  ghost_pcm_pts_to r (singleton_map sid tr)
+
+// #set-options "--z3refresh --log_queries --fuel 0 --ifuel 0"
+// ```pulse
+// fn test (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder)) (sid:sid_t)
+//   requires emp
+//   ensures emp
+// {
+//   assert (pure (Map.contains m sid))
+// }
+// ```
+
+let share_sid_pts_to_composable_intro
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  (sid:sid_t)
+  (tr:PulseCore.Preorder.hist Trace.trace_preorder)
+  : Lemma
+      (requires Map.sel m sid == (Some full_perm, tr))
+      (ensures (let m0 = Map.upd m sid (Some (half_perm full_perm), tr) in
+                let m1 = singleton_map sid tr in
+                PM.composable_maps (FP.fp_pcm Trace.trace_preorder) m0 m1 /\
+                Map.equal (m0 `FStar.PCM.op (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder))` m1) m)) =
+
+  assume (forall v. (None, []) `FStar.PCM.composable (FP.fp_pcm Trace.trace_preorder)` v)
+
+//
+// This needs lifting since in the middle of a proof writing something like
+//   assert (pure (Map.domain m0 `Set.equal` Map.domain m))
+// doesn't work, as solver cannot prove Set.equal is a prop
+//
+let mupd
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  (sid:sid_t)
+  (v:FP.pcm_carrier Trace.trace_preorder)
+  : PM.map sid_t (FP.pcm_carrier Trace.trace_preorder) =
+
+  Map.upd m sid v
+
 ```pulse
-fn open_session_aux (st:global_state_t)
-  requires global_state_mutex_pred (Some st)
-  returns b:(global_state_t & option sid_t)
-  ensures global_state_mutex_pred (Some (fst b))
+ghost
+fn share_sid_pts_to
+  (r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)))
+  (sid:sid_t)
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  (tr:PulseCore.Preorder.hist Trace.trace_preorder)
+  requires ghost_pcm_pts_to r m **
+           pure (Map.sel m sid == (Some full_perm, tr))
+  ensures ghost_pcm_pts_to r (Map.upd m sid (Some (half_perm full_perm), tr)) **
+          sid_pts_to_aux r sid tr
 {
-  unfold (global_state_mutex_pred (Some st));
+  let m0 = mupd m sid (Some (half_perm full_perm), tr);
+  let m1 = singleton_map sid tr;
+  share_sid_pts_to_composable_intro m sid tr;
+  rewrite (ghost_pcm_pts_to r m) as
+          (ghost_pcm_pts_to r (FStar.PCM.op (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)) m0 m1));
+  ghost_share r m0 m1;
+  fold (sid_pts_to_aux r sid tr)
+}
+```
+
+let gather_sid_pts_to_composable_elim
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  (sid:sid_t)
+  (tr0 tr1:PulseCore.Preorder.hist Trace.trace_preorder)
+  : Lemma
+      (requires
+         Map.sel m sid == (Some (half_perm full_perm), tr0) /\
+         PM.composable_maps (FP.fp_pcm Trace.trace_preorder) m (singleton_map sid tr1))
+      (ensures
+         tr0 == tr1 /\
+         Map.equal (m `FStar.PCM.op (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder))` (singleton_map sid tr1))
+                   (Map.upd m sid (Some full_perm, tr0)))
+
+  = ()
+
+
+```pulse
+ghost
+fn gather_sid_pts_to
+  (r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)))
+  (sid:sid_t)
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  (tr0 tr1:PulseCore.Preorder.hist Trace.trace_preorder)
+  requires ghost_pcm_pts_to r m **
+           pure (Map.sel m sid == (Some (half_perm full_perm), tr0)) **
+           sid_pts_to_aux r sid tr1
+  ensures ghost_pcm_pts_to r (Map.upd m sid (Some full_perm, tr0)) **
+          pure (tr0 == tr1)
+{
+  unfold sid_pts_to_aux;
+  ghost_gather r m (singleton_map sid tr1);
+  gather_sid_pts_to_composable_elim m sid tr0 tr1;
+  // this can go away if we had equate_by_smt on ghost_pcm_pts_to
+  rewrite (ghost_pcm_pts_to r (m `FStar.PCM.op (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder))` (singleton_map sid tr1)))
+       as (ghost_pcm_pts_to r (Map.upd m sid (Some full_perm, tr0)))
+}
+```
+
+let coerce_fp_pcm_carrier
+  (tr:PulseCore.Preorder.hist Trace.trace_preorder)
+  (v:Trace.trace { PulseCore.Preorder.qhistory Trace.trace_preorder (v::tr) })
+  : FP.pcm_carrier Trace.trace_preorder =
+  Some full_perm, v::tr  
+
+//
+// Writing it inline in update_sid_trace fails
+//
+let coerce_pm_map
+  (tr:PulseCore.Preorder.hist Trace.trace_preorder)
+  (v:Trace.trace { PulseCore.Preorder.qhistory Trace.trace_preorder (v::tr) })
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  (sid:sid_t)
+  : PM.map sid_t (FP.pcm_carrier Trace.trace_preorder)
+  = mupd m sid (Some full_perm, v::tr)
+
+```pulse
+ghost
+fn update_sid_trace
+  (r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)))
+  (sid:sid_t)
+  (tr:PulseCore.Preorder.hist Trace.trace_preorder)
+  (v:Trace.trace { PulseCore.Preorder.qhistory Trace.trace_preorder (v::tr) })
+  (m:PM.map sid_t (FP.pcm_carrier Trace.trace_preorder))
+  requires ghost_pcm_pts_to r m **
+           pure (Map.sel m sid == (Some full_perm, tr))
+  ensures ghost_pcm_pts_to r (coerce_pm_map tr v m sid)
+{
+  let v0 = hide (Some full_perm, tr);
+  let v1 = hide (coerce_fp_pcm_carrier tr v);
+  let f : FStar.PCM.frame_preserving_upd (FP.fp_pcm Trace.trace_preorder) v0 v1 =
+    FP.mk_frame_preserving_upd Trace.trace_preorder tr v;
+  
+  let f = PM.lift_frame_preserving_upd
+    #_
+    #_
+    #(FP.fp_pcm Trace.trace_preorder)
+    v0
+    v1
+    f
+    (hide m)
+    sid;
+  
+  ghost_write r (hide m) (hide (Map.upd m sid v1)) f;
+  rewrite (ghost_pcm_pts_to r (Map.upd m sid v1)) as
+          (ghost_pcm_pts_to r (coerce_pm_map tr v m sid))
+}
+```
+
+let sid_pts_to
+  (sid:sid_t)
+  (tr:PulseCore.Preorder.hist Trace.trace_preorder)
+  : vprop =
+
+  sid_pts_to_aux (dfst global_state) sid tr
+
+let open_session_thist_and_trace ()
+  : v:Trace.trace &
+    tr:PulseCore.Preorder.hist Trace.trace_preorder { tr == [v] } =
+  admit ()
+
+#push-options "--z3rlimit_factor 4"
+```pulse
+fn open_session_aux
+  (r:ghost_pcm_ref (PM.pointwise sid_t (FP.fp_pcm Trace.trace_preorder)))
+  (st:global_state_t)
+  requires global_state_mutex_pred r (Some st)
+  returns b:(global_state_t & option sid_t)
+  ensures global_state_mutex_pred r (Some (fst b)) **
+          (if None? (snd b) then emp
+           else sid_pts_to_aux r (Some?.v (snd b)) (dsnd (open_session_thist_and_trace ())))
+{
+  unfold (global_state_mutex_pred r (Some st));
+  with m. assert (ghost_pcm_pts_to r m);
+  unfold (state_inv (Some st) m);
+
   let ctr = st.session_id_counter;
   let tbl = st.session_table;
   with stm. rewrite (models st.session_table stm) as (models tbl stm);
@@ -475,9 +651,14 @@ fn open_session_aux (st:global_state_t)
       with stm. rewrite (models tbl stm) as (models st.session_table stm);
       with stm. rewrite (on_range (session_perm stm) 0 (U32.v ctr))
                      as (on_range (session_perm stm) 0 (U32.v st.session_id_counter));
-      fold (global_state_mutex_pred (Some st));
+      fold (state_inv (Some st) m);
+      fold (global_state_mutex_pred r (Some st));
       let res = (st, None #sid_t);
-      rewrite (global_state_mutex_pred (Some st)) as (global_state_mutex_pred (Some (fst res)));
+      rewrite (global_state_mutex_pred r (Some st)) as
+              (global_state_mutex_pred r (Some (fst res)));
+      rewrite emp as
+              (if None? (snd res) then emp
+               else sid_pts_to_aux r (Some?.v (snd res)) (dsnd (open_session_thist_and_trace ())));
       res
     }
     Some next_sid -> {
@@ -489,9 +670,22 @@ fn open_session_aux (st:global_state_t)
         frame_session_perm_on_range pht0 pht1 i j;
         rewrite emp as (session_perm pht1 j);
         Pulse.Lib.OnRange.on_range_snoc () #(session_perm pht1);
-        fold (global_state_mutex_pred (Some st));
-        let res = (st, Some next_sid);
-        rewrite (global_state_mutex_pred (Some st)) as (global_state_mutex_pred (Some (fst res)));
+        // TODO: we should get this
+        assume_ (pure (PHT.lookup_spec pht0.spec ctr == None));
+        assert (pure (Map.sel m ctr == (Some full_perm, [])));
+        let v_tr = open_session_thist_and_trace ();
+        update_sid_trace r ctr [] (dfst v_tr) m;
+        with m1. assert (ghost_pcm_pts_to r m1);
+        share_sid_pts_to r ctr m1 (dsnd v_tr);
+        assert (pure (forall k. k =!= ctr ==> pht_pm_related pht1 m1 k));
+        assume_ (pure (pht_pm_related pht1 m1 ctr));
+        fold (state_inv (Some st) m1);
+        fold (global_state_mutex_pred r (Some st));
+        let res = (st, Some ctr);
+        rewrite (global_state_mutex_pred r (Some st)) as
+                (global_state_mutex_pred r (Some (fst res)));
+        with tr. rewrite (sid_pts_to_aux r ctr tr) as
+                         (sid_pts_to_aux r (Some?.v (snd res)) tr);
         res
       } else {
         let st = { session_id_counter = ctr; session_table = fst res };
@@ -499,9 +693,14 @@ fn open_session_aux (st:global_state_t)
         with stm1. assert (models st.session_table stm1);
         with stm. rewrite (on_range (session_perm stm) 0 (U32.v ctr))
                        as (on_range (session_perm stm1) 0 (U32.v st.session_id_counter));
-        fold (global_state_mutex_pred (Some st));
+        fold (state_inv (Some st) m);
+        fold (global_state_mutex_pred r (Some st));
         let res = (st, None #sid_t);
-        rewrite (global_state_mutex_pred (Some st)) as (global_state_mutex_pred (Some (fst res)));
+        rewrite (global_state_mutex_pred r (Some st)) as
+                (global_state_mutex_pred r (Some (fst res)));
+        rewrite emp as
+                (if None? (snd res) then emp
+                 else sid_pts_to_aux r (Some?.v (snd res)) (dsnd (open_session_thist_and_trace ())));
         res
       }
     }
