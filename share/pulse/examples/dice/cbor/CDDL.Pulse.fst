@@ -21,6 +21,7 @@ open CBOR.Spec
 open CBOR.Pulse
 open CDDL.Spec
 
+
 module R = Pulse.Lib.Reference
 
 inline_for_extraction noextract [@@noextract_to "krml"]
@@ -201,16 +202,16 @@ let impl_array_group3
     stt bool
         (R.pts_to pi i **
             cbor_array_iterator_match p i l **
-            pure (opt_precedes (Ghost.reveal l) b)
+            pure (opt_precedes_list (Ghost.reveal l) b)
         )
         (fun res -> exists* i' l'.
             R.pts_to pi i' **
             cbor_array_iterator_match p i' l' **
             (cbor_array_iterator_match p i' l' @==> cbor_array_iterator_match p i l) **
             pure (
-                opt_precedes (Ghost.reveal l) b /\
+                opt_precedes_list (Ghost.reveal l) b /\
                 res == Some? (g l) /\
-                (res == true ==> Some?.v (g l) == l')
+                (res == true ==> snd (Some?.v (g l)) == l')
             )
         )
 
@@ -232,9 +233,9 @@ requires
             cbor_array_iterator_match p i' l' **
             (cbor_array_iterator_match p i' l' @==> cbor_array_iterator_match p i l) **
             pure (
-                opt_precedes (Ghost.reveal l) b /\
+                opt_precedes_list (Ghost.reveal l) b /\
                 res == Some? (g l) /\
-                (res == true ==> Some?.v (g l) == l')
+                (res == true ==> snd (Some?.v (g l)) == l')
             )
     )
 ensures
@@ -243,9 +244,9 @@ ensures
             cbor_array_iterator_match p i' l' **
             (cbor_array_iterator_match p i' l' @==> cbor_array_iterator_match p i l) **
             pure (
-                opt_precedes (Ghost.reveal l) b /\
+                opt_precedes_list (Ghost.reveal l) b /\
                 res == Some? (g l) /\
-                (res == true ==> Some?.v (g l) == l')
+                (res == true ==> snd (Some?.v (g l)) == l')
             )
         )
 
