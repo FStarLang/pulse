@@ -6,6 +6,7 @@ INCLUDE_PATHS += $(PULSE_HOME)/lib/pulse/c
 OUTPUT_DIRECTORY=_output
 CACHE_DIRECTORY=$(OUTPUT_DIRECTORY)/cache
 
+.PHONY: all
 all: verify test dice
 
 include $(PULSE_SHARE)/Makefile.include
@@ -14,46 +15,27 @@ include $(PULSE_SHARE)/Makefile.include
 dice:
 	+$(MAKE) -C dice
 
-ifeq (,$(CACHE_DIRECTORY))
-	extractiontest_fst_checked=ExtractionTest.fst.checked
-else
-	extractiontest_fst_checked=$(CACHE_DIRECTORY)/ExtractionTest.fst.checked
-endif
+EXTRA_KRML_OPTS=-skip-linking
 
-extract: $(extractiontest_fst_checked)
-#	$(FSTAR) --odir $(OUTPUT_DIRECTORY) --codegen OCaml CustomSyntax.fst --extract CustomSyntax
-	$(FSTAR) --codegen OCaml ExtractionTest.fst --extract ExtractionTest
+$(OUTPUT_DIRECTORY)/%.c: $(OUTPUT_DIRECTORY)/%.krml
+	$(KRML_HOME)/krml -bundle $*=* $(EXTRA_KRML_OPTS) $< -tmpdir $(OUTPUT_DIRECTORY)
 
-extract_c: $(extractiontest_fst_checked)
-	$(FSTAR) --codegen krml ExtractionTest.fst --extract ExtractionTest
-	$(KRML_HOME)/krml -bundle ExtractionTest=* -skip-compilation $(OUTPUT_DIRECTORY)/ExtractionTest.krml -tmpdir $(OUTPUT_DIRECTORY)
+.PHONY: extract
+extract: $(OUTPUT_DIRECTORY)/ExtractionTest.ml
 
-#	$(FSTAR) --codegen krml Demo.MultiplyByRepeatedAddition.fst --extract '* -Pulse.Lib.Core'
-#	$(FSTAR_HOME)/../karamel/krml -bundle Demo.MultiplyByRepeatedAddition=* -skip-compilation $(OUTPUT_DIRECTORY)/out.krml
+.PHONY: extract_c
+extract_c: $(OUTPUT_DIRECTORY)/ExtractionTest.c
 
-ifneq (,$(KRML_HOME))
+.PHONY: extract_pulse_c
+extract_pulse_c: $(OUTPUT_DIRECTORY)/PulsePointStruct.c
+
+.PHONY: test-cbor
 test-cbor: dice
 	+$(MAKE) -C dice/cbor
 
-ifeq (,$(CACHE_DIRECTORY))
-	pulsepointstruct_fst_checked=c/PulsePointStruct.fst.checked
+.PHONY: test
+ifeq (,$(KRML_HOME))
+test: extract
 else
-	pulsepointstruct_fst_checked=$(CACHE_DIRECTORY)/PulsePointStruct.fst.checked
+test: extract test-cbor extract_c extract_pulse_c
 endif
-
-extract_pulse_c: $(pulsepointstruct_fst_checked)
-	$(FSTAR) --odir $(OUTPUT_DIRECTORY) --codegen krml PulsePointStruct.fst --extract PulsePointStruct
-	$(KRML_HOME)/krml -bundle PulsePointStruct=* -skip-linking $(OUTPUT_DIRECTORY)/PulsePointStruct.krml -tmpdir $(OUTPUT_DIRECTORY)
-
-else
-test-cbor:
-
-extract_pulse_c:
-
-endif
-
-test: test-cbor extract_pulse_c
-
-.PHONY: extract_pulse_c
-
-.PHONY: test test-cbor test-cbor-raw
