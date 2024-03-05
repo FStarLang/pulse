@@ -712,25 +712,46 @@ fn open_session_aux
 ```pulse
 fn open_session ()
   requires emp
-  returns _:option sid_t
-  ensures emp
+  returns res:option sid_t
+  ensures (if None? res then emp
+           else sid_pts_to (Some?.v res) (dsnd (open_session_thist_and_trace ())))
 {
-  let r = lock global_state;
-  let st_opt = R.replace r None;
+  let mr = lock (dsnd global_state);
+  let st_opt = R.replace mr None;
+  let r = dfst global_state;
+  with _v. rewrite (global_state_mutex_pred (Mkdtuple2?._1 global_state) _v) as
+                   (global_state_mutex_pred r st_opt);
 
   match st_opt {
     None -> {
-      rewrite (global_state_mutex_pred None) as emp;
-      let st = mk_global_state ();
-      let res = open_session_aux st;
-      r := Some (fst res);
-      unlock global_state r;
+      unfold global_state_mutex_pred;
+      with m. assert (ghost_pcm_pts_to r m);
+      rewrite (state_inv st_opt m) as (state_inv None m);
+      unfold (state_inv None m);
+      let st = mk_global_state r;
+      let res = open_session_aux r st;
+      mr := Some (fst res);
+      with _v. rewrite (global_state_mutex_pred r _v) as
+                       (global_state_mutex_pred (Mkdtuple2?._1 global_state) _v);
+      unlock (dsnd global_state) mr;
+      rewrite (if None? (snd res) then emp
+               else sid_pts_to_aux r (Some?.v (snd res)) (dsnd (open_session_thist_and_trace ())))
+           as (if None? (snd res) then emp
+               else sid_pts_to (Some?.v (snd res)) (dsnd (open_session_thist_and_trace ())));
       (snd res)
     }
     Some st -> {
-      let res = open_session_aux st;
-      r := Some (fst res);
-      unlock global_state r;
+      rewrite (global_state_mutex_pred r st_opt)
+           as (global_state_mutex_pred r (Some st));
+      let res = open_session_aux r st;
+      mr := Some (fst res);
+      with _v. rewrite (global_state_mutex_pred r _v) as
+                       (global_state_mutex_pred (Mkdtuple2?._1 global_state) _v);
+      unlock (dsnd global_state) mr;
+      rewrite (if None? (snd res) then emp
+               else sid_pts_to_aux r (Some?.v (snd res)) (dsnd (open_session_thist_and_trace ())))
+           as (if None? (snd res) then emp
+               else sid_pts_to (Some?.v (snd res)) (dsnd (open_session_thist_and_trace ())));
       (snd res)
     }
   }
