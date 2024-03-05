@@ -634,7 +634,7 @@ val ghost_pcm_pts_to
     (#a:Type u#1)
     (#p:pcm a)
     (r:ghost_pcm_ref p)
-    (v:a)
+    ([@@@ equate_by_smt] v:a)
 : vprop
 
 val ghost_alloc
