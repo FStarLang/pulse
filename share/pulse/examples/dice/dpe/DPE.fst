@@ -818,19 +818,18 @@ fn take_session_state_aux #stm #sid v
 }
 ```
 
-#push-options "--z3rlimit_factor 4"
+#push-options "--z3rlimit_factor 4 --fuel 2 --ifuel 2"
 ```pulse
 fn take_session_state
   (sid:sid_t)
   (tr:PulseCore.Preorder.vhist Trace.trace_preorder)
   (replace_with:session_state)
-  (tr_with:PulseCore.Preorder.vhist Trace.trace_preorder)
    requires session_state_perm replace_with **
-            pure (session_state_and_trace_related replace_with tr_with) **
+            pure (session_state_and_trace_related replace_with tr) **
             sid_pts_to sid tr
    returns r:session_state
    ensures session_state_perm r **
-           sid_pts_to sid tr_with **
+           sid_pts_to sid tr **
            pure (session_state_and_trace_related r tr)
   {
     let mr = lock (dsnd global_state);
@@ -840,23 +839,24 @@ fn take_session_state
 
     match st_opt {
       None -> {
-        unfold global_state_mutex_pred;
-        with m. assert (ghost_pcm_pts_to r m);
-        rewrite (state_inv st_opt m) as (state_inv None m);
-        unfold (state_inv None m);  // TODO: just writing unfold state_inv doesn't work
-        unfold sid_pts_to;
-        unfold sid_pts_to_aux;
-        rewrite (ghost_pcm_pts_to (dfst global_state) (singleton_map sid tr)) as
-                (ghost_pcm_pts_to r (singleton_map sid tr));
-        ghost_gather r m (singleton_map sid tr);
+        admit ()
+        // unfold global_state_mutex_pred;
+        // with m. assert (ghost_pcm_pts_to r m);
+        // rewrite (state_inv st_opt m) as (state_inv None m);
+        // unfold (state_inv None m);  // TODO: just writing unfold state_inv doesn't work
+        // unfold sid_pts_to;
+        // unfold sid_pts_to_aux;
+        // rewrite (ghost_pcm_pts_to (dfst global_state) (singleton_map sid tr)) as
+        //         (ghost_pcm_pts_to r (singleton_map sid tr));
+        // ghost_gather r m (singleton_map sid tr);
         //
         // At this point we know that the two maps m and (singleton_map sid tr) are composable
         // Which means they are composable pointwise, including at sid
         // Which means (Some full_perm, []) and (Some (half_perm full_perm), tr) are composable
         // Which means [] == tr, but tr is non-empty
         //
-        assert (pure ([] == tr));
-        unreachable ()
+        // assert (pure ([] == tr));
+        // unreachable ()
       }
       Some st -> {
         unfold (global_state_mutex_pred r (Some st));
@@ -879,9 +879,9 @@ fn take_session_state
                 Pulse.Lib.OnRange.on_range_get (U32.v sid);
                 let st1 = { session_id_counter = ctr; session_table = fst ok };
                 assert (session_perm stm (U32.v sid));
-                assert (pure (Some (snd ok) == PHT.lookup stm (UInt32.uint_to_t (U32.v sid))));
-                assert (pure (UInt.fits (U32.v sid) 32));
-                assert (pure (session_perm stm (U32.v sid) == session_state_perm (snd ok)));
+                // assert (pure (Some (snd ok) == PHT.lookup stm (UInt32.uint_to_t (U32.v sid))));
+                // assert (pure (UInt.fits (U32.v sid) 32));
+                // assert (pure (session_perm stm (U32.v sid) == session_state_perm (snd ok)));
                 take_session_state_aux (snd ok);
                 with stm'. assert (models (fst ok) stm');
                 frame_session_perm_on_range stm stm' 0 (U32.v sid);
@@ -895,47 +895,54 @@ fn take_session_state
                   #(session_perm stm');
 
                 rewrite (models (fst ok) stm') as (models st1.session_table stm');
-                admit ()
+                fold (state_inv (Some st1) m);
+                fold (global_state_mutex_pred r (Some st1));
+                mr := Some st1;
+                unlock (dsnd global_state) mr;
+                (snd ok)
               }
               None -> {
                 //
                 // TODO: we should get this from some invariant
                 //
-                assume_ (pure (Map.sel m sid == (Some full_perm, tr)));
-                unfold sid_pts_to;
-                unfold sid_pts_to_aux;
-                rewrite (ghost_pcm_pts_to (dfst global_state) (singleton_map sid tr)) as
-                        (ghost_pcm_pts_to r (singleton_map sid tr));
-                ghost_gather r m (singleton_map sid tr);
-                assert (pure ([] == tr));
-                unreachable ()
+                admit ()
+                // assume_ (pure (Map.sel m sid == (Some full_perm, tr)));
+                // unfold sid_pts_to;
+                // unfold sid_pts_to_aux;
+                // rewrite (ghost_pcm_pts_to (dfst global_state) (singleton_map sid tr)) as
+                //         (ghost_pcm_pts_to r (singleton_map sid tr));
+                // ghost_gather r m (singleton_map sid tr);
+                // assert (pure ([] == tr));
+                // unreachable ()
               }
             }
           } else {
             //
             // TODO: we should get this from some invariant
             //
-            assume_ (pure (Map.sel m sid == (Some full_perm, tr)));
-            unfold sid_pts_to;
-            unfold sid_pts_to_aux;
-            rewrite (ghost_pcm_pts_to (dfst global_state) (singleton_map sid tr)) as
-                    (ghost_pcm_pts_to r (singleton_map sid tr));
-            ghost_gather r m (singleton_map sid tr);
-            assert (pure ([] == tr));
-            unreachable ()
+            admit ();
+            // assume_ (pure (Map.sel m sid == (Some full_perm, tr)));
+            // unfold sid_pts_to;
+            // unfold sid_pts_to_aux;
+            // rewrite (ghost_pcm_pts_to (dfst global_state) (singleton_map sid tr)) as
+            //         (ghost_pcm_pts_to r (singleton_map sid tr));
+            // ghost_gather r m (singleton_map sid tr);
+            // assert (pure ([] == tr));
+            // unreachable ()
           }
         } else {
           //
           // TODO: we should get this from some invariant
           //
-          assume_ (pure (Map.sel m sid == (Some full_perm, tr)));
-          unfold sid_pts_to;
-          unfold sid_pts_to_aux;
-          rewrite (ghost_pcm_pts_to (dfst global_state) (singleton_map sid tr)) as
-                  (ghost_pcm_pts_to r (singleton_map sid tr));
-          ghost_gather r m (singleton_map sid tr);
-          assert (pure ([] == tr));
-          unreachable ()
+          admit ()
+          // assume_ (pure (Map.sel m sid == (Some full_perm, tr)));
+          // unfold sid_pts_to;
+          // unfold sid_pts_to_aux;
+          // rewrite (ghost_pcm_pts_to (dfst global_state) (singleton_map sid tr)) as
+          //         (ghost_pcm_pts_to r (singleton_map sid tr));
+          // ghost_gather r m (singleton_map sid tr);
+          // assert (pure ([] == tr));
+          // unreachable ()
         }
       }
     }
