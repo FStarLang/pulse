@@ -4,12 +4,12 @@
 
 PULSE_HOME ?= ../../../../../
 OUTPUT_DIRECTORY=_output
-CACHE_DIRECTORY=$(OUTPUT_DIRECTORY)/cache
+# CACHE_DIRECTORY=$(OUTPUT_DIRECTORY)/cache
 SRC_DIRS := extern
 ifneq (,$(wildcard ../_output/cache))
   INCLUDE_PATHS += ../_output/cache
 endif
-OTHERFLAGS += --cmi --already_cached '*,-CBOR.Pulse.Type,-CDDLExtractionTest'
+OTHERFLAGS += --cmi --already_cached '*,-CBOR,-CDDL,-CBOR.Pulse.Type,-CDDLExtractionTest'
 
 FSTAR_DEP_OPTIONS=--extract '* -FStar.Tactics -FStar.Reflection -Steel -Pulse +Pulse.Class +Pulse.Lib -Pulse.Lib.Core'
 KRML=$(KRML_HOME)/krml $(KRML_OPTS)
