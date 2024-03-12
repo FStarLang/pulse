@@ -37,35 +37,45 @@ type array_group = list (string & elem_array_group)
 
 let nat_up_to (n: nat) = (x: nat { x < n })
 
+[@@erasable]
 noeq
-type semenv_bounds = {
-  se_typ_bound: nat;
-  se_array_group_bound: nat;
-}
+type semenv_elem =
+| SEType of Spec.typ
+| SEArrayGroup of Spec.array_group3 None
 
 noeq
 type semenv = {
-  se_bound: semenv_bounds;
-  se_typ: (nat_up_to se_bound.se_typ_bound -> Spec.typ);
-  se_array_group: (nat_up_to se_bound.se_array_group_bound -> Spec.array_group3 None);
+  se_bound: nat;
+  se_env: (nat_up_to se_bound -> semenv_elem);
 }
 
-let semenv_bounds_le (s1 s2: semenv_bounds) : Tot prop =
-  s1.se_typ_bound <= s2.se_typ_bound /\
-  s1.se_array_group_bound <= s2.se_array_group_bound
+let se_typ
+  (se: semenv)
+  (i: nat_up_to se.se_bound)
+: Tot Spec.typ
+= match se.se_env i with
+  | SEType t -> t
+  | _ -> Spec.t_false
+
+let se_array_group
+  (se: semenv)
+  (i: nat_up_to se.se_bound)
+: Tot (Spec.array_group3 None)
+= match se.se_env i with
+  | SEArrayGroup t -> t
+  | _ -> Spec.array_group3_always_false
 
 let semenv_included (s1 s2: semenv) : Tot prop =
-  semenv_bounds_le s1.se_bound s2.se_bound /\
-  (forall (i: nat_up_to s1.se_bound.se_typ_bound) . s1.se_typ i == s2.se_typ i) /\
-  (forall (i: nat_up_to s1.se_bound.se_array_group_bound) . s1.se_array_group i == s2.se_array_group i)
+  s1.se_bound <= s2.se_bound /\
+  (forall (i: nat_up_to s1.se_bound) . s1.se_env i == s2.se_env i)
 
 let elem_typ_bounded
-  (bound: semenv_bounds)
+  (bound: nat)
   (t: elem_typ)
 : Tot bool
 = match t with
-  | TDef i -> i < bound.se_typ_bound
-  | TArray j -> j < bound.se_array_group_bound
+  | TDef i -> i < bound
+  | TArray j -> j < bound
   | _ -> true
 
 let elem_typ_sem
@@ -75,8 +85,8 @@ let elem_typ_sem
   (requires elem_typ_bounded env.se_bound t)
   (ensures fun _ -> True)
 = match t with
-  | TDef i -> env.se_typ i
-  | TArray i -> Spec.t_array3 (env.se_array_group i)
+  | TDef i -> se_typ env i
+  | TArray i -> Spec.t_array3 (se_array_group env i)
   | TFalse -> Spec.t_false
   | TTrue -> Spec.t_true
   | TBool -> Spec.t_bool
@@ -112,7 +122,7 @@ let rec sem_typ_choice
   | a :: q -> elem_typ_sem env a `Spec.t_choice` sem_typ_choice env q
 
 let typ_bounded
-  (bound: semenv_bounds)
+  (bound: nat)
   (t: typ)
 : Tot bool
 = match t with
@@ -130,15 +140,15 @@ let typ_sem
   | TChoice l -> sem_typ_choice env l
 
 let atom_array_group_bounded
-  (bound: semenv_bounds)
+  (bound: nat)
   (t: atom_array_group)
 : Tot bool
 = match t with
-  | TADef i -> i < bound.se_array_group_bound
+  | TADef i -> i < bound
   | TAElem t -> elem_typ_bounded bound t
 
 let elem_array_group_bounded
-  (bound: semenv_bounds)
+  (bound: nat)
   (t: elem_array_group)
 : Tot bool
 = match t with
@@ -146,7 +156,7 @@ let elem_array_group_bounded
   | TAZeroOrMore t -> atom_array_group_bounded bound t
 
 let array_group_bounded
-  (bound: semenv_bounds)
+  (bound: nat)
   (t: array_group)
 : Tot bool
 = List.Tot.for_all (elem_array_group_bounded bound) (List.Tot.map snd t)
@@ -158,7 +168,7 @@ let atom_array_group_sem
     (requires atom_array_group_bounded env.se_bound t)
     (ensures fun _ -> True)
 = match t with
-  | TADef i -> env.se_array_group i
+  | TADef i -> se_array_group env i
   | TAElem j -> Spec.array_group3_item (elem_typ_sem env j)
 
 let elem_array_group_sem
@@ -182,4 +192,3 @@ let rec array_group_sem
   | [] -> Spec.array_group3_empty
   | [_, t] -> elem_array_group_sem env t
   | (_, t) :: q -> Spec.array_group3_concat (elem_array_group_sem env t) (array_group_sem env q)
-
