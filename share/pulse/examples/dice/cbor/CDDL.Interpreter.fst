@@ -5,30 +5,26 @@ open CDDL.Pulse
 module Spec = CDDL.Spec
 module U64 = FStar.UInt64
 
-noeq
 type elem_typ =
 | TDef: (i: nat) -> elem_typ
 | TFalse
 | TTrue
 | TBool
 | TNil
-| TNull
 | TUndefined
 | TUIntLiteral: (v: U64.t) -> elem_typ
 | TArray: (i: nat) -> elem_typ
 
-noeq
 type typ =
 | TElem: (t: elem_typ) -> typ
 | TChoice: (l: list elem_typ) -> typ
+| TTag: (tag: U64.t) -> (i: elem_typ) -> typ
 // | TMap
 
-noeq
 type atom_array_group =
 | TADef: (i: nat) -> atom_array_group
 | TAElem: (t: elem_typ) -> atom_array_group
 
-noeq
 type elem_array_group =
 | TAAtom: (t: atom_array_group) -> elem_array_group
 | TAZeroOrMore: (t: atom_array_group) -> elem_array_group
@@ -37,7 +33,6 @@ type array_group = list (string & elem_array_group)
 
 let nat_up_to (n: nat) = (x: nat { x < n })
 
-[@@erasable]
 noeq
 type semenv_elem =
 | SEType of Spec.typ
@@ -55,7 +50,7 @@ let se_typ
 : Tot Spec.typ
 = match se.se_env i with
   | SEType t -> t
-  | _ -> Spec.t_false
+  | _ -> Spec.t_always_false
 
 let se_array_group
   (se: semenv)
@@ -91,7 +86,6 @@ let elem_typ_sem
   | TTrue -> Spec.t_true
   | TBool -> Spec.t_bool
   | TNil -> Spec.t_nil
-  | TNull -> Spec.t_null
   | TUndefined -> Spec.t_undefined
   | TUIntLiteral n -> Spec.t_uint_literal n
 
@@ -117,7 +111,7 @@ let rec sem_typ_choice
     (ensures fun _ -> True)
     (decreases l)
 = match l with
-  | [] -> Spec.t_false
+  | [] -> Spec.t_always_false
   | [t] -> elem_typ_sem env t
   | a :: q -> elem_typ_sem env a `Spec.t_choice` sem_typ_choice env q
 
@@ -128,6 +122,7 @@ let typ_bounded
 = match t with
   | TElem t -> elem_typ_bounded bound t
   | TChoice l -> List.Tot.for_all (elem_typ_bounded bound) l
+  | TTag _tag t -> elem_typ_bounded bound t
 
 let typ_sem
   (env: semenv)
@@ -138,6 +133,7 @@ let typ_sem
 = match t with
   | TElem t -> elem_typ_sem env t
   | TChoice l -> sem_typ_choice env l
+  | TTag tag t -> Spec.t_tag tag (elem_typ_sem env t)
 
 let atom_array_group_bounded
   (bound: nat)
@@ -160,6 +156,20 @@ let array_group_bounded
   (t: array_group)
 : Tot bool
 = List.Tot.for_all (elem_array_group_bounded bound) (List.Tot.map snd t)
+
+let array_group_bounded_append
+  (bound: nat)
+  (t1 t2: array_group)
+: Lemma
+  (requires (array_group_bounded bound t1 /\
+    array_group_bounded bound t2
+  ))
+  (ensures
+    array_group_bounded bound (t1 `List.Tot.append` t2)
+  )
+  [SMTPat (array_group_bounded bound (t1 `List.Tot.append` t2))]
+= List.Tot.map_append snd t1 t2;
+  List.Tot.for_all_append (elem_array_group_bounded bound) (List.Tot.map snd t1) (List.Tot.map snd t2)
 
 let atom_array_group_sem
   (env: semenv)
@@ -192,3 +202,283 @@ let rec array_group_sem
   | [] -> Spec.array_group3_empty
   | [_, t] -> elem_array_group_sem env t
   | (_, t) :: q -> Spec.array_group3_concat (elem_array_group_sem env t) (array_group_sem env q)
+
+let array_group3_concat_assoc
+  (#b: _)
+  (a1 a2 a3: Spec.array_group3 b)
+: Lemma
+  (Spec.array_group3_concat a1 (Spec.array_group3_concat a2 a3) `Spec.array_group3_equiv`
+    Spec.array_group3_concat (Spec.array_group3_concat a1 a2) a3)
+  [SMTPatOr [
+    [SMTPat (Spec.array_group3_concat a1 (Spec.array_group3_concat a2 a3))];
+    [SMTPat (Spec.array_group3_concat (Spec.array_group3_concat a1 a2) a3)]
+  ]]
+= let prf
+    (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b})
+  : Lemma
+    (Spec.array_group3_concat a1 (Spec.array_group3_concat a2 a3) l ==
+      Spec.array_group3_concat (Spec.array_group3_concat a1 a2) a3 l)
+  = match a1 l with
+    | None -> ()
+    | Some (l1, lr1) ->
+      begin match a2 lr1 with
+      | None -> ()
+      | Some (l2, lr2) ->
+        begin match a3 lr2 with
+        | None -> ()
+        | Some (l3, lr3) -> List.Tot.append_assoc l1 l2 l3
+        end
+      end
+  in
+  Classical.forall_intro prf
+
+let array_group_sem_alt
+  (env: semenv)
+  (t: array_group)
+: Pure (Spec.array_group3 None)
+    (requires array_group_bounded env.se_bound t)
+    (ensures fun y -> y `Spec.array_group3_equiv` array_group_sem env t)
+    (decreases t)
+= match t with
+  | [] -> Spec.array_group3_empty
+  | (_, t) :: q -> Spec.array_group3_concat (elem_array_group_sem env t) (array_group_sem env q)
+
+let rec array_group_sem_append
+  (env: semenv)
+  (t1 t2: array_group)
+: Lemma
+  (requires
+    array_group_bounded env.se_bound t1 /\
+    array_group_bounded env.se_bound t2
+  )
+  (ensures
+    array_group_bounded env.se_bound (t1 `List.Tot.append` t2) /\
+    Spec.array_group3_equiv
+      (array_group_sem env (t1 `List.Tot.append` t2))
+      (Spec.array_group3_concat
+        (array_group_sem env t1)
+        (array_group_sem env t2)
+      )
+  )
+  (decreases t1)
+  [SMTPat (array_group_sem env (t1 `List.Tot.append` t2))]
+= match t1 with
+  | [] -> ()
+  | [_] -> ()
+  | _ :: q1 -> array_group_sem_append env q1 t2
+
+noeq
+type env = {
+  e_semenv: semenv;
+  e_typ: (i: nat_up_to e_semenv.se_bound { SEType? (e_semenv.se_env i) } -> (t: typ { 
+    typ_bounded e_semenv.se_bound t /\
+    Spec.typ_equiv (typ_sem e_semenv t) (se_typ e_semenv i)
+  }));
+  e_array_group: (i: nat_up_to e_semenv.se_bound { SEArrayGroup? (e_semenv.se_env i) } -> (a: array_group {
+    array_group_bounded e_semenv.se_bound a /\
+    Spec.array_group3_equiv (array_group_sem e_semenv a) (se_array_group e_semenv i)
+  }));
+}
+
+let spec_array_group3_zero_or_more_equiv #b
+ (a1 a2: Spec.array_group3 b)
+: Lemma
+  (requires Spec.array_group3_equiv a1 a2)
+  (ensures Spec.array_group3_equiv (Spec.array_group3_zero_or_more a1) (Spec.array_group3_zero_or_more a2))
+  [SMTPat (Spec.array_group3_equiv (Spec.array_group3_zero_or_more a1) (Spec.array_group3_zero_or_more a2))]
+= admit ()
+
+// This is nothing more than delta-equivalence
+
+#push-options "--z3rlimit 16"
+
+let rec typ_equiv
+  (e: env)
+  (fuel: nat)
+  (t1: typ)
+  (t2: typ)
+: Pure bool
+  (requires (
+    typ_bounded e.e_semenv.se_bound t1 /\
+    typ_bounded e.e_semenv.se_bound t2
+  ))
+  (ensures (fun b ->
+    typ_bounded e.e_semenv.se_bound t1 /\
+    typ_bounded e.e_semenv.se_bound t2 /\
+    (b == true ==> Spec.typ_equiv (typ_sem e.e_semenv t1) (typ_sem e.e_semenv t2))
+  ))
+  (decreases fuel)
+= if t1 = t2
+  then true
+  else if fuel = 0
+  then false
+  else let fuel' : nat = fuel - 1 in
+  match t1, t2 with
+  | TElem (TDef i), _ ->
+    let s1 = e.e_semenv.se_env i in
+    if SEType? s1
+    then
+      let t1' = e.e_typ i in
+      typ_equiv e fuel' t1' t2
+    else false
+  | _, TElem (TDef _) ->
+    typ_equiv e fuel' t2 t1
+  | TChoice [], TChoice [] -> true
+  | TChoice (t1' :: q1'), TChoice (t2' :: q2') ->
+    if typ_equiv e fuel' (TElem t1') (TElem t2')
+    then typ_equiv e fuel' (TChoice q1') (TChoice q2')
+    else false
+  | TTag tag1 t1, TTag tag2 t2 ->
+    if tag1 <> tag2
+    then false
+    else typ_equiv e fuel' (TElem t1) (TElem t2)
+  | TElem (TArray i1), TElem (TArray i2) ->
+    let s1 = e.e_semenv.se_env i1 in
+    let s2 = e.e_semenv.se_env i2 in
+    if SEArrayGroup? s1 && SEArrayGroup? s2
+    then
+      let t1' = e.e_array_group i1 in
+      let t2' = e.e_array_group i2 in
+      array_group_equiv e fuel' t1' t2'
+    else false
+  | _ -> false
+
+and array_group_equiv
+  (e: env)
+  (fuel: nat)
+  (t1: array_group)
+  (t2: array_group)
+: Pure bool
+  (requires (
+    array_group_bounded e.e_semenv.se_bound t1 /\
+    array_group_bounded e.e_semenv.se_bound t2
+  ))
+  (ensures (fun b ->
+    array_group_bounded e.e_semenv.se_bound t1 /\
+    array_group_bounded e.e_semenv.se_bound t2 /\
+    (b == true ==> Spec.array_group3_equiv (array_group_sem e.e_semenv t1) (array_group_sem e.e_semenv t2))
+  ))
+  (decreases fuel)
+= if t1 = t2
+  then true
+  else if fuel = 0
+  then false
+  else let fuel' : nat = fuel - 1 in
+  match t1, t2 with
+  | [], [] -> true
+  | (_, TAAtom (TADef i1)) :: q1', _ ->
+    let s1 = e.e_semenv.se_env i1 in
+    if SEArrayGroup? s1
+    then
+      let t1' = e.e_array_group i1 in
+      array_group_equiv e fuel' (t1' `List.Tot.append` q1') t2
+    else false
+  | _, (_, TAAtom (TADef _)) :: _ ->
+    array_group_equiv e fuel' t2 t1
+  | (_, TAAtom (TAElem t1)) :: q1, (_, TAAtom (TAElem t2)) :: q2 ->
+    if typ_equiv e fuel' (TElem t1) (TElem t2)
+    then array_group_equiv e fuel' q1 q2
+    else false
+  | (s1, TAZeroOrMore t1) :: q1, (s2, TAZeroOrMore t2) :: q2 ->
+    if array_group_equiv e fuel' [s1, TAAtom t1] [s2, TAAtom t2]
+    then begin
+       assert (Spec.array_group3_equiv (atom_array_group_sem e.e_semenv t1) (atom_array_group_sem e.e_semenv t2));
+       assert (Spec.array_group3_equiv (Spec.array_group3_zero_or_more (atom_array_group_sem e.e_semenv t1)) (Spec.array_group3_zero_or_more (atom_array_group_sem e.e_semenv t2)));
+       array_group_equiv e fuel' q1 q2
+    end
+    else false
+  | _ -> false
+
+let spec_typ_disjoint (a1 a2: Spec.typ) : Tot prop
+= (forall (l: CBOR.Spec.raw_data_item) . ~ (a1 l /\ a2 l))
+
+let rec typ_disjoint
+  (e: env)
+  (fuel: nat)
+  (t1: typ)
+  (t2: typ)
+: Pure bool
+  (requires (
+    typ_bounded e.e_semenv.se_bound t1 /\
+    typ_bounded e.e_semenv.se_bound t2
+  ))
+  (ensures (fun b ->
+    typ_bounded e.e_semenv.se_bound t1 /\
+    typ_bounded e.e_semenv.se_bound t2 /\
+    (b == true ==> spec_typ_disjoint (typ_sem e.e_semenv t1) (typ_sem e.e_semenv t2))
+  ))
+  (decreases fuel)
+= if fuel = 0
+  then false
+  else let fuel' : nat = fuel - 1 in
+  match t1, t2 with
+  | TElem (TDef i), _ ->
+    let s1 = e.e_semenv.se_env i in
+    if SEType? s1
+    then
+      let t1' = e.e_typ i in
+      typ_disjoint e fuel' t1' t2
+    else true
+  | _, TElem (TDef _) ->
+    typ_disjoint e fuel' t2 t1
+  | TChoice [], _ -> true
+  | TChoice (t1' :: q1'), _ ->
+    if not (typ_disjoint e fuel' (TElem t1') t2)
+    then false
+    else typ_disjoint e fuel' (TChoice q1') t2
+  | _, TChoice _ ->
+    typ_disjoint e fuel' t2 t1
+  | TTag tag1 t1, TTag tag2 t2 ->
+    if tag1 <> tag2
+    then true
+    else typ_disjoint e fuel' (TElem t1) (TElem t2)
+  | _, TTag _ _
+  | TTag _ _, _ -> true
+  | TElem (TArray i1), TElem (TArray i2) ->
+    let s1 = e.e_semenv.se_env i1 in
+    let s2 = e.e_semenv.se_env i2 in
+    if SEArrayGroup? s1 && SEArrayGroup? s2
+    then
+      let t1' = e.e_array_group i1 in
+      let t2' = e.e_array_group i2 in
+      array_group_disjoint e fuel' t1' t2'
+    else true
+  | TElem TBool, TElem TFalse
+  | TElem TBool, TElem TTrue -> false
+  | _, TElem TBool ->
+    typ_disjoint e fuel' t2 t1
+  | TElem e1, TElem e2 -> e1 <> e2
+
+and array_group_disjoint
+  (e: env)
+  (fuel: nat)
+  (t1: array_group)
+  (t2: array_group)
+: Pure bool
+  (requires (
+    array_group_bounded e.e_semenv.se_bound t1 /\
+    array_group_bounded e.e_semenv.se_bound t2
+  ))
+  (ensures (fun b ->
+    array_group_bounded e.e_semenv.se_bound t1 /\
+    array_group_bounded e.e_semenv.se_bound t2 /\
+    (b == true ==> Spec.array_group3_disjoint (array_group_sem e.e_semenv t1) (array_group_sem e.e_semenv t2))
+  ))
+  (decreases fuel)
+= if fuel = 0
+  then false
+  else let fuel' : nat = fuel - 1 in
+  match t1, t2 with
+  | (_, TAAtom (TADef i1)) :: q1, _ ->
+    let s1 = e.e_semenv.se_env i1 in
+    if SEArrayGroup? s1
+    then
+      let t1' = e.e_array_group i1 in
+      array_group_disjoint e fuel' (t1' `List.Tot.append` q1) t2
+    else true
+  | _, (_, TAAtom (TADef _)) :: _ ->
+    array_group_disjoint e fuel' t2 t1
+  | [], [] -> false
+  | [], _ ->
+    array_group_disjoint e fuel' t2 t1
+  | _ -> false
