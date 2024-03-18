@@ -382,6 +382,9 @@ val eq_tm_opt (t1 t2:option term)
 val eq_tm_list (t1 t2:list term)
   : b:bool { b <==> (t1 == t2) }
 
+val eq_binder (b0 b1:binder)
+  : b:bool { b <==> (b0 == b1) }
+
 val eq_st_term (t1 t2:st_term) 
   : b:bool { b <==> (t1 == t2) }
 

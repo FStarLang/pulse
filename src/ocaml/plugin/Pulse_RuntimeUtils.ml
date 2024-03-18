@@ -200,3 +200,17 @@ let must_erase_for_extraction (g:FStar_Reflection_Types.env) (ty:FStar_Syntax_Sy
   FStar_TypeChecker_Util.must_erase_for_extraction g ty
 
 let magic_s s = failwith ("Cannot execute magic: " ^ s)
+
+let set_extension_state (g:FStar_Reflection_Types.env) (x:'a) (ps:_) =
+  print_string "Setting extension state\n";
+  flush stdout;
+  g.extension_state := Some (FStar_Compiler_Dyn.mkdyn x);
+  FStar_Tactics_Result.Success ((), ps)
+
+let get_extension_state (g:FStar_Reflection_Types.env) (ps:_) =
+  let res =
+    match !(g.extension_state) with
+    | None -> None
+    | Some x -> Some (FStar_Compiler_Dyn.undyn x)
+  in
+  FStar_Tactics_Result.Success (res, ps)

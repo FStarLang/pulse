@@ -1206,3 +1206,30 @@ let comp_post_matches_hint (c:comp_st) (post_hint:option post_hint_t) =
     comp_u c == post_hint.u /\
     comp_post c == post_hint.post /\
     effect_annot_matches c post_hint.effect_annot
+
+let tag_of_st_typing (#g:env) (#e:st_term) (#c:comp) (d:st_typing g e c) : string =
+  match d with
+  | T_Abs _ _ _ _ _ _ _ _ _ -> "T_Abs"
+  | T_STApp _ _ _ _ _ _ _ _ -> "T_STApp"
+  | T_STGhostApp _ _ _ _ _ _ _ _ _ _ -> "T_STGhostApp"
+  | T_Return _ _ _ _ _ _ _ _ _ _ _ -> "T_Return"
+  | T_Lift _ _ _ _ _ _ -> "T_Lift"
+  | T_Bind _ _ _ _ _ _ _ _ _ _ _ _ -> "T_Bind"
+  | T_BindFn _ _ _ _ _ _ _ _ _ _ _ _ -> "T_BindFn"
+  | T_If _ _ _ _ _ _ _ _ _ _ -> "T_If"
+  | T_Match _ _ _ _ _ _ _ _ _ _ _ -> "T_Match"
+  | T_Frame _ _ _ _ _ _ -> "T_Frame"
+  | T_Equiv _ _ _ _ _ _ -> "T_Equiv"
+  | T_Sub _ _ _ _ _ _ -> "T_Sub"
+  | T_IntroPure _ _ _ _ -> "T_IntroPure"
+  | T_ElimExists _ _ _ _ _ _ _ -> "T_ElimExists"
+  | T_IntroExists _ _ _ _ _ _ _ _ -> "T_IntroExists"
+  | T_While _ _ _ _ _ _ _ -> "T_While"
+  | T_Par _ _ _ _ _ _ _ _ _ _ -> "T_Par"
+  | T_WithLocal _ _ _ _ _ _ _ _ _ _ _ -> "T_WithLocal"
+  | T_WithLocalArray _ _ _ _ _ _ _ _ _ _ _ _ _ -> "T_WithLocalArray"
+  | T_Rewrite _ _ _ _ _ -> "T_Rewrite"
+  | T_Admit _ _ _ _ -> "T_Admit"
+  | T_Unreachable _ _ _ _ _ -> "T_Unreachable"
+  | T_WithInv _ _ _ _ _ _ _ _ _ -> "T_WithInv"
+

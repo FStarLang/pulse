@@ -3411,7 +3411,9 @@ let (initialize_env :
             FStar_TypeChecker_Env.erase_erasable_args =
               (env.FStar_TypeChecker_Env.erase_erasable_args);
             FStar_TypeChecker_Env.core_check =
-              (env.FStar_TypeChecker_Env.core_check)
+              (env.FStar_TypeChecker_Env.core_check);
+            FStar_TypeChecker_Env.extension_state =
+              (env.FStar_TypeChecker_Env.extension_state)
           } in
         {
           PulseSyntaxExtension_Env.tcenv = env1;

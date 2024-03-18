@@ -1296,3 +1296,80 @@ let (post_hint_typing :
         { effect_annot_typing1; ty_typing1 = (); post_typing1 = () }
 type ('c, 'effectuannot) effect_annot_matches = Obj.t
 type ('c, 'postuhint) comp_post_matches_hint = Obj.t
+let (tag_of_st_typing :
+  Pulse_Typing_Env.env ->
+    Pulse_Syntax_Base.st_term ->
+      Pulse_Syntax_Base.comp -> (unit, unit, unit) st_typing -> Prims.string)
+  =
+  fun g ->
+    fun e ->
+      fun c ->
+        fun d ->
+          match d with
+          | T_Abs
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8)
+              -> "T_Abs"
+          | T_STApp
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7)
+              -> "T_STApp"
+          | T_STGhostApp
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9)
+              -> "T_STGhostApp"
+          | T_Return
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9, uu___10)
+              -> "T_Return"
+          | T_Lift (uu___, uu___1, uu___2, uu___3, uu___4, uu___5) ->
+              "T_Lift"
+          | T_Bind
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9, uu___10, uu___11)
+              -> "T_Bind"
+          | T_BindFn
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9, uu___10, uu___11)
+              -> "T_BindFn"
+          | T_If
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9)
+              -> "T_If"
+          | T_Match
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9, uu___10)
+              -> "T_Match"
+          | T_Frame (uu___, uu___1, uu___2, uu___3, uu___4, uu___5) ->
+              "T_Frame"
+          | T_Equiv (uu___, uu___1, uu___2, uu___3, uu___4, uu___5) ->
+              "T_Equiv"
+          | T_Sub (uu___, uu___1, uu___2, uu___3, uu___4, uu___5) -> "T_Sub"
+          | T_IntroPure (uu___, uu___1, uu___2, uu___3) -> "T_IntroPure"
+          | T_ElimExists
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6) ->
+              "T_ElimExists"
+          | T_IntroExists
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7)
+              -> "T_IntroExists"
+          | T_While (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6)
+              -> "T_While"
+          | T_Par
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9)
+              -> "T_Par"
+          | T_WithLocal
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9, uu___10)
+              -> "T_WithLocal"
+          | T_WithLocalArray
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8, uu___9, uu___10, uu___11, uu___12)
+              -> "T_WithLocalArray"
+          | T_Rewrite (uu___, uu___1, uu___2, uu___3, uu___4) -> "T_Rewrite"
+          | T_Admit (uu___, uu___1, uu___2, uu___3) -> "T_Admit"
+          | T_Unreachable (uu___, uu___1, uu___2, uu___3, uu___4) ->
+              "T_Unreachable"
+          | T_WithInv
+              (uu___, uu___1, uu___2, uu___3, uu___4, uu___5, uu___6, uu___7,
+               uu___8)
+              -> "T_WithInv"

@@ -54,6 +54,15 @@ val intro_post_hint (g:env) (effect_annot:effect_annot) (ret_ty:option term) (po
 val post_hint_from_comp_typing (#g:env) (#c:comp_st) (ct:comp_typing_u g c)
   : post_hint_for_env g
 
+val post_hint_comp_round_trip (#g:env) (#c:comp_st) (ct:comp_typing_u g c)
+  (#ctxt:vprop)
+  (d:st_typing_in_ctxt g ctxt (Some (post_hint_from_comp_typing ct)))
+  : Lemma (let (| _, c1, _ |) = d in
+           comp_u c1 == comp_u c /\
+           comp_res c1 == comp_res c /\
+           comp_post c1 == comp_post c /\
+           effect_annot_of_comp c1 == effect_annot_of_comp c)
+
 val comp_typing_from_post_hint
     (#g: env)
     (c: comp_st)

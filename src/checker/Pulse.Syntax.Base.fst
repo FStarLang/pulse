@@ -113,10 +113,10 @@ let rec eq_list_dec top1 top2
       eq_list_dec top1 top2 f t1 t2
     | _ -> false
 
+let eq_tm_list (t1 t2:list term) = eq_list eq_tm t1 t2
+
 let eq_binder (b0 b1:binder) : b:bool { b <==> (b0 == b1) } =
   eq_tm b0.binder_ty b1.binder_ty
-
-let eq_tm_list (t1 t2:list term) = eq_list eq_tm t1 t2
 
 // wire to Reflection.TermEq
 assume val fstar_const_eq : c1:R.vconst -> c2:R.vconst -> b:bool{b <==> (c1==c2)}

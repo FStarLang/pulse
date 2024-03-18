@@ -142,6 +142,8 @@ let post_hint_from_comp_typing #g #c ct =
   in
   p
 
+let post_hint_comp_round_trip #g #c ct #ctxt d = ()
+
 let comp_typing_from_post_hint
     (#g: env)
     (c: comp_st)

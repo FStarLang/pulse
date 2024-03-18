@@ -86,3 +86,7 @@ val must_erase_for_extraction (g:env) (ty:T.term) : bool
 val magic : #a: Type -> unit -> GTot a
 (* magic with a string, to at least report an error message if it is hit at runtime *)
 val magic_s: #a: Type -> string -> Tot a
+
+
+val set_extension_state (#a:Type) (g:T.env) (x:a) : T.Tac unit
+val get_extension_state (#a:Type) (g:T.env) : T.Tac (option a)

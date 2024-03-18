@@ -698,10 +698,10 @@ let rec eq_list_dec :
             | (h1::t1, h2::t2) ->
                 (f h1 h2) && (eq_list_dec top1 top2 f t1 t2)
             | uu___ -> false
-let (eq_binder : binder -> binder -> Prims.bool) =
-  fun b0 -> fun b1 -> eq_tm b0.binder_ty b1.binder_ty
 let (eq_tm_list : term Prims.list -> term Prims.list -> Prims.bool) =
   fun t1 -> fun t2 -> eq_list eq_tm t1 t2
+let (eq_binder : binder -> binder -> Prims.bool) =
+  fun b0 -> fun b1 -> eq_tm b0.binder_ty b1.binder_ty
 let (fstar_const_eq :
   FStar_Reflection_V2_Data.vconst ->
     FStar_Reflection_V2_Data.vconst -> Prims.bool)
