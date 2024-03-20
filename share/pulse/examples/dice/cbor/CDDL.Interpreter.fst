@@ -203,6 +203,45 @@ let rec array_group_sem
   | [_, t] -> elem_array_group_sem env t
   | (_, t) :: q -> Spec.array_group3_concat (elem_array_group_sem env t) (array_group_sem env q)
 
+let spec_close_array_group
+  (#b: _)
+  (t: Spec.array_group3 b)
+: Tot (Spec.array_group3 b)
+= fun l ->
+    let res = t l in
+    match res with
+    | Some (_, []) -> res
+    | _ -> None
+
+let array_group3_concat_close
+  (#b: _)
+  (a1 a2: Spec.array_group3 b)
+: Lemma
+  (Spec.array_group3_equiv
+    (spec_close_array_group (Spec.array_group3_concat a1 a2))
+    (Spec.array_group3_concat a1 (spec_close_array_group a2))
+  )
+= ()
+
+let spec_array3_close_array_group
+  (#b: _)
+  (a: Spec.array_group3 b)
+: Lemma
+  (Spec.typ_equiv
+    (Spec.t_array3 a)
+    (Spec.t_array3 (spec_close_array_group a))
+  )
+= ()
+
+let spec_maybe_close_array_group
+  (#b: _)
+  (t: Spec.array_group3 b)
+  (close: bool)
+: Tot (Spec.array_group3 b)
+= if close
+  then spec_close_array_group t
+  else t
+
 let array_group3_concat_assoc
   (#b: _)
   (a1 a2 a3: Spec.array_group3 b)
@@ -389,9 +428,14 @@ and array_group_equiv
     else false
   | _ -> false
 
+#pop-options
+
 let spec_typ_disjoint (a1 a2: Spec.typ) : Tot prop
 = (forall (l: CBOR.Spec.raw_data_item) . ~ (a1 l /\ a2 l))
 
+#push-options "--z3rlimit 32"
+
+#restart-solver
 let rec typ_disjoint
   (e: env)
   (fuel: nat)
@@ -438,10 +482,13 @@ let rec typ_disjoint
     let s1 = e.e_semenv.se_env i1 in
     let s2 = e.e_semenv.se_env i2 in
     if SEArrayGroup? s1 && SEArrayGroup? s2
-    then
+    then begin
       let t1' = e.e_array_group i1 in
       let t2' = e.e_array_group i2 in
-      array_group_disjoint e fuel' t1' t2'
+      spec_array3_close_array_group (SEArrayGroup?._0 s1);
+      spec_array3_close_array_group (SEArrayGroup?._0 s2);
+      array_group_disjoint e fuel' true t1' t2'
+    end
     else true
   | TElem TBool, TElem TFalse
   | TElem TBool, TElem TTrue -> false
@@ -452,6 +499,7 @@ let rec typ_disjoint
 and array_group_disjoint
   (e: env)
   (fuel: nat)
+  (close: bool)
   (t1: array_group)
   (t2: array_group)
 : Pure bool
@@ -462,8 +510,10 @@ and array_group_disjoint
   (ensures (fun b ->
     array_group_bounded e.e_semenv.se_bound t1 /\
     array_group_bounded e.e_semenv.se_bound t2 /\
-    (b == true ==> Spec.array_group3_disjoint (array_group_sem e.e_semenv t1) (array_group_sem e.e_semenv t2))
-  ))
+    (b == true ==> Spec.array_group3_disjoint
+      (spec_maybe_close_array_group (array_group_sem e.e_semenv t1) close)
+      (spec_maybe_close_array_group (array_group_sem e.e_semenv t2) close)
+  )))
   (decreases fuel)
 = if fuel = 0
   then false
@@ -474,11 +524,26 @@ and array_group_disjoint
     if SEArrayGroup? s1
     then
       let t1' = e.e_array_group i1 in
-      array_group_disjoint e fuel' (t1' `List.Tot.append` q1) t2
+      array_group_disjoint e fuel' close (t1' `List.Tot.append` q1) t2
     else true
   | _, (_, TAAtom (TADef _)) :: _ ->
-    array_group_disjoint e fuel' t2 t1
+    array_group_disjoint e fuel' close t2 t1
+  | (name, TAZeroOrMore t1') :: q, _ ->
+    if not (array_group_disjoint e fuel' close q t2)
+    then false
+    else if array_group_disjoint e fuel' false [name, TAAtom t1'] t2 // loop-free shortcut, but will miss things like "disjoint? (a*) (ab)"
+    then true
+    else array_group_disjoint e fuel' close ((name, TAAtom t1') :: (name, TAZeroOrMore t1') :: q) t2 // general rule, possible source of loops
+  | _, (_, TAZeroOrMore _) :: _ ->
+    array_group_disjoint e fuel' close t2 t1
   | [], [] -> false
+  | _, [] -> close
   | [], _ ->
-    array_group_disjoint e fuel' t2 t1
-  | _ -> false
+    array_group_disjoint e fuel' close t2 t1
+  | (_, TAAtom (TAElem t1')) :: q1, (_, TAAtom (TAElem t2')) :: q2 ->
+    if typ_disjoint e fuel' (TElem t1') (TElem t2')
+    then true
+    else if typ_equiv e fuel' (TElem t1') (TElem t2')
+    then array_group_disjoint e fuel' close q1 q2
+    else false
+//  | _ -> false
