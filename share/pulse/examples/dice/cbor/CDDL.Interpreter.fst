@@ -474,7 +474,22 @@ let spec_array_group3_zero_or_more_equiv #b
   (requires Spec.array_group3_equiv a1 a2)
   (ensures Spec.array_group3_equiv (Spec.array_group3_zero_or_more a1) (Spec.array_group3_zero_or_more a2))
   [SMTPat (Spec.array_group3_equiv (Spec.array_group3_zero_or_more a1) (Spec.array_group3_zero_or_more a2))]
-= admit ()
+= assert (Spec.array_group3_equiv a1 a2);
+  let rec phi
+    (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b })
+  : Lemma
+    (ensures (Spec.array_group3_zero_or_more a1 l == Spec.array_group3_zero_or_more a2 l))
+    (decreases (List.Tot.length l))
+  = assert (a1 l == a2 l);
+    match a1 l with
+    | None -> ()
+    | Some (l1, l2) ->
+      List.Tot.append_length l1 l2;
+      if Nil? l1
+      then ()
+      else phi l2
+  in
+  Classical.forall_intro phi
 
 // This is nothing more than delta-equivalence
 
