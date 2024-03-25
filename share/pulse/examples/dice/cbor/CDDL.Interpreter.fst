@@ -14,12 +14,12 @@ type elem_typ =
 | TUndefined
 | TUIntLiteral: (v: U64.t) -> elem_typ
 | TArray: (i: nat) -> elem_typ
+| TMap: (i: nat) -> elem_typ
 
 type typ =
 | TElem: (t: elem_typ) -> typ
 | TChoice: (l: list elem_typ) -> typ
 | TTag: (tag: U64.t) -> (i: elem_typ) -> typ
-// | TMap
 
 type atom_array_group =
 | TADef: (i: nat) -> atom_array_group
@@ -38,6 +38,7 @@ noeq
 type semenv_elem =
 | SEType of Spec.typ
 | SEArrayGroup of Spec.array_group3 None
+| SEMapGroup of Spec.map_group None
 
 noeq
 type semenv = {
@@ -60,6 +61,14 @@ let se_array_group
 = match se.se_env i with
   | SEArrayGroup t -> t
   | _ -> Spec.array_group3_always_false
+
+let se_map_group
+  (se: semenv)
+  (i: nat_up_to se.se_bound)
+: Tot (Spec.map_group None)
+= match se.se_env i with
+  | SEMapGroup t -> t
+  | _ -> Spec.map_group_empty
 
 let semenv_included (s1 s2: semenv) : Tot prop =
   s1.se_bound <= s2.se_bound /\
@@ -88,6 +97,7 @@ let elem_typ_bounded
 = match t with
   | TDef i -> i < bound
   | TArray j -> j < bound
+  | TMap j -> j < bound
   | _ -> true
 
 let elem_typ_sem
@@ -99,6 +109,7 @@ let elem_typ_sem
 = match t with
   | TDef i -> se_typ env i
   | TArray i -> Spec.t_array3 (se_array_group env i)
+  | TMap i -> Spec.t_map (se_map_group env i)
   | TFalse -> Spec.t_false
   | TTrue -> Spec.t_true
   | TBool -> Spec.t_bool
@@ -431,6 +442,13 @@ let rec array_group_sem_append
   | [_] -> ()
   | _ :: q1 -> array_group_sem_append env q1 t2
 
+let map_group = Spec.map_group None // TODO: add syntax support
+let map_group_bounded (_: nat) (x: map_group) : Tot bool = true // TODO
+let map_group_sem (_: semenv) (x: map_group) : Pure (Spec.map_group None)
+  (requires True)
+  (ensures (fun _ -> True))
+= x // TODO
+
 noeq
 type env = {
   e_semenv: semenv;
@@ -441,6 +459,10 @@ type env = {
   e_array_group: (i: nat_up_to e_semenv.se_bound { SEArrayGroup? (e_semenv.se_env i) } -> (a: array_group {
     array_group_bounded e_semenv.se_bound a /\
     Spec.array_group3_equiv (array_group_sem e_semenv a) (se_array_group e_semenv i)
+  }));
+  e_map_group: (i: nat_up_to e_semenv.se_bound { SEMapGroup? (e_semenv.se_env i) } -> (a: map_group {
+    map_group_bounded e_semenv.se_bound a /\
+    Spec.map_group_equiv (map_group_sem e_semenv a) (se_map_group e_semenv i)
   }));
 }
 
@@ -468,6 +490,9 @@ let env_extend_array_group
       let a' : array_group = if i = e.e_semenv.se_bound then a else e.e_array_group i in
       array_group_sem_included e.e_semenv se' a';
       a'
+    );
+    e_map_group = (fun i ->
+      e.e_map_group i // TODO
     );
   }
 
@@ -547,6 +572,7 @@ let rec typ_equiv
       let t2' = e.e_array_group i2 in
       array_group_equiv e fuel' t1' t2'
     else false
+  | TElem (TMap i1), TElem (TMap i2) -> i1 = i2 // TODO
   | _ -> false
 
 and array_group_equiv
@@ -669,6 +695,7 @@ let rec typ_disjoint
   | TElem TBool, TElem TTrue -> false
   | _, TElem TBool ->
     typ_disjoint e fuel' t2 t1
+  | TElem (TMap _), TElem (TMap _) -> false // TODO
   | TElem e1, TElem e2 -> e1 <> e2
 
 and array_group_disjoint
