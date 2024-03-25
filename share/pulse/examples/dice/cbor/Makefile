@@ -9,7 +9,7 @@ SRC_DIRS := extern
 ifneq (,$(wildcard ../_output/cache))
   INCLUDE_PATHS += ../_output/cache
 endif
-OTHERFLAGS += --cmi --already_cached '*,-CBOR,-CDDL,-CBOR.Pulse.Type,-CDDLExtractionTest'
+OTHERFLAGS += --cmi --already_cached '*,-CBOR,-CDDL,-CBOR.Pulse.Type,-CDDLExtractionTest,-COSE'
 
 FSTAR_DEP_OPTIONS=--extract '* -FStar.Tactics -FStar.Reflection -Steel -Pulse +Pulse.Class +Pulse.Lib -Pulse.Lib.Core'
 KRML=$(KRML_HOME)/krml $(KRML_OPTS)
