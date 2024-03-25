@@ -865,12 +865,67 @@ let rec spec_array_group_splittable_fold_gen
       (array_group_sem e (g1' `List.Tot.append` (g2 `List.Tot.append` g3)))
     )
 
-let array_group_concat_unique_strong
+let spec_array_group3_concat_unique_strong'_concat_left
+  (#b: _)
+  (g1 g2 g3: Spec.array_group3 b)
+: Lemma
+  (requires
+    Spec.array_group3_concat_unique_strong' g1 (Spec.array_group3_concat g2 g3) /\
+    Spec.array_group3_concat_unique_strong' g2 g3 /\
+    Spec.array_group3_concat_unique_weak g1 g2
+  )
+  (ensures
+    Spec.array_group3_concat_unique_strong' (Spec.array_group3_concat g1 g2) g3
+  )
+= let a1 = Spec.array_group3_concat g1 g2 in
+  let a3 = g3 in
+  let prf
+    (l1 l2:
+      (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b })
+    )
+  : Lemma
+    (Some? (a3 l2) ==> (a1 (l1 `List.Tot.append` l2) == Some (l1, l2) <==> a1 l1 == Some (l1, [])))
+  = if Some? (a3 l2)
+    then begin
+      if FStar.StrongExcludedMiddle.strong_excluded_middle (a1 (l1 `List.Tot.append` l2) == Some (l1, l2))
+      then assert (a1 l1 == Some (l1, []))
+      else if FStar.StrongExcludedMiddle.strong_excluded_middle (a1 l1 == Some (l1, []))
+      then begin
+        let Some (lg1, lg2) = g1 l1 in
+        assert (g1 lg1 == Some (lg1, []));
+        assert (g2 lg2 == Some (lg2, []));
+        List.Tot.append_assoc lg1 lg2 l2
+      end
+    end
+  in
+  Classical.forall_intro_2 prf
+
+let spec_array_group3_concat_unique_strong_concat_left
+  (#b: _)
+  (g1 g2 g3: Spec.array_group3 b)
+: Lemma
+  (requires
+    Spec.array_group3_concat_unique_strong g1 (Spec.array_group3_concat g2 g3) /\
+    Spec.array_group3_concat_unique_strong g2 g3 /\
+    Spec.array_group3_concat_unique_weak g1 g2
+  )
+  (ensures
+    Spec.array_group3_concat_unique_strong (Spec.array_group3_concat g1 g2) g3
+  )
+= spec_array_group3_concat_unique_strong'_concat_left g1 g2 g3
+
+#restart-solver
+let rec array_group_concat_unique_strong
   (e: env)
+  (e_thr: nat {
+    forall (i: nat_up_to e.e_semenv.se_bound { i < e_thr /\ SEArrayGroup? (e.e_semenv.se_env i) }) .
+      spec_array_group_splittable e.e_semenv (e.e_array_group i)
+  })
+  (fuel: nat)
   (a1 a2: array_group)
 : Pure bool
   (requires
-    array_group_bounded e.e_semenv.se_bound a1 /\
+    spec_array_group_splittable e.e_semenv a1 /\
     array_group_bounded e.e_semenv.se_bound a2
   )
   (ensures fun b ->
@@ -878,9 +933,52 @@ let array_group_concat_unique_strong
       (array_group_sem e.e_semenv a1)
       (array_group_sem e.e_semenv a2)
   )
-= admit ()
-
-#restart-solver
+  (decreases fuel)
+= if fuel = 0
+  then false
+  else let fuel' : nat = fuel - 1 in
+  match a1, a2 with
+  | [], _ -> true
+  | (n1, t1l) :: t1r :: q, _ ->
+    let a1' = t1r :: q in
+    if not (array_group_concat_unique_strong e e_thr fuel' a1' a2)
+    then false
+    else if not (array_group_concat_unique_strong e e_thr fuel' [n1, t1l] (a1' `List.Tot.append` a2))
+    then false
+    else begin
+      spec_array_group3_concat_unique_strong_concat_left (elem_array_group_sem e.e_semenv t1l) (array_group_sem e.e_semenv a1') (array_group_sem e.e_semenv a2);
+      true
+    end
+  | [_, TAAtom (TAElem _)], _ -> true
+  | [n1, TAAtom (TADef i)], _ ->
+    if SEArrayGroup? (e.e_semenv.se_env i)
+    then
+      if i >= e_thr
+      then false
+      else
+        let t1 = e.e_array_group i in
+        array_group_concat_unique_strong e e_thr fuel' t1 a2
+    else true
+  | _, (n2, TAAtom (TADef i)) :: a2' ->
+    if SEArrayGroup? (e.e_semenv.se_env i)
+    then
+      let t1 = e.e_array_group i in
+      array_group_concat_unique_strong e e_thr fuel' a1 (t1 `List.Tot.append` a2')
+    else true
+  | [n1, TAZeroOrMore t1], _ ->
+    if not (array_group_disjoint e fuel false [n1, TAAtom t1] a2)
+    then false
+    else if not (array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] [n1, TAAtom t1])
+    then false
+    else if not (array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2)
+    then false
+    else begin
+      Spec.array_group3_concat_unique_strong_zero_or_more_left
+        (atom_array_group_sem e.e_semenv t1)
+        (array_group_sem e.e_semenv a2);
+      true
+    end
+//  | _ -> false
 
 let rec array_group_splittable
   (e: env)
@@ -945,7 +1043,7 @@ let rec array_group_splittable
   | [n1, TAZeroOrMore t1], _ ->
     if not (array_group_disjoint e fuel false [n1, TAAtom t1] a2)
     then false
-    else if not (array_group_concat_unique_strong e [n1, TAAtom t1] a1)
+    else if not (array_group_concat_unique_strong e e_thr fuel [n1, TAAtom t1] [n1, TAAtom t1])
     then false
     else if not (array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2)
     then false
@@ -956,3 +1054,5 @@ let rec array_group_splittable
       true
     end
 //  | _ -> false
+
+#pop-options
