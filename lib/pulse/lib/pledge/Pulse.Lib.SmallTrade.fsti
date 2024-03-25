@@ -70,3 +70,18 @@ val trade_sub_inv
 : stt_ghost unit
     (trade #os1 hyp concl)
     (fun _ -> trade #os2 hyp concl)
+
+val trade_map
+  (#os : invlist)
+  (p q r : vprop)
+  (f : unit -> stt_ghost unit q (fun _ -> r))
+: stt_ghost unit
+    (trade #os p q)
+    (fun _ -> trade #os p r)
+
+val trade_compose
+  (#os : invlist)
+  (p q r : vprop)
+: stt_ghost unit
+    (trade #os p q ** trade #os q r)
+    (fun _ -> trade #os p r)
