@@ -16,6 +16,7 @@
 module PulseCore.Heap2
 open FStar.Ghost
 open FStar.PCM
+open PulseCore.Tags
 module T = FStar.Tactics
 module H = PulseCore.Heap
 /// This module defines the behavior of a structured heap where each memory cell is governed by
@@ -43,9 +44,7 @@ val concrete (h:heap u#a) : H.heap u#a
 val ghost (h:heap u#a) : erased (H.heap u#a)
 val upd_ghost_heap (h0:heap) (h1:erased heap { concrete h0 == concrete h1 })
   : h2:heap { h2 == reveal h1 }
-type tag =
-  | GHOST
-  | CONCRETE
+
 (* An empty heap *)
 val empty_heap : heap u#a
 
@@ -109,6 +108,10 @@ val join_associative (h0 h1 h2:heap)
       (disjoint h0 h1 /\
        disjoint (join h0 h1) h2 /\
        join h0 (join h1 h2) == join (join h0 h1) h2))
+
+val join_empty (h:heap)
+  : Lemma (disjoint h empty_heap /\
+           join h empty_heap == h)
 
 (**** Separation logic over heaps *)
 
@@ -427,10 +430,6 @@ let pre_action (#[T.exact (`trivial_pre)]pre:heap -> prop)
   - not allocating any new references;
   - preserving the validity of any heap proposition affecting any frame
 *)
-type mutability =
-  | ONLY_GHOST
-  | IMMUTABLE
-  | MUTABLE
 let no_allocs : option tag = None
 let does_not_allocate (t:tag) (h0 h1:heap) =
     forall ctr. free_above_addr t h0 ctr ==> free_above_addr t h1 ctr

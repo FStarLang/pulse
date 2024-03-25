@@ -20,11 +20,15 @@ open Pulse.Syntax.Naming
 open Pulse.Typing
 module RU = Pulse.RuntimeUtils
 module T = FStar.Tactics.V2
+module R = FStar.Reflection.V2
+module RT = FStar.Reflection.Typing  
+module C = FStar.Stubs.TypeChecker.Core
+open FStar.Ghost
+
 
 val admit_comp_typing (g:env) (c:comp_st)
   : comp_typing_u g c
 
-module RT = FStar.Reflection.Typing  
 let rt_equiv_typing (#g:_) (#t0 #t1:_) (d:RT.equiv g t0 t1)
                     (#k:_)
                     (d1:Ghost.erased (RT.tot_typing g t0 k))
@@ -71,9 +75,6 @@ val pure_typing_inversion (#g:env) (#p:term) (_:tot_typing g (tm_pure p) tm_vpro
    : tot_typing g p (tm_fstar FStar.Reflection.Typing.tm_prop Range.range_0)
 
 module RT = FStar.Reflection.Typing
-module R = FStar.Reflection.V2
-module C = FStar.Stubs.TypeChecker.Core
-open FStar.Ghost
 val typing_correctness
   (#g:R.env) 
   (#t:R.term)

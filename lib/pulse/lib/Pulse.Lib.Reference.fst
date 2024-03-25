@@ -39,7 +39,7 @@ ensures pts_to r v
   r
 }
 ```
-let alloc = alloc'
+let alloc v = alloc' v
 
 ```pulse
 fn read (#a:Type) (r:ref a) (#n:erased a) (#p:perm)
@@ -53,7 +53,7 @@ ensures pts_to r #p n ** pure (eq2 #a (reveal n) x)
   U.downgrade_val k
 }
 ```
-let ( ! ) #a = read #a
+let ( ! ) #a r #n #p = read #a r #n #p
 
 ```pulse
 fn write (#a:Type) (r:ref a) (x:a) (#n:erased a)

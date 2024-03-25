@@ -23,10 +23,14 @@ module RU = Pulse.RuntimeUtils
 open FStar.List.Tot
 
 let u_two = RT.(u_succ (u_succ u_zero))
-let u_max_two u = (RT.u_max u_two u)
+let u_three = RT.(u_succ (u_succ (u_succ u_zero)))
+let u_atomic_ghost u = (RT.u_max u_three u)
 
 let pulse_lib_core = ["Pulse"; "Lib"; "Core"]
 let mk_pulse_lib_core_lid s = pulse_lib_core@[s]
+
+let pulse_lib_noninformative = ["Pulse"; "Lib"; "NonInformative"]
+let mk_pulse_lib_noninformative_lid s = pulse_lib_noninformative@[s]
 
 let tun = R.pack_ln R.Tv_Unknown
 let unit_lid = R.unit_lid
@@ -114,6 +118,7 @@ let mk_pure (p:R.term) : R.term =
   pack_ln (Tv_App t (p, Q_Explicit))
 
 let uzero = R.pack_universe (R.Uv_Zero)
+let uone = R.pack_universe (R.Uv_Succ uzero)
 
 let pulse_lib_reference = ["Pulse"; "Lib"; "Reference"]
 let mk_pulse_lib_reference_lid s = pulse_lib_reference@[s]
@@ -301,13 +306,12 @@ let remove_inv_tm (p is i : R.term) : R.term =
   let h = R.pack_ln (R.Tv_FVar (R.pack_fv remove_inv_lid)) in
   R.mk_app h [im p; ex is; ex i]
 
-let non_informative_witness_lid = mk_pulse_lib_core_lid "non_informative_witness"
-let non_informative_witness_rt (u:R.universe) (a:R.term) : R.term =
+let non_informative_lid = mk_pulse_lib_noninformative_lid "non_informative"
+let non_informative_rt (u:R.universe) (a:R.term) : R.term =
   let open R in
-  let t = pack_ln (Tv_UInst (pack_fv non_informative_witness_lid) [u]) in
+  let t = pack_ln (Tv_UInst (pack_fv non_informative_lid) [u]) in
   let t = pack_ln (Tv_App t (a, Q_Explicit)) in
   t
-
 
 let stt_vprop_equiv_fv =
   R.pack_fv (mk_pulse_lib_core_lid "vprop_equiv")

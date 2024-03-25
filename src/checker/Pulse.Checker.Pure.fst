@@ -124,11 +124,11 @@ let rtb_core_check_term_at_type g f e t =
   let res = RU.with_context (get_context g) (fun _ -> RTB.core_check_term_at_type f e t) in
   res
 
-let mk_squash t =
+let mk_squash0 t =
   let sq : R.term = pack_ln (Tv_UInst (pack_fv squash_qn) [u_zero]) in
   mk_e_app sq [t]
 
-let squash_prop_validity_token f p (t:prop_validity_token f (mk_squash p))
+let squash_prop_validity_token f p (t:prop_validity_token f (mk_squash0 p))
   : prop_validity_token f p
   = admit(); t
 
@@ -138,7 +138,7 @@ let rtb_check_prop_validity (g:env) (sync:bool) (f:_) (p:_) =
     Printf.sprintf "(%s) Calling check_prop_validity on %s"
           (T.range_to_string (RU.range_of_term p))
           (T.term_to_string p));
-  let sp = mk_squash p in
+  let sp = mk_squash0 p in
   let res, issues = 
     RU.with_context (get_context g) 
     (fun _ -> 
@@ -466,83 +466,46 @@ let check_vprop_with_core (g:env)
     (push_context_no_range g "check_vprop_with_core") t T.E_Total tm_vprop
 
   
-let pulse_lib_gref = ["Pulse"; "Lib"; "GhostReference"]
-let mk_pulse_lib_gref_lid s = pulse_lib_gref@[s]
-let gref_lid = mk_pulse_lib_gref_lid "ref"
+module WT = Pulse.Lib.Core.Typing
+module Metatheory = Pulse.Typing.Metatheory.Base
 
-let pulse_lib_higher_gref = ["Pulse"; "Lib"; "HigherGhostReference"]
-let mk_pulse_lib_higher_gref_lid s = pulse_lib_higher_gref@[s]
-let higher_gref_lid = mk_pulse_lib_higher_gref_lid "ref"
+let non_informative_class_typing
+  (g:env) (u:universe) (ty:typ) (ty_typing : universe_of g ty u)
+  : my_erased (typing_token (elab_env g) (elab_term <| non_informative_class u ty) (E_Total, R.pack_ln (R.Tv_Type u)))
+  = E (magic())
 
-let try_get_non_informative_witness g u t
-  : T.Tac (option (non_informative_t g u t))
-  = let eopt =
-      let ropt = is_fvar_app t in
-      match ropt with
-      | Some (l, us, _, arg_opt) ->
-        if l = R.unit_lid
-        then Some (tm_fvar (as_fv (mk_pulse_lib_core_lid "unit_non_informative")))
-        else if l = R.prop_qn
-        then Some (tm_fvar (as_fv (mk_pulse_lib_core_lid "prop_non_informative")))
-        else if l = R.squash_qn && Some? arg_opt
-        then Some (tm_pureapp
-                     (tm_uinst (as_fv (mk_pulse_lib_core_lid "squash_non_informative")) us)
-                     None
-                     (Some?.v arg_opt))
-        else if l = erased_lid && Some? arg_opt
-        then Some (tm_pureapp
-                     (tm_uinst (as_fv (mk_pulse_lib_core_lid "erased_non_informative")) us)
-                     None
-                     (Some?.v arg_opt))
-        else if l = gref_lid && Some? arg_opt
-        then Some (tm_pureapp
-                     (tm_uinst (as_fv (mk_pulse_lib_gref_lid "gref_non_informative")) us)
-                     None
-                     (Some?.v arg_opt))
-        else if l = higher_gref_lid && Some? arg_opt
-        then Some (tm_pureapp
-                     (tm_uinst (as_fv (mk_pulse_lib_higher_gref_lid "gref_non_informative")) us)
-                     None
-                     (Some?.v arg_opt))
-        else None
-      | _ ->
-        // ghost_pcm_ref #a p
-        let is_ghost_pcm_ref () =
-          let ropt = is_pure_app t in
-          match ropt with
-          | None -> None
-          | Some (t, _, arg2) ->
-            let ropt = is_fvar_app t in
-            match ropt with
-            | None -> None
-            | Some (l, us, _, arg1_opt) ->
-              if l = mk_pulse_lib_core_lid "ghost_pcm_ref" &&
-                 Some? arg1_opt
-              then let t = tm_pureapp
-                     (tm_uinst (as_fv (mk_pulse_lib_core_lid "ghost_pcm_ref_non_informative")) us)
-                     None
-                     (Some?.v arg1_opt) in
-                   let t = tm_pureapp t None arg2 in
-                   Some t
-              else None
-        in
-        is_ghost_pcm_ref ()
+(* This function attempts to construct a dictionary for `NonInformative.non_informative ty`.
+To do so, we simply create that constraint (and prove it's well-typed), and then
+call the tcresolve typeclass resolution tactic on it to obtain a dictionary and
+a proof of typing for the dictionary. *)
+let try_get_non_informative_witness g u ty ty_typing
+  : T.Tac (option (non_informative_t g u ty))
+  = let goal = non_informative_class u ty in
+    let r_goal = elab_term goal in
+    let r_env = elab_env g in
+    let constraint_typing = non_informative_class_typing g u ty ty_typing in
+    let goal_typing_tok : squash (typing_token r_env r_goal (E_Total, R.pack_ln (R.Tv_Type u))) =
+      match constraint_typing with | E tok -> Squash.return_squash tok
     in
-    match eopt with
-    | None -> None
-    | Some e ->
-      let tok =
-        check_term
-          (push_context_no_range g "get_noninformative_witness")
-          e
-          T.E_Total
-          (non_informative_witness_t u t)
-      in
-      Some tok
+    let r = T.call_subtac r_env FStar.Tactics.Typeclasses.tcresolve u r_goal in
+    match r with
+    | None, issues ->
+      T.log_issues issues;
+      None
+    | Some r_dict, _ -> (
+      // T.print (Printf.sprintf "Resolved to %s" (T.term_to_string r_dict));
+      assert (typing_token r_env r_dict (E_Total, r_goal));
+      assume (~(Tv_Unknown? (inspect_ln r_dict)));
+      let dict = with_range (Tm_FStar r_dict) ty.range in
+      let r_dict_typing_token : squash (typing_token r_env r_dict (E_Total, r_goal)) = () in
+      let r_dict_typing : RT.typing r_env r_dict (E_Total, r_goal) = RT.T_Token _ _ _ () in
+      let dict_typing : tot_typing g dict (non_informative_class u ty) = E r_dict_typing in
+      Some (| dict, dict_typing |)
+    )
 
-let get_non_informative_witness g u t
+let get_non_informative_witness g u t t_typing
   : T.Tac (non_informative_t g u t)
-  = match try_get_non_informative_witness g u t with
+  = match try_get_non_informative_witness g u t t_typing with
     | None ->
       let open Pulse.PP in
       fail_doc g (Some t.range) [
@@ -550,7 +513,6 @@ let get_non_informative_witness g u t
           ^/^ pp t
       ]
     | Some e -> e
-    
 
 let try_check_prop_validity (g:env) (p:term) (_:tot_typing g p tm_prop)
   : T.Tac (option (Pulse.Typing.prop_validity g p))
