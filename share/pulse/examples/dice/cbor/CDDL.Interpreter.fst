@@ -582,7 +582,7 @@ and array_group_equiv
 let spec_typ_disjoint (a1 a2: Spec.typ) : Tot prop
 = (forall (l: CBOR.Spec.raw_data_item) . ~ (a1 l /\ a2 l))
 
-#push-options "--z3rlimit 32"
+#push-options "--z3rlimit 64"
 
 #restart-solver
 let rec typ_disjoint
