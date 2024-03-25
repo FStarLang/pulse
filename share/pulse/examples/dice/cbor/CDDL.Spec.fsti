@@ -724,6 +724,11 @@ let array_group3_concat_unique_weak_concat_zero_or_more_right
   ))
 = ()
 
+#pop-options
+
+#push-options "--z3rlimit 32"
+#restart-solver
+
 let array_group3_concat_unique_weak_zero_or_more_left'
   #b (a1 a2: array_group3 b)
 : Lemma
