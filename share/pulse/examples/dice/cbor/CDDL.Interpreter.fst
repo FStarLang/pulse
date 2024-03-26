@@ -652,6 +652,23 @@ let env_extend_array_group
     )
 = env_extend_gen e new_name (SEArrayGroup (array_group_sem e.e_semenv a)) a
 
+[@@"opaque_to_smt"]
+let env_extend_map_group
+  (e: env)
+  (new_name: string)
+  (a: map_group)
+: Pure env
+    (requires map_group_bounded e.e_semenv.se_bound a /\
+      (~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))
+    )
+    (ensures fun e' ->
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      semenv_included e.e_semenv e'.e_semenv /\
+      SEMapGroup? (e'.e_semenv.se_env new_name) /\
+      e'.e_env new_name == a
+    )
+= env_extend_gen e new_name (SEMapGroup (map_group_sem e.e_semenv a)) a
+
 let spec_array_group3_zero_or_more_equiv #b
  (a1 a2: Spec.array_group3 b)
 : Lemma
