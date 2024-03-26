@@ -16,10 +16,26 @@ type elem_typ =
 | TArray: (i: string) -> elem_typ
 | TMap: (i: string) -> elem_typ
 
+noeq
 type typ =
 | TElem: (t: elem_typ) -> typ
 | TChoice: (l: list elem_typ) -> typ
 | TTag: (tag: U64.t) -> (i: elem_typ) -> typ
+| TEscapeHatch: (t: Spec.typ) -> typ
+
+let typ_eq
+  (t1 t2: typ)
+: Pure bool
+  (requires True)
+  (ensures fun b ->
+    b == true ==> t1 == t2
+  )
+= match t1, t2 with
+  | TElem t1, TElem t2 -> t1 = t2
+  | TChoice l1, TChoice l2 -> l1 = l2
+  | TTag tag1 i1, TTag tag2 i2 -> tag1 = tag2 && i1 = i2
+  | TEscapeHatch _, TEscapeHatch _ -> false
+  | _ -> false
 
 type atom_array_group =
 | TADef: (i: string) -> atom_array_group
@@ -246,6 +262,7 @@ let typ_bounded
   | TElem t -> elem_typ_bounded bound t
   | TChoice l -> sem_typ_choice_bounded bound l
   | TTag _tag t -> elem_typ_bounded bound t
+  | TEscapeHatch _ -> true
 
 let typ_bounded_incr
   (bound1 bound2: name_env)
@@ -270,6 +287,7 @@ let typ_sem
   | TElem t -> elem_typ_sem env t
   | TChoice l -> sem_typ_choice env l
   | TTag tag t -> Spec.t_tag tag (elem_typ_sem env t)
+  | TEscapeHatch t -> t
 
 let typ_sem_included (s1 s2: semenv) (t: typ) : Lemma
   (requires 
@@ -712,7 +730,7 @@ let rec typ_equiv
     (b == true ==> Spec.typ_equiv (typ_sem e.e_semenv t1) (typ_sem e.e_semenv t2))
   ))
   (decreases fuel)
-= if t1 = t2
+= if t1 `typ_eq` t2
   then true
   else if fuel = 0
   then false
@@ -727,6 +745,8 @@ let rec typ_equiv
     else false
   | _, TElem (TDef _) ->
     typ_equiv e fuel' t2 t1
+  | TEscapeHatch _, _
+  | _, TEscapeHatch _ -> false
   | TChoice [], TChoice [] -> true
   | TChoice (t1' :: q1'), TChoice (t2' :: q2') ->
     if typ_equiv e fuel' (TElem t1') (TElem t2')
@@ -846,6 +866,8 @@ let rec typ_disjoint
     else typ_disjoint e fuel' (TChoice q1') t2
   | _, TChoice _ ->
     typ_disjoint e fuel' t2 t1
+  | TEscapeHatch _, _
+  | _, TEscapeHatch _ -> false
   | TTag tag1 t1, TTag tag2 t2 ->
     if tag1 <> tag2
     then true
