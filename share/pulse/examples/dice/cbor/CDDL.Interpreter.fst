@@ -6,15 +6,15 @@ module Spec = CDDL.Spec
 module U64 = FStar.UInt64
 
 type elem_typ =
-| TDef: (i: nat) -> elem_typ
+| TDef: (i: string) -> elem_typ
 | TFalse
 | TTrue
 | TBool
 | TNil
 | TUndefined
 | TUIntLiteral: (v: U64.t) -> elem_typ
-| TArray: (i: nat) -> elem_typ
-| TMap: (i: nat) -> elem_typ
+| TArray: (i: string) -> elem_typ
+| TMap: (i: string) -> elem_typ
 
 type typ =
 | TElem: (t: elem_typ) -> typ
@@ -22,7 +22,7 @@ type typ =
 | TTag: (tag: U64.t) -> (i: elem_typ) -> typ
 
 type atom_array_group =
-| TADef: (i: nat) -> atom_array_group
+| TADef: (i: string) -> atom_array_group
 | TAElem: (t: elem_typ) -> atom_array_group
 
 type elem_array_group =
@@ -32,7 +32,11 @@ type elem_array_group =
 
 type array_group = list (string & elem_array_group)
 
-let nat_up_to (n: nat) = (x: nat { x < n })
+let string : eqtype = string
+
+type name_env = FStar.Set.set string
+
+let name (e: name_env) : eqtype = (s: string { FStar.Set.mem s e })
 
 noeq
 type semenv_elem =
@@ -42,13 +46,21 @@ type semenv_elem =
 
 noeq
 type semenv = {
-  se_bound: nat;
-  se_env: (nat_up_to se_bound -> semenv_elem);
+  se_bound: name_env;
+  se_env: (name se_bound -> semenv_elem);
+}
+
+[@@"opaque_to_smt"] irreducible
+let name_empty_elim (t: Type) (x: name FStar.Set.empty) : Tot t = false_elim ()
+
+let empty_semenv = {
+  se_bound = FStar.Set.empty;
+  se_env = name_empty_elim _;
 }
 
 let se_typ
   (se: semenv)
-  (i: nat_up_to se.se_bound)
+  (i: name se.se_bound)
 : Tot Spec.typ
 = match se.se_env i with
   | SEType t -> t
@@ -56,7 +68,7 @@ let se_typ
 
 let se_array_group
   (se: semenv)
-  (i: nat_up_to se.se_bound)
+  (i: name se.se_bound)
 : Tot (Spec.array_group3 None)
 = match se.se_env i with
   | SEArrayGroup t -> t
@@ -64,40 +76,89 @@ let se_array_group
 
 let se_map_group
   (se: semenv)
-  (i: nat_up_to se.se_bound)
+  (i: name se.se_bound)
 : Tot (Spec.map_group None)
 = match se.se_env i with
   | SEMapGroup t -> t
   | _ -> Spec.map_group_empty
 
 let semenv_included (s1 s2: semenv) : Tot prop =
-  s1.se_bound <= s2.se_bound /\
-  (forall (i: nat_up_to s1.se_bound) . s1.se_env i == s2.se_env i)
+  s1.se_bound `FStar.Set.subset` s2.se_bound /\
+  (forall (i: name s1.se_bound) . s1.se_env i == s2.se_env i)
 
 [@@"opaque_to_smt"]
-let semenv_extend_array_group
+let semenv_extend_gen
   (se: semenv)
-  (a: Spec.array_group3 None)
+  (new_name: string)
+  (a: semenv_elem)
 : Pure semenv
-    (requires True)
-    (ensures fun se' ->
-      se'.se_bound = se.se_bound + 1 /\
-      semenv_included se se' /\
-      se'.se_env se.se_bound == SEArrayGroup a
+    (requires
+      (~ (FStar.Set.mem new_name se.se_bound))
     )
-= {
-    se_bound = se.se_bound + 1;
-    se_env = (fun i -> if i = se.se_bound then SEArrayGroup a else se.se_env i);
+    (ensures fun se' ->
+      se'.se_bound == se.se_bound `FStar.Set.union` FStar.Set.singleton new_name /\
+      semenv_included se se' /\
+      se'.se_env new_name == a
+    )
+= let se_bound' = se.se_bound `FStar.Set.union` FStar.Set.singleton new_name in
+  {
+    se_bound = se_bound';
+    se_env = (fun (i: name se_bound') -> if i = new_name then a else se.se_env i);
   }
 
+let semenv_extend_typ
+  (se: semenv)
+  (new_name: string)
+  (a: Spec.typ)
+: Pure semenv
+    (requires
+      (~ (FStar.Set.mem new_name se.se_bound))
+    )
+    (ensures fun se' ->
+      se'.se_bound == se.se_bound `FStar.Set.union` FStar.Set.singleton new_name /\
+      semenv_included se se' /\
+      se'.se_env new_name == SEType a
+    )
+= semenv_extend_gen se new_name (SEType a)
+
+let semenv_extend_array_group
+  (se: semenv)
+  (new_name: string)
+  (a: Spec.array_group3 None)
+: Pure semenv
+    (requires
+      (~ (FStar.Set.mem new_name se.se_bound))
+    )
+    (ensures fun se' ->
+      se'.se_bound == se.se_bound `FStar.Set.union` FStar.Set.singleton new_name /\
+      semenv_included se se' /\
+      se'.se_env new_name == SEArrayGroup a
+    )
+= semenv_extend_gen se new_name (SEArrayGroup a)
+
+let semenv_extend_map_group
+  (se: semenv)
+  (new_name: string)
+  (a: Spec.map_group None)
+: Pure semenv
+    (requires
+      (~ (FStar.Set.mem new_name se.se_bound))
+    )
+    (ensures fun se' ->
+      se'.se_bound == se.se_bound `FStar.Set.union` FStar.Set.singleton new_name /\
+      semenv_included se se' /\
+      se'.se_env new_name == SEMapGroup a
+    )
+= semenv_extend_gen se new_name (SEMapGroup a)
+
 let elem_typ_bounded
-  (bound: nat)
+  (bound: name_env)
   (t: elem_typ)
 : Tot bool
 = match t with
-  | TDef i -> i < bound
-  | TArray j -> j < bound
-  | TMap j -> j < bound
+  | TDef i -> i `FStar.Set.mem` bound
+  | TArray j -> j `FStar.Set.mem` bound
+  | TMap j -> j `FStar.Set.mem` bound
   | _ -> true
 
 let elem_typ_sem
@@ -144,17 +205,17 @@ let rec sem_typ_choice
   | a :: q -> elem_typ_sem env a `Spec.t_choice` sem_typ_choice env q
 
 let sem_typ_choice_bounded
-  (bound: nat)
+  (bound: name_env)
   (l: list elem_typ)
 : Tot bool
 = List.Tot.for_all (elem_typ_bounded bound) l
 
 let rec sem_typ_choice_bounded_incr
-  (bound1 bound2: nat)
+  (bound1 bound2: name_env)
   (l: list elem_typ)
 : Lemma
   (requires
-    bound1 <= bound2 /\
+    bound1 `FStar.Set.subset` bound2 /\
     sem_typ_choice_bounded bound1 l
   )
   (ensures sem_typ_choice_bounded bound2 l)
@@ -180,7 +241,7 @@ let rec sem_typ_choice_included (s1 s2: semenv) (t: list elem_typ) : Lemma
   | _ :: q -> sem_typ_choice_included s1 s2 q
 
 let typ_bounded
-  (bound: nat)
+  (bound: name_env)
   (t: typ)
 : Tot bool
 = match t with
@@ -189,11 +250,11 @@ let typ_bounded
   | TTag _tag t -> elem_typ_bounded bound t
 
 let typ_bounded_incr
-  (bound1 bound2: nat)
+  (bound1 bound2: name_env)
   (t: typ)
 : Lemma
   (requires
-    bound1 <= bound2 /\
+    bound1 `FStar.Set.subset` bound2 /\
     typ_bounded bound1 t
   )
   (ensures typ_bounded bound2 t)
@@ -227,15 +288,26 @@ let typ_sem_included (s1 s2: semenv) (t: typ) : Lemma
   | _ -> ()
 
 let atom_array_group_bounded
-  (bound: nat)
+  (bound: name_env)
   (t: atom_array_group)
 : Tot bool
 = match t with
-  | TADef i -> i < bound
+  | TADef i -> i `FStar.Set.mem` bound
   | TAElem t -> elem_typ_bounded bound t
 
+let atom_array_group_bounded_incr
+  (bound1 bound2: name_env)
+  (t: atom_array_group)
+: Lemma
+  (requires
+    bound1 `FStar.Set.subset` bound2 /\
+    atom_array_group_bounded bound1 t
+  )
+  (ensures atom_array_group_bounded bound2 t)
+= ()
+
 let elem_array_group_bounded
-  (bound: nat)
+  (bound: name_env)
   (t: elem_array_group)
 : Tot bool
 = match t with
@@ -243,28 +315,45 @@ let elem_array_group_bounded
   | TAZeroOrMore t -> atom_array_group_bounded bound t
   | TAZeroOrOne t -> atom_array_group_bounded bound t
 
+#push-options "--ifuel 4"
+
+let elem_array_group_bounded_incr
+  (bound1 bound2: name_env)
+  (t: elem_array_group)
+: Lemma
+  (requires
+    bound1 `FStar.Set.subset` bound2 /\
+    elem_array_group_bounded bound1 t
+  )
+  (ensures elem_array_group_bounded bound2 t)
+= ()
+
 let array_group_bounded
-  (bound: nat)
+  (bound: name_env)
   (t: array_group)
 : Tot bool
 = List.Tot.for_all (elem_array_group_bounded bound) (List.Tot.map snd t)
 
 let rec array_group_bounded_incr
-  (bound1 bound2: nat)
+  (bound1 bound2: name_env)
   (t: array_group)
 : Lemma
   (requires
-    bound1 <= bound2 /\
+    bound1 `FStar.Set.subset` bound2 /\
     array_group_bounded bound1 t
   )
   (ensures array_group_bounded bound2 t)
   (decreases t)
 = match t with
   | [] -> ()
-  | _ :: q -> array_group_bounded_incr bound1 bound2 q
+  | (_, a) :: q ->
+    assert (elem_array_group_bounded bound2 a);
+    array_group_bounded_incr bound1 bound2 q
+
+#pop-options
 
 let array_group_bounded_append
-  (bound: nat)
+  (bound: name_env)
   (t1 t2: array_group)
 : Lemma
   (ensures
@@ -298,6 +387,8 @@ let elem_array_group_sem
   | TAZeroOrMore i -> Spec.array_group3_zero_or_more (atom_array_group_sem env i)
   | TAZeroOrOne i -> Spec.array_group3_zero_or_one (atom_array_group_sem env i)
 
+#push-options "--ifuel 4"
+
 let elem_array_group_sem_included (s1 s2: semenv) (t: elem_array_group) : Lemma
   (requires 
     semenv_included s1 s2 /\
@@ -309,6 +400,8 @@ let elem_array_group_sem_included (s1 s2: semenv) (t: elem_array_group) : Lemma
     elem_array_group_sem s2 t == elem_array_group_sem s1 t
   )
 = ()
+
+#pop-options
 
 let rec array_group_sem
   (env: semenv)
@@ -443,58 +536,123 @@ let rec array_group_sem_append
   | _ :: q1 -> array_group_sem_append env q1 t2
 
 let map_group = Spec.map_group None // TODO: add syntax support
-let map_group_bounded (_: nat) (x: map_group) : Tot bool = true // TODO
+let map_group_bounded (_: name_env) (x: map_group) : Tot bool = true // TODO
 let map_group_sem (_: semenv) (x: map_group) : Pure (Spec.map_group None)
   (requires True)
   (ensures (fun _ -> True))
 = x // TODO
 
+let env_elem0 (s: semenv_elem) : Type0 =
+  match s with
+  | SEType _ -> typ
+  | SEArrayGroup _ -> array_group
+  | SEMapGroup _ -> map_group
+
+let env_elem_prop (e_semenv: semenv) (s: semenv_elem) (x: env_elem0 s) : Tot prop =
+  match s with
+  | SEType phi ->
+    typ_bounded e_semenv.se_bound x /\
+    Spec.typ_equiv (typ_sem e_semenv x) phi
+  | SEArrayGroup phi ->
+    array_group_bounded e_semenv.se_bound x /\
+    Spec.array_group3_equiv (array_group_sem e_semenv x) phi
+  | SEMapGroup phi ->
+    map_group_bounded e_semenv.se_bound x /\
+    Spec.map_group_equiv (map_group_sem e_semenv x) phi
+
+let env_elem_prop_included (e1 e2: semenv) (s: semenv_elem) (x: env_elem0 s) : Lemma
+  (requires semenv_included e1 e2 /\
+    env_elem_prop e1 s x
+  )
+  (ensures env_elem_prop e2 s x)
+= match s with
+  | SEType _ -> typ_sem_included e1 e2 x
+  | SEArrayGroup _ -> array_group_sem_included e1 e2 x
+  | SEMapGroup _ -> () // TODO
+
+let env_elem (e_semenv: semenv) (s: semenv_elem) =
+  (x: env_elem0 s { env_elem_prop e_semenv s x })
+
 noeq
 type env = {
   e_semenv: semenv;
-  e_typ: (i: nat_up_to e_semenv.se_bound { SEType? (e_semenv.se_env i) } -> (t: typ { 
-    typ_bounded e_semenv.se_bound t /\
-    Spec.typ_equiv (typ_sem e_semenv t) (se_typ e_semenv i)
-  }));
-  e_array_group: (i: nat_up_to e_semenv.se_bound { SEArrayGroup? (e_semenv.se_env i) } -> (a: array_group {
-    array_group_bounded e_semenv.se_bound a /\
-    Spec.array_group3_equiv (array_group_sem e_semenv a) (se_array_group e_semenv i)
-  }));
-  e_map_group: (i: nat_up_to e_semenv.se_bound { SEMapGroup? (e_semenv.se_env i) } -> (a: map_group {
-    map_group_bounded e_semenv.se_bound a /\
-    Spec.map_group_equiv (map_group_sem e_semenv a) (se_map_group e_semenv i)
-  }));
+  e_env: (i: name e_semenv.se_bound) -> (env_elem e_semenv (e_semenv.se_env i));
 }
+
+[@@"opaque_to_smt"] irreducible // because of false_elim
+let e_env_empty (i: name FStar.Set.empty) : Tot (env_elem empty_semenv (empty_semenv.se_env i)) = false_elim ()
+
+[@@"opaque_to_smt"]
+let empty_env : (e: env {
+  e.e_semenv.se_bound == FStar.Set.empty
+}) = {
+  e_semenv = empty_semenv;
+  e_env = e_env_empty;
+}
+
+[@@"opaque_to_smt"]
+let env_extend_gen
+  (e: env)
+  (new_name: string)
+  (s: semenv_elem)
+  (x: env_elem e.e_semenv s)
+: Pure env
+    (requires
+      (~ (new_name `FStar.Set.mem` e.e_semenv.se_bound))
+    )
+    (ensures fun e' ->
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.Set.union` FStar.Set.singleton new_name /\
+      semenv_included e.e_semenv e'.e_semenv /\
+      e'.e_semenv.se_env new_name == s /\
+      e'.e_env new_name == x
+    )
+= let se' = semenv_extend_gen e.e_semenv new_name s in
+  {
+    e_semenv = se';
+    e_env = (fun (i: name se'.se_bound) ->
+      let x' : env_elem e.e_semenv (se'.se_env i) =
+        if i = new_name
+        then x
+        else e.e_env i
+      in
+      env_elem_prop_included e.e_semenv se' (se'.se_env i) x';
+      x'
+    );
+  }
+
+[@@"opaque_to_smt"]
+let env_extend_typ
+  (e: env)
+  (new_name: string)
+  (a: typ)
+: Pure env
+    (requires typ_bounded e.e_semenv.se_bound a /\
+      (~ (new_name `FStar.Set.mem` e.e_semenv.se_bound))
+    )
+    (ensures fun e' ->
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.Set.union` FStar.Set.singleton new_name /\
+      semenv_included e.e_semenv e'.e_semenv /\
+      SEType? (e'.e_semenv.se_env new_name) /\
+      e'.e_env new_name == a
+    )
+= env_extend_gen e new_name (SEType (typ_sem e.e_semenv a)) a
 
 [@@"opaque_to_smt"]
 let env_extend_array_group
   (e: env)
+  (new_name: string)
   (a: array_group)
 : Pure env
-    (requires array_group_bounded e.e_semenv.se_bound a)
-    (ensures fun e' ->
-      e'.e_semenv.se_bound > e.e_semenv.se_bound /\
-      semenv_included e.e_semenv e'.e_semenv /\
-      SEArrayGroup? (e'.e_semenv.se_env e.e_semenv.se_bound) /\
-      e'.e_array_group e.e_semenv.se_bound == a
+    (requires array_group_bounded e.e_semenv.se_bound a /\
+      (~ (new_name `FStar.Set.mem` e.e_semenv.se_bound))
     )
-= let sa = array_group_sem e.e_semenv a in
-  let se' = semenv_extend_array_group e.e_semenv sa in
-  {
-    e_semenv = se';
-    e_typ = (fun i ->
-      typ_sem_included e.e_semenv se' (e.e_typ i);
-      e.e_typ i
-    );
-    e_array_group = (fun i ->
-      let a' : array_group = if i = e.e_semenv.se_bound then a else e.e_array_group i in
-      array_group_sem_included e.e_semenv se' a';
-      a'
-    );
-    e_map_group = (fun i ->
-      e.e_map_group i // TODO
-    );
-  }
+    (ensures fun e' ->
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.Set.union` FStar.Set.singleton new_name /\
+      semenv_included e.e_semenv e'.e_semenv /\
+      SEArrayGroup? (e'.e_semenv.se_env new_name) /\
+      e'.e_env new_name == a
+    )
+= env_extend_gen e new_name (SEArrayGroup (array_group_sem e.e_semenv a)) a
 
 let spec_array_group3_zero_or_more_equiv #b
  (a1 a2: Spec.array_group3 b)
@@ -549,7 +707,7 @@ let rec typ_equiv
     let s1 = e.e_semenv.se_env i in
     if SEType? s1
     then
-      let t1' = e.e_typ i in
+      let t1' = e.e_env i in
       typ_equiv e fuel' t1' t2
     else false
   | _, TElem (TDef _) ->
@@ -568,8 +726,8 @@ let rec typ_equiv
     let s2 = e.e_semenv.se_env i2 in
     if SEArrayGroup? s1 && SEArrayGroup? s2
     then
-      let t1' = e.e_array_group i1 in
-      let t2' = e.e_array_group i2 in
+      let t1' = e.e_env i1 in
+      let t2' = e.e_env i2 in
       array_group_equiv e fuel' t1' t2'
     else false
   | TElem (TMap i1), TElem (TMap i2) -> i1 = i2 // TODO
@@ -602,7 +760,7 @@ and array_group_equiv
     let s1 = e.e_semenv.se_env i1 in
     if SEArrayGroup? s1
     then
-      let t1' = e.e_array_group i1 in
+      let t1' = e.e_env i1 in
       array_group_equiv e fuel' (t1' `List.Tot.append` q1') t2
     else false
   | _, (_, TAAtom (TADef _)) :: _ ->
@@ -661,7 +819,7 @@ let rec typ_disjoint
     let s1 = e.e_semenv.se_env i in
     if SEType? s1
     then
-      let t1' = e.e_typ i in
+      let t1' = e.e_env i in
       typ_disjoint e fuel' t1' t2
     else true
   | _, TElem (TDef _) ->
@@ -684,8 +842,8 @@ let rec typ_disjoint
     let s2 = e.e_semenv.se_env i2 in
     if SEArrayGroup? s1 && SEArrayGroup? s2
     then begin
-      let t1' = e.e_array_group i1 in
-      let t2' = e.e_array_group i2 in
+      let t1' = e.e_env i1 in
+      let t2' = e.e_env i2 in
       spec_array3_close_array_group (SEArrayGroup?._0 s1);
       spec_array3_close_array_group (SEArrayGroup?._0 s2);
       array_group_disjoint e fuel' true t1' t2'
@@ -725,7 +883,7 @@ and array_group_disjoint
     let s1 = e.e_semenv.se_env i1 in
     if SEArrayGroup? s1
     then
-      let t1' = e.e_array_group i1 in
+      let t1' = e.e_env i1 in
       array_group_disjoint e fuel' close (t1' `List.Tot.append` q1) t2
     else true
   | _, (_, TAAtom (TADef _)) :: _ ->
@@ -784,7 +942,7 @@ let rec spec_array_group_splittable_included
   )
 = match a with
   | [] -> ()
-  | [_] -> ()
+  | [_, t] -> elem_array_group_sem_included e1 e2 t
   | (_, t) :: q ->
     elem_array_group_sem_included e1 e2 t;
     array_group_sem_included e1 e2 q;
@@ -974,10 +1132,9 @@ let spec_array_group3_concat_unique_strong_zero_or_one_left
 #restart-solver
 let rec array_group_concat_unique_strong
   (e: env)
-  (e_thr: nat {
-    forall (i: nat_up_to e.e_semenv.se_bound { i < e_thr /\ SEArrayGroup? (e.e_semenv.se_env i) }) .
-      spec_array_group_splittable e.e_semenv (e.e_array_group i)
-  })
+  (e_thr: (i: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env i) } ) -> (b: bool { b == true ==> 
+      spec_array_group_splittable e.e_semenv (e.e_env i)
+  }))
   (fuel: nat)
   (a1 a2: array_group)
 : Pure bool
@@ -1010,16 +1167,16 @@ let rec array_group_concat_unique_strong
   | [n1, TAAtom (TADef i)], _ ->
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
-      if i >= e_thr
+      if not (e_thr i)
       then false
       else
-        let t1 = e.e_array_group i in
+        let t1 = e.e_env i in
         array_group_concat_unique_strong e e_thr fuel' t1 a2
     else true
   | _, (n2, TAAtom (TADef i)) :: a2' ->
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
-      let t1 = e.e_array_group i in
+      let t1 = e.e_env i in
       array_group_concat_unique_strong e e_thr fuel' a1 (t1 `List.Tot.append` a2')
     else true
   | [n1, TAZeroOrMore t1], _ ->
@@ -1063,10 +1220,9 @@ let spec_array_group3_concat_unique_weak_zero_or_one_left
 
 let rec array_group_splittable
   (e: env)
-  (e_thr: nat {
-    forall (i: nat_up_to e.e_semenv.se_bound { i < e_thr /\ SEArrayGroup? (e.e_semenv.se_env i) }) .
-      spec_array_group_splittable e.e_semenv (e.e_array_group i)
-  })
+  (e_thr: (i: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env i) } ) -> (b: bool { b == true ==> 
+      spec_array_group_splittable e.e_semenv (e.e_env i)
+  }))
   (fuel: nat)
   (a1 a2: array_group)
 : Pure bool
@@ -1092,10 +1248,10 @@ let rec array_group_splittable
   | [_, TAAtom (TADef i)], _ ->
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
-      if i >= e_thr
+      if not (e_thr i)
       then false
       else
-        let t1 = e.e_array_group i in
+        let t1 = e.e_env i in
         if array_group_splittable e e_thr fuel' t1 a2
         then begin
           spec_array_group_splittable_fold e.e_semenv t1 a2;
@@ -1107,10 +1263,10 @@ let rec array_group_splittable
   | _, (n2, TAAtom (TADef i)) :: a2' ->
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
-      if i >= e_thr
+      if not (e_thr i)
       then false
       else
-        let t1 = e.e_array_group i in
+        let t1 = e.e_env i in
         if array_group_splittable e e_thr fuel' t1 a2' // necessary because of the infamous a* b* a* counterexample
         then
           if array_group_splittable e e_thr fuel' a1 (t1 `List.Tot.append` a2')
