@@ -59,12 +59,13 @@ let generic_headers (g: Cddl.map_group None) : Cddl.map_group None =
 
 // Section 3
 
-let header_map : Cddl.typ = Cddl.t_map (
+let header_map0 : Cddl.map_group None =
   (generic_headers (
     Cddl.map_group_cons_zero_or_more (label `Cddl.MapGroupEntry` values) false
       Cddl.map_group_empty
   ))
-)
+
+let header_map : Cddl.typ = Cddl.t_map header_map0
 
 let empty_or_serialized_map : Cddl.typ =
   Cddl.bstr_cbor data_item_order header_map `Cddl.t_choice`
