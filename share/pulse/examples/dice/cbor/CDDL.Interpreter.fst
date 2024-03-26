@@ -606,6 +606,12 @@ let empty_env : (e: env {
   e_env = e_env_empty;
 }
 
+let env_included
+  (e1 e2: env)
+: Tot prop
+= semenv_included e1.e_semenv e2.e_semenv /\
+  (forall (i: name e1.e_semenv.se_bound) . e2.e_env i == e1.e_env i)
+
 [@@"opaque_to_smt"]
 let env_extend_gen
   (e: env)
@@ -618,7 +624,7 @@ let env_extend_gen
     )
     (ensures fun e' ->
       e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
-      semenv_included e.e_semenv e'.e_semenv /\
+      env_included e e' /\
       e'.e_semenv.se_env new_name == s /\
       e'.e_env new_name == x
     )
@@ -647,7 +653,7 @@ let env_extend_typ
     )
     (ensures fun e' ->
       e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
-      semenv_included e.e_semenv e'.e_semenv /\
+      env_included e e' /\
       SEType? (e'.e_semenv.se_env new_name) /\
       e'.e_env new_name == a
     )
@@ -664,7 +670,7 @@ let env_extend_array_group
     )
     (ensures fun e' ->
       e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
-      semenv_included e.e_semenv e'.e_semenv /\
+      env_included e e' /\
       SEArrayGroup? (e'.e_semenv.se_env new_name) /\
       e'.e_env new_name == a
     )
@@ -681,7 +687,7 @@ let env_extend_map_group
     )
     (ensures fun e' ->
       e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
-      semenv_included e.e_semenv e'.e_semenv /\
+      env_included e e' /\
       SEMapGroup? (e'.e_semenv.se_env new_name) /\
       e'.e_env new_name == a
     )
@@ -714,6 +720,7 @@ let spec_array_group3_zero_or_more_equiv #b
 
 #push-options "--z3rlimit 16"
 
+[@@"opaque_to_smt"]
 let rec typ_equiv
   (e: env)
   (fuel: nat)
@@ -827,9 +834,10 @@ and array_group_equiv
 let spec_typ_disjoint (a1 a2: Spec.typ) : Tot prop
 = (forall (l: CBOR.Spec.raw_data_item) . ~ (a1 l /\ a2 l))
 
-#push-options "--z3rlimit 64"
+#push-options "--z3rlimit 32"
 
 #restart-solver
+[@@"opaque_to_smt"]
 let rec typ_disjoint
   (e: env)
   (fuel: nat)
@@ -951,6 +959,8 @@ and array_group_disjoint
     else false
 //  | _ -> false
 
+#pop-options
+
 let rec spec_array_group_splittable
   (e: semenv)
   (a: array_group)
@@ -1039,6 +1049,9 @@ let spec_array_group3_concat_unique_weak_intro
   in
   Classical.forall_intro_2 prf2'
 
+#push-options "--z3rlimit 16"
+
+#restart-solver
 let rec spec_array_group_splittable_fold
   (e: semenv)
   (g1 g2: array_group)
@@ -1166,12 +1179,27 @@ let spec_array_group3_concat_unique_strong_zero_or_one_left
   ))
 = ()
 
+let spec_array_group_splittable_threshold
+  (e: env)
+: Tot Type
+= (i: string) -> Pure bool
+    (requires True)
+    (ensures fun b ->
+      b == true ==> 
+      (i `FStar.GSet.mem` e.e_semenv.se_bound /\
+        SEArrayGroup? (e.e_semenv.se_env i) /\
+        spec_array_group_splittable e.e_semenv (e.e_env i)
+    ))
+
+#pop-options
+
+#push-options "--z3rlimit 32 --split_queries always"
+
 #restart-solver
+[@@"opaque_to_smt"]
 let rec array_group_concat_unique_strong
   (e: env)
-  (e_thr: (i: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env i) } ) -> (b: bool { b == true ==> 
-      spec_array_group_splittable e.e_semenv (e.e_env i)
-  }))
+  (e_thr: spec_array_group_splittable_threshold e)
   (fuel: nat)
   (a1 a2: array_group)
 : Pure bool
@@ -1242,6 +1270,8 @@ let rec array_group_concat_unique_strong
     end
 //  | _ -> false
 
+#pop-options
+
 #restart-solver
 let spec_array_group3_concat_unique_weak_zero_or_one_left
   #b (a1 a2: Spec.array_group3 b)
@@ -1255,11 +1285,13 @@ let spec_array_group3_concat_unique_weak_zero_or_one_left
   ))
 = ()
 
+#push-options "--z3rlimit 32 --split_queries always"
+
+#restart-solver
+[@@"opaque_to_smt"]
 let rec array_group_splittable
   (e: env)
-  (e_thr: (i: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env i) } ) -> (b: bool { b == true ==> 
-      spec_array_group_splittable e.e_semenv (e.e_env i)
-  }))
+  (e_thr: spec_array_group_splittable_threshold e)
   (fuel: nat)
   (a1 a2: array_group)
 : Pure bool
@@ -1341,3 +1373,34 @@ let rec array_group_splittable
 //  | _ -> false
 
 #pop-options
+
+[@@"opaque_to_smt"]
+let spec_array_group_splittable_threshold_empty
+  (e: env)
+: Tot (spec_array_group_splittable_threshold e)
+= (fun _ -> false)
+
+[@@"opaque_to_smt"]
+let spec_array_group_splittable_threshold_extend
+  (#e: env)
+  (e_thr: spec_array_group_splittable_threshold e)
+  (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
+  (fuel: nat)
+  (prf: squash (array_group_splittable e e_thr fuel (e.e_env new_name) [] == true))
+: Tot (spec_array_group_splittable_threshold e)
+= (fun i -> if i = new_name then true else e_thr i)
+
+[@@"opaque_to_smt"]
+let spec_array_group_splittable_threshold_extend_env
+  (#e1: env)
+  (e_thr: spec_array_group_splittable_threshold e1)
+  (e2: env { env_included e1 e2 })
+: Tot (spec_array_group_splittable_threshold e2)
+= (fun i ->
+     if e_thr i
+     then begin
+       spec_array_group_splittable_included e1.e_semenv e2.e_semenv (e1.e_env i);
+       true
+     end
+     else false
+  )
