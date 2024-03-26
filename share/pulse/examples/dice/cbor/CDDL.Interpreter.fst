@@ -1397,13 +1397,37 @@ let spec_array_group_splittable_threshold_empty
 : Tot (spec_array_group_splittable_threshold e)
 = (fun _ -> false)
 
+let spec_array_group_splittable_nil
+  (e: semenv)
+: Lemma
+  (ensures (spec_array_group_splittable e []))
+  [SMTPat (spec_array_group_splittable e [])]
+= assert_norm (spec_array_group_splittable e []) // would need 1 fuel
+
+let spec_array_group_splittable_fuel
+  (#e: env)
+  (e_thr: spec_array_group_splittable_threshold e)
+  (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
+: Tot Type0
+= (fuel: nat {
+    array_group_splittable e e_thr fuel (e.e_env new_name) [] == true
+  })
+
+let spec_array_group_splittable_fuel_intro
+  (fuel: nat)
+  (e: env)
+  (e_thr: spec_array_group_splittable_threshold e)
+  (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
+  (prf: squash (array_group_splittable e e_thr fuel (e.e_env new_name) [] == true))
+: Tot (spec_array_group_splittable_fuel e_thr new_name)
+= fuel
+
 [@@"opaque_to_smt"]
 let spec_array_group_splittable_threshold_extend
   (#e: env)
   (e_thr: spec_array_group_splittable_threshold e)
   (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
-  (fuel: nat)
-  (prf: squash (array_group_splittable e e_thr fuel (e.e_env new_name) [] == true))
+  (fuel: spec_array_group_splittable_fuel e_thr new_name)
 : Tot (spec_array_group_splittable_threshold e)
 = (fun i -> if i = new_name then true else e_thr i)
 
@@ -1427,8 +1451,16 @@ let solve_env_extend_array_group () : FStar.Tactics.Tac unit =
   FStar.Tactics.smt ()
 
 let solve_spec_array_group_splittable () : FStar.Tactics.Tac unit =
-  FStar.Tactics.norm [delta; iota; zeta; primops];
-  FStar.Tactics.trefl ()
+  let rec aux (n: nat) : FStar.Tactics.Tac unit =
+    FStar.Tactics.try_with
+      (fun _ ->
+        FStar.Tactics.apply (FStar.Tactics.mk_app (`spec_array_group_splittable_fuel_intro) [quote n, FStar.Tactics.Q_Explicit]);
+        FStar.Tactics.norm [delta; iota; zeta; primops];
+        FStar.Tactics.trefl ()
+      )
+      (fun e -> aux (n + 1))
+  in
+  aux 0
 
 let solve_sem_equiv () : FStar.Tactics.Tac unit =
   FStar.Tactics.norm [delta_attr [`%sem_attr]; iota; zeta; primops];

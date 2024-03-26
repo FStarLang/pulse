@@ -24,7 +24,6 @@ let thr4 : spec_array_group_splittable_threshold e4 =
   spec_array_group_splittable_threshold_extend
     (spec_array_group_splittable_threshold_extend_env thr0 e4)
     "headers"
-    2
     (_ by (solve_spec_array_group_splittable ()))
 
 let _ : squash (
@@ -48,5 +47,4 @@ let thr6 : spec_array_group_splittable_threshold e6 =
   spec_array_group_splittable_threshold_extend
     (spec_array_group_splittable_threshold_extend_env thr4 e6)
     "cose_signature0"
-    4
     (_ by (solve_spec_array_group_splittable ()))
