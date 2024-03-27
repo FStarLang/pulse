@@ -46,6 +46,7 @@ type atom_array_group =
 type elem_array_group =
 | TAAtom: (t: atom_array_group) -> elem_array_group
 | TAZeroOrMore: (t: atom_array_group) -> elem_array_group
+| TAOneOrMore: (t: atom_array_group) -> elem_array_group
 | TAZeroOrOne: (t: atom_array_group) -> elem_array_group
 
 type array_group = list (string & elem_array_group)
@@ -345,6 +346,7 @@ let elem_array_group_bounded
 = match t with
   | TAAtom t -> atom_array_group_bounded bound t
   | TAZeroOrMore t -> atom_array_group_bounded bound t
+  | TAOneOrMore t -> atom_array_group_bounded bound t
   | TAZeroOrOne t -> atom_array_group_bounded bound t
 
 #push-options "--ifuel 4"
@@ -424,6 +426,7 @@ let elem_array_group_sem
 = match t with
   | TAAtom i -> atom_array_group_sem env i
   | TAZeroOrMore i -> Spec.array_group3_zero_or_more (atom_array_group_sem env i)
+  | TAOneOrMore i -> Spec.array_group3_one_or_more (atom_array_group_sem env i)
   | TAZeroOrOne i -> Spec.array_group3_zero_or_one (atom_array_group_sem env i)
 
 #push-options "--ifuel 4"
@@ -736,6 +739,14 @@ let spec_array_group3_zero_or_more_equiv #b
   in
   Classical.forall_intro phi
 
+let spec_array_group3_one_or_more_equiv #b
+ (a1 a2: Spec.array_group3 b)
+: Lemma
+  (requires Spec.array_group3_equiv a1 a2)
+  (ensures Spec.array_group3_equiv (Spec.array_group3_one_or_more a1) (Spec.array_group3_one_or_more a2))
+  [SMTPat (Spec.array_group3_equiv (Spec.array_group3_one_or_more a1) (Spec.array_group3_one_or_more a2))]
+= spec_array_group3_zero_or_more_equiv a1 a2
+
 // This is nothing more than delta-equivalence
 
 #push-options "--z3rlimit 16"
@@ -836,6 +847,14 @@ and array_group_equiv
     then begin
        assert (Spec.array_group3_equiv (atom_array_group_sem e.e_semenv t1) (atom_array_group_sem e.e_semenv t2));
        assert (Spec.array_group3_equiv (Spec.array_group3_zero_or_more (atom_array_group_sem e.e_semenv t1)) (Spec.array_group3_zero_or_more (atom_array_group_sem e.e_semenv t2)));
+       array_group_equiv e fuel' q1 q2
+    end
+    else false
+  | (s1, TAOneOrMore t1) :: q1, (s2, TAOneOrMore t2) :: q2 ->
+    if array_group_equiv e fuel' [s1, TAAtom t1] [s2, TAAtom t2]
+    then begin
+       assert (Spec.array_group3_equiv (atom_array_group_sem e.e_semenv t1) (atom_array_group_sem e.e_semenv t2));
+       assert (Spec.array_group3_equiv (Spec.array_group3_one_or_more (atom_array_group_sem e.e_semenv t1)) (Spec.array_group3_one_or_more (atom_array_group_sem e.e_semenv t2)));
        array_group_equiv e fuel' q1 q2
     end
     else false
@@ -971,6 +990,10 @@ and array_group_disjoint
     then ResultSuccess
     else array_group_disjoint e fuel' close ((name, TAAtom t1') :: (name, TAZeroOrMore t1') :: q) t2 // general rule, possible source of loops
   | _, (_, TAZeroOrMore _) :: _ ->
+    array_group_disjoint e fuel' close t2 t1
+  | (name, TAOneOrMore t1') :: q, _ ->
+    array_group_disjoint e fuel' close ((name, TAAtom t1') :: (name, TAZeroOrMore t1') :: q) t2
+  | _, (_, TAOneOrMore _) :: _ ->
     array_group_disjoint e fuel' close t2 t1
   | (name, TAZeroOrOne t1') :: q, _ ->
     let res1 = array_group_disjoint e fuel' close q t2 in
@@ -1212,6 +1235,21 @@ let spec_array_group3_concat_unique_strong_zero_or_one_left
   ))
 = ()
 
+let spec_array_group3_concat_unique_strong_one_or_more_left
+  #b (a1 a2: Spec.array_group3 b)
+: Lemma
+  (requires (
+    Spec.array_group3_disjoint a1 a2 /\
+    Spec.array_group3_concat_unique_strong a1 a1 /\
+    Spec.array_group3_concat_unique_strong a1 a2
+  ))
+  (ensures (
+    Spec.array_group3_concat_unique_strong (Spec.array_group3_one_or_more a1) a2
+  ))
+= Spec.array_group3_concat_unique_weak_zero_or_more_right a1 a1;
+  Spec.array_group3_concat_unique_strong_zero_or_more_left a1 a2;
+  spec_array_group3_concat_unique_strong_concat_left a1 (Spec.array_group3_zero_or_more a1) a2
+
 let spec_array_group_splittable_threshold
   (e: env)
 : Tot Type
@@ -1295,6 +1333,22 @@ let rec array_group_concat_unique_strong
         (array_group_sem e.e_semenv a2);
       ResultSuccess
     end
+  | [n1, TAOneOrMore t1], _ ->
+    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] [n1, TAAtom t1] in
+    if not (ResultSuccess? res2)
+    then res2
+    else let res3 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res3)
+    then res3
+    else begin
+      spec_array_group3_concat_unique_strong_one_or_more_left
+        (atom_array_group_sem e.e_semenv t1)
+        (array_group_sem e.e_semenv a2);
+      ResultSuccess
+    end
   | [n1, TAZeroOrOne t1], _ ->
     let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
     if not (ResultSuccess? res1)
@@ -1326,6 +1380,38 @@ let spec_array_group3_concat_unique_weak_zero_or_one_left
 = ()
 
 #push-options "--z3rlimit 32 --split_queries always"
+
+#restart-solver
+let spec_array_group3_concat_unique_weak_one_or_more_left
+  #b (a1 a2: Spec.array_group3 b)
+: Lemma
+  (requires (
+    Spec.array_group3_disjoint a1 a2 /\
+    Spec.array_group3_concat_unique_strong a1 a1 /\
+    Spec.array_group3_concat_unique_weak a1 a2
+  ))
+  (ensures (
+    Spec.array_group3_concat_unique_weak (Spec.array_group3_one_or_more a1) a2
+  ))
+= Spec.array_group3_concat_unique_weak_concat_zero_or_more_right a1 a1 a2;
+  Spec.array_group3_concat_unique_weak_zero_or_more_left a1 a2;
+  spec_array_group3_concat_unique_weak_intro (Spec.array_group3_one_or_more a1) a2
+      (fun l ->
+        let Some (l1, lr) = a1 l in
+        assert (Spec.array_group3_concat (Spec.array_group3_zero_or_more a1) a2 lr == Some (lr, []));
+        let Some (l1s, l2) = Spec.array_group3_zero_or_more a1 lr in
+        assert (Spec.array_group3_zero_or_more a1 l1s == Some (l1s, []));
+        assert (a2 l2 == Some (l2, []));
+        ()
+      )
+      (fun l1 l2 ->
+        assert (Some? (a1 l1));
+        assert (Spec.array_group3_zero_or_more a1 l1 == Some (l1, []));
+        let l = l1 `List.Tot.append` l2 in
+        assert (Spec.array_group3_concat (Spec.array_group3_zero_or_more a1) a2 l == Some (l, []));
+        assert (Some? (a1 l));
+        ()
+      )
 
 #restart-solver
 [@@"opaque_to_smt"]
@@ -1401,6 +1487,22 @@ let rec array_group_splittable
     then res3
     else begin
       Spec.array_group3_concat_unique_weak_zero_or_more_left
+        (atom_array_group_sem e.e_semenv t1)
+        (array_group_sem e.e_semenv a2);
+      ResultSuccess
+    end
+  | [n1, TAOneOrMore t1], _ ->
+    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_strong e e_thr fuel [n1, TAAtom t1] [n1, TAAtom t1] in
+    if not (ResultSuccess? res2)
+    then res2
+    else let res3 = array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res3)
+    then res3
+    else begin
+      spec_array_group3_concat_unique_weak_one_or_more_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
       ResultSuccess
