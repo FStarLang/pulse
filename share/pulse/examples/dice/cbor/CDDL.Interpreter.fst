@@ -850,6 +850,12 @@ and array_group_equiv
 let spec_typ_disjoint (a1 a2: Spec.typ) : Tot prop
 = (forall (l: CBOR.Spec.raw_data_item) . ~ (a1 l /\ a2 l))
 
+noeq
+type result =
+| ResultSuccess
+| ResultFailure of string
+| ResultOutOfFuel
+
 #push-options "--z3rlimit 32"
 
 #restart-solver
@@ -859,7 +865,7 @@ let rec typ_disjoint
   (fuel: nat)
   (t1: typ)
   (t2: typ)
-: Pure bool
+: Pure result
   (requires (
     typ_bounded e.e_semenv.se_bound t1 /\
     typ_bounded e.e_semenv.se_bound t2
@@ -867,11 +873,11 @@ let rec typ_disjoint
   (ensures (fun b ->
     typ_bounded e.e_semenv.se_bound t1 /\
     typ_bounded e.e_semenv.se_bound t2 /\
-    (b == true ==> spec_typ_disjoint (typ_sem e.e_semenv t1) (typ_sem e.e_semenv t2))
+    (b == ResultSuccess ==> spec_typ_disjoint (typ_sem e.e_semenv t1) (typ_sem e.e_semenv t2))
   ))
   (decreases fuel)
 = if fuel = 0
-  then false
+  then ResultOutOfFuel
   else let fuel' : nat = fuel - 1 in
   match t1, t2 with
   | TElem (TDef i), _ ->
@@ -880,24 +886,25 @@ let rec typ_disjoint
     then
       let t1' = e.e_env i in
       typ_disjoint e fuel' t1' t2
-    else true
+    else ResultSuccess
   | _, TElem (TDef _) ->
     typ_disjoint e fuel' t2 t1
-  | TChoice [], _ -> true
+  | TChoice [], _ -> ResultSuccess
   | TChoice (t1' :: q1'), _ ->
-    if not (typ_disjoint e fuel' (TElem t1') t2)
-    then false
+    let td1 = typ_disjoint e fuel' (TElem t1') t2 in
+    if not (ResultSuccess? td1)
+    then td1
     else typ_disjoint e fuel' (TChoice q1') t2
   | _, TChoice _ ->
     typ_disjoint e fuel' t2 t1
   | TEscapeHatch _, _
-  | _, TEscapeHatch _ -> false
+  | _, TEscapeHatch _ -> ResultFailure "typ_disjoint: TEscapeHatch"
   | TTag tag1 t1, TTag tag2 t2 ->
     if tag1 <> tag2
-    then true
+    then ResultSuccess
     else typ_disjoint e fuel' (TElem t1) (TElem t2)
   | _, TTag _ _
-  | TTag _ _, _ -> true
+  | TTag _ _, _ -> ResultSuccess
   | TElem (TArray i1), TElem (TArray i2) ->
     let s1 = e.e_semenv.se_env i1 in
     let s2 = e.e_semenv.se_env i2 in
@@ -909,13 +916,16 @@ let rec typ_disjoint
       spec_array3_close_array_group (SEArrayGroup?._0 s2);
       array_group_disjoint e fuel' true t1' t2'
     end
-    else true
-  | TElem TBool, TElem TFalse
-  | TElem TBool, TElem TTrue -> false
+    else ResultSuccess
+  | TElem TBool, TElem TFalse -> ResultFailure "typ_disjoint: TBool, TFalse"
+  | TElem TBool, TElem TTrue -> ResultFailure "typ_disjoint: TBool, TTrue"
   | _, TElem TBool ->
     typ_disjoint e fuel' t2 t1
-  | TElem (TMap _), TElem (TMap _) -> false // TODO
-  | TElem e1, TElem e2 -> e1 <> e2
+  | TElem (TMap _), TElem (TMap _) -> ResultFailure "typ_disjoint: TMap, TMap" // TODO
+  | TElem e1, TElem e2 ->
+    if e1 <> e2
+    then ResultSuccess
+    else ResultFailure "typ_disjoint: TElem equal"
 
 and array_group_disjoint
   (e: env)
@@ -923,7 +933,7 @@ and array_group_disjoint
   (close: bool)
   (t1: array_group)
   (t2: array_group)
-: Pure bool
+: Pure result
   (requires (
     array_group_bounded e.e_semenv.se_bound t1 /\
     array_group_bounded e.e_semenv.se_bound t2
@@ -931,13 +941,13 @@ and array_group_disjoint
   (ensures (fun b ->
     array_group_bounded e.e_semenv.se_bound t1 /\
     array_group_bounded e.e_semenv.se_bound t2 /\
-    (b == true ==> Spec.array_group3_disjoint
+    (b == ResultSuccess ==> Spec.array_group3_disjoint
       (spec_maybe_close_array_group (array_group_sem e.e_semenv t1) close)
       (spec_maybe_close_array_group (array_group_sem e.e_semenv t2) close)
   )))
   (decreases fuel)
 = if fuel = 0
-  then false
+  then ResultOutOfFuel
   else let fuel' : nat = fuel - 1 in
   match t1, t2 with
   | (_, TAAtom (TADef i1)) :: q1, _ ->
@@ -946,33 +956,35 @@ and array_group_disjoint
     then
       let t1' = e.e_env i1 in
       array_group_disjoint e fuel' close (t1' `List.Tot.append` q1) t2
-    else true
+    else ResultSuccess
   | _, (_, TAAtom (TADef _)) :: _ ->
     array_group_disjoint e fuel' close t2 t1
   | (name, TAZeroOrMore t1') :: q, _ ->
-    if not (array_group_disjoint e fuel' close q t2)
-    then false
-    else if array_group_disjoint e fuel' false [name, TAAtom t1'] t2 // loop-free shortcut, but will miss things like "disjoint? (a*) (ab)"
-    then true
+    let res1 = array_group_disjoint e fuel' close q t2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else if ResultSuccess? (array_group_disjoint e fuel' false [name, TAAtom t1'] t2) // loop-free shortcut, but will miss things like "disjoint? (a*) (ab)"
+    then ResultSuccess
     else array_group_disjoint e fuel' close ((name, TAAtom t1') :: (name, TAZeroOrMore t1') :: q) t2 // general rule, possible source of loops
   | _, (_, TAZeroOrMore _) :: _ ->
     array_group_disjoint e fuel' close t2 t1
   | (name, TAZeroOrOne t1') :: q, _ ->
-    if not (array_group_disjoint e fuel' close q t2)
-    then false
+    let res1 = array_group_disjoint e fuel' close q t2 in
+    if not (ResultSuccess? res1)
+    then res1
     else array_group_disjoint e fuel' close ((name, TAAtom t1') :: q) t2
   | _, (_, TAZeroOrOne _) :: _ ->
     array_group_disjoint e fuel' close t2 t1
-  | [], [] -> false
-  | _, [] -> close
+  | [], [] -> ResultFailure "array_group_disjoint: [], []"
+  | _, [] -> if close then ResultSuccess else ResultFailure "array_group_disjoint: cons, nil, not close"
   | [], _ ->
     array_group_disjoint e fuel' close t2 t1
   | (_, TAAtom (TAElem t1')) :: q1, (_, TAAtom (TAElem t2')) :: q2 ->
-    if typ_disjoint e fuel' (TElem t1') (TElem t2')
-    then true
+    if ResultSuccess? (typ_disjoint e fuel' (TElem t1') (TElem t2'))
+    then ResultSuccess
     else if typ_equiv e fuel' (TElem t1') (TElem t2')
     then array_group_disjoint e fuel' close q1 q2
-    else false
+    else ResultFailure "array_group_disjoint: TAElem"
 //  | _ -> false
 
 #pop-options
@@ -1219,71 +1231,78 @@ let rec array_group_concat_unique_strong
   (e_thr: spec_array_group_splittable_threshold e)
   (fuel: nat)
   (a1 a2: array_group)
-: Pure bool
+: Pure result
   (requires
     spec_array_group_splittable e.e_semenv a1 /\
     array_group_bounded e.e_semenv.se_bound a2
   )
   (ensures fun b ->
-    b == true ==> Spec.array_group3_concat_unique_strong
+    b == ResultSuccess ==> Spec.array_group3_concat_unique_strong
       (array_group_sem e.e_semenv a1)
       (array_group_sem e.e_semenv a2)
   )
   (decreases fuel)
 = if fuel = 0
-  then false
+  then ResultOutOfFuel
   else let fuel' : nat = fuel - 1 in
   match a1, a2 with
-  | [], _ -> true
+  | [], _ -> ResultSuccess
   | (n1, t1l) :: t1r :: q, _ ->
     let a1' = t1r :: q in
-    if not (array_group_concat_unique_strong e e_thr fuel' a1' a2)
-    then false
-    else if not (array_group_concat_unique_strong e e_thr fuel' [n1, t1l] (a1' `List.Tot.append` a2))
-    then false
+    let res1 = array_group_concat_unique_strong e e_thr fuel' a1' a2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_strong e e_thr fuel' [n1, t1l] (a1' `List.Tot.append` a2) in
+    if not (ResultSuccess? res2)
+    then res2
     else begin
       spec_array_group3_concat_unique_strong_concat_left (elem_array_group_sem e.e_semenv t1l) (array_group_sem e.e_semenv a1') (array_group_sem e.e_semenv a2);
-      true
+      ResultSuccess
     end
-  | [_, TAAtom (TAElem _)], _ -> true
+  | [_, TAAtom (TAElem _)], _ -> ResultSuccess
   | [n1, TAAtom (TADef i)], _ ->
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
       if not (e_thr i)
-      then false
+      then ResultFailure "array_group_concat_unique_strong: unfold left, beyond threshold"
       else
         let t1 = e.e_env i in
         array_group_concat_unique_strong e e_thr fuel' t1 a2
-    else true
+    else ResultSuccess
   | _, (n2, TAAtom (TADef i)) :: a2' ->
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
       let t1 = e.e_env i in
       array_group_concat_unique_strong e e_thr fuel' a1 (t1 `List.Tot.append` a2')
-    else true
+    else ResultSuccess
   | [n1, TAZeroOrMore t1], _ ->
-    if not (array_group_disjoint e fuel false [n1, TAAtom t1] a2)
-    then false
-    else if not (array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] [n1, TAAtom t1])
-    then false
-    else if not (array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2)
-    then false
+    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] [n1, TAAtom t1] in
+    if not (ResultSuccess? res2)
+    then res2
+    else let res3 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res3)
+    then res3
     else begin
       Spec.array_group3_concat_unique_strong_zero_or_more_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
-      true
+      ResultSuccess
     end
   | [n1, TAZeroOrOne t1], _ ->
-    if not (array_group_disjoint e fuel false [n1, TAAtom t1] a2)
-    then false
-    else if not (array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2)
-    then false
+    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res2)
+    then res2
     else begin
       spec_array_group3_concat_unique_strong_zero_or_one_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
-      true
+      ResultSuccess
     end
 //  | _ -> false
 
@@ -1311,81 +1330,89 @@ let rec array_group_splittable
   (e_thr: spec_array_group_splittable_threshold e)
   (fuel: nat)
   (a1 a2: array_group)
-: Pure bool
+: Pure result
   (requires spec_array_group_splittable e.e_semenv a2 /\
     array_group_bounded e.e_semenv.se_bound a1
   )
   (ensures fun b ->
     array_group_bounded e.e_semenv.se_bound (a1 `List.Tot.append` a2) /\
-    (b == true ==> spec_array_group_splittable e.e_semenv (a1 `List.Tot.append` a2))
+    (b == ResultSuccess ==> spec_array_group_splittable e.e_semenv (a1 `List.Tot.append` a2))
   )
   (decreases fuel)
 = if fuel = 0
-  then false
+  then ResultOutOfFuel
   else let fuel' : nat = fuel - 1 in
   match a1, a2 with
-  | [], _ -> true
+  | [], _ -> ResultSuccess
   | t1l :: t1r :: q1, _ ->
     let a1' = t1r :: q1 in
-    if array_group_splittable e e_thr fuel' a1' a2
-    then array_group_splittable e e_thr fuel' [t1l] (a1' `List.Tot.append` a2)
-    else false
-  | _, [] -> true
+    let res1 = array_group_splittable e e_thr fuel' a1' a2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else array_group_splittable e e_thr fuel' [t1l] (a1' `List.Tot.append` a2)
+  | _, [] -> ResultSuccess
   | [_, TAAtom (TADef i)], _ ->
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
       if not (e_thr i)
-      then false
+      then ResultFailure "array_group_splittable: unfold left, beyond threshold"
       else
         let t1 = e.e_env i in
-        if array_group_splittable e e_thr fuel' t1 a2
-        then begin
+        let res = array_group_splittable e e_thr fuel' t1 a2 in
+        if not (ResultSuccess? res)
+        then res
+        else begin
           spec_array_group_splittable_fold e.e_semenv t1 a2;
-          true
+          ResultSuccess
         end
-        else false
-    else true
-  | [_, TAAtom (TAElem _)], _ -> true
+    else ResultSuccess
+  | [_, TAAtom (TAElem _)], _ -> ResultSuccess
   | _, (n2, TAAtom (TADef i)) :: a2' ->
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
       if not (e_thr i)
-      then false
+      then ResultFailure "array_group_splittable: unfold right, beyond threshold"
       else
         let t1 = e.e_env i in
-        if array_group_splittable e e_thr fuel' t1 a2' // necessary because of the infamous a* b* a* counterexample
-        then
-          if array_group_splittable e e_thr fuel' a1 (t1 `List.Tot.append` a2')
-          then begin
+        let res1 = array_group_splittable e e_thr fuel' t1 a2' in // necessary because of the infamous a* b* a* counterexample
+        if not (ResultSuccess? res1)
+        then res1
+        else let res2 = array_group_splittable e e_thr fuel' a1 (t1 `List.Tot.append` a2') in
+        if not (ResultSuccess? res2)
+        then res2
+        else begin
             spec_array_group_splittable_fold_gen e.e_semenv a1 t1 a2' n2 (TAAtom (TADef i));
-            true
-          end
-          else false
-        else false
-    else true
+            ResultSuccess
+        end
+    else ResultSuccess
   | [n1, TAZeroOrMore t1], _ ->
-    if not (array_group_disjoint e fuel false [n1, TAAtom t1] a2)
-    then false
-    else if not (array_group_concat_unique_strong e e_thr fuel [n1, TAAtom t1] [n1, TAAtom t1])
-    then false
-    else if not (array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2)
-    then false
+    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_strong e e_thr fuel [n1, TAAtom t1] [n1, TAAtom t1] in
+    if not (ResultSuccess? res2)
+    then res2
+    else let res3 = array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res3)
+    then res3
     else begin
       Spec.array_group3_concat_unique_weak_zero_or_more_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
-      true
+      ResultSuccess
     end
   | [n1, TAZeroOrOne t1], _ ->
-    if not (array_group_disjoint e fuel false [n1, TAAtom t1] a2)
-    then false
-    else if not (array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2)
-    then false
+    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res1)
+    then res1
+    else let res2 = array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2 in
+    if not (ResultSuccess? res2)
+    then res2
     else begin
       spec_array_group3_concat_unique_weak_zero_or_one_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
-      true
+      ResultSuccess
     end
 //  | _ -> false
 
@@ -1410,7 +1437,7 @@ let spec_array_group_splittable_fuel
   (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
 : Tot Type0
 = (fuel: nat {
-    array_group_splittable e e_thr fuel (e.e_env new_name) [] == true
+    array_group_splittable e e_thr fuel (e.e_env new_name) [] == ResultSuccess
   })
 
 let spec_array_group_splittable_fuel_intro
@@ -1418,7 +1445,7 @@ let spec_array_group_splittable_fuel_intro
   (e: env)
   (e_thr: spec_array_group_splittable_threshold e)
   (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
-  (prf: squash (array_group_splittable e e_thr fuel (e.e_env new_name) [] == true))
+  (prf: squash (array_group_splittable e e_thr fuel (e.e_env new_name) [] == ResultSuccess))
 : Tot (spec_array_group_splittable_fuel e_thr new_name)
 = fuel
 
@@ -1450,15 +1477,37 @@ let solve_env_extend_array_group () : FStar.Tactics.Tac unit =
   FStar.Tactics.norm [delta_attr [`%bounded_attr]; iota; zeta; primops];
   FStar.Tactics.smt ()
 
+exception ExceptionOutOfFuel
+
 let solve_spec_array_group_splittable () : FStar.Tactics.Tac unit =
   let rec aux (n: nat) : FStar.Tactics.Tac unit =
     FStar.Tactics.try_with
-      (fun _ ->
-        FStar.Tactics.apply (FStar.Tactics.mk_app (`spec_array_group_splittable_fuel_intro) [quote n, FStar.Tactics.Q_Explicit]);
-        FStar.Tactics.norm [delta; iota; zeta; primops];
-        FStar.Tactics.trefl ()
+    (fun _ ->
+      FStar.Tactics.print ("solve_spec_array_group_splittable with fuel " ^ string_of_int n ^ "\n");
+      FStar.Tactics.apply (FStar.Tactics.mk_app (`spec_array_group_splittable_fuel_intro) [quote n, FStar.Tactics.Q_Explicit]);
+      FStar.Tactics.norm [delta; iota; zeta; primops];
+      FStar.Tactics.try_with
+        (fun _ ->
+          FStar.Tactics.trefl ()
+        )
+        (fun e -> 
+          let g = FStar.Tactics.cur_goal () in
+          FStar.Tactics.print ("solve_spec_array_group_splittable Failure: " ^ FStar.Tactics.term_to_string g ^ "\n");
+          let g0 = quote (squash (ResultOutOfFuel == ResultSuccess)) in
+          FStar.Tactics.print ("Comparing with " ^ FStar.Tactics.term_to_string g0 ^ "\n");
+          let e' =
+            if g `FStar.Tactics.term_eq` g0
+            then ExceptionOutOfFuel
+            else e
+          in
+          FStar.Tactics.raise e'
+        )
       )
-      (fun e -> aux (n + 1))
+      (fun e ->
+        match e with
+        | ExceptionOutOfFuel -> aux (n + 1)
+        | _ -> FStar.Tactics.raise e
+      )
   in
   aux 0
 
