@@ -12,6 +12,8 @@ type elem_typ =
 | TBool
 | TNil
 | TUndefined
+| TByteString
+| TTextString
 | TUIntLiteral: (v: U64.t) -> elem_typ
 | TArray: (i: string) -> elem_typ
 | TMap: (i: string) -> elem_typ
@@ -196,6 +198,8 @@ let elem_typ_sem
   | TBool -> Spec.t_bool
   | TNil -> Spec.t_nil
   | TUndefined -> Spec.t_undefined
+  | TByteString -> Spec.bstr
+  | TTextString -> Spec.tstr
   | TUIntLiteral n -> Spec.t_uint_literal n
 
 let elem_typ_sem_included (s1 s2: semenv) (t: elem_typ) : Lemma
