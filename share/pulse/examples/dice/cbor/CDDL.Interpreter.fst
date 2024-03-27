@@ -921,10 +921,10 @@ let rec typ_disjoint
       array_group_disjoint e fuel' true t1' t2'
     end
     else ResultSuccess
+  | TElem TFalse, TElem TBool -> ResultFailure "typ_disjoint: TFalse, TBool"
   | TElem TBool, TElem TFalse -> ResultFailure "typ_disjoint: TBool, TFalse"
+  | TElem TTrue, TElem TBool -> ResultFailure "typ_disjoint: TTrue, TBool"
   | TElem TBool, TElem TTrue -> ResultFailure "typ_disjoint: TBool, TTrue"
-  | _, TElem TBool ->
-    typ_disjoint e fuel' t2 t1
   | TElem (TMap _), TElem (TMap _) -> ResultFailure "typ_disjoint: TMap, TMap" // TODO
   | TElem e1, TElem e2 ->
     if e1 <> e2
