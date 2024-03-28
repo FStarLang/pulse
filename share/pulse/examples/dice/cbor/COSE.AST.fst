@@ -126,8 +126,6 @@ let thr10 : spec_array_group_splittable_threshold e10 =
     "cose_sign_array"
     (_ by (solve_spec_array_group_splittable ()))
 
-#push-options "--z3rlimit 16" // cannot reason about GSet
-
 [@@ bounded_attr; sem_attr]
 let e11 =
   env_extend_typ e10 "cose_sign"
@@ -135,7 +133,7 @@ let e11 =
     (TElem (TArray "cose_sign_array"))
     (_ by (solve_env_extend_array_group ()))
 
-#push-options "--z3rlimit 32" // cannot reason about typ_equiv
+#push-options "--z3rlimit 16" // cannot reason about typ_equiv
 
 let _ : squash (
   se_typ e11.e_semenv "cose_sign" `CDDL.Spec.typ_equiv` Spec.cose_sign
@@ -143,6 +141,8 @@ let _ : squash (
   let a = normalize_term (e11.e_env "cose_sign") in
   assert (typ_sem e11.e_semenv a `CDDL.Spec.typ_equiv` Spec.cose_sign)
     by (solve_sem_equiv ())
+
+#pop-options
 
 [@@ bounded_attr; sem_attr]
 let e12 =

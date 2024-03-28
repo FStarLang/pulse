@@ -51,13 +51,16 @@ type elem_array_group =
 
 type array_group = list (string & elem_array_group)
 
-type name_env = FStar.GSet.set string
-
-let name (e: name_env) : eqtype = (s: string { FStar.GSet.mem s e })
+type name_env = (string -> GTot bool)
 
 irreducible let bounded_attr : unit = ()
 
 irreducible let sem_attr : unit = ()
+
+[@@ bounded_attr]
+let name_mem (s: string) (e: name_env) : GTot bool = e s
+
+let name (e: name_env) : eqtype = (s: string { name_mem s e })
 
 [@@ bounded_attr; sem_attr]
 noeq
@@ -73,12 +76,19 @@ type semenv = {
   se_env: (name se_bound -> semenv_elem);
 }
 
+[@@bounded_attr]
+let empty_name_env (_: string) : GTot bool = false
+
+[@@bounded_attr]
+let extend_name_env (e: name_env) (new_name: string) (s: string) : GTot bool =
+  if s = new_name then true else name_mem s e
+
 [@@"opaque_to_smt"] irreducible
-let name_empty_elim (t: Type) (x: name FStar.GSet.empty) : Tot t = false_elim ()
+let name_empty_elim (t: Type) (x: name empty_name_env) : Tot t = false_elim ()
 
 [@@ bounded_attr; sem_attr]
 let empty_semenv = {
-  se_bound = FStar.GSet.empty;
+  se_bound = empty_name_env;
   se_env = name_empty_elim _;
 }
 
@@ -109,8 +119,11 @@ let se_map_group
   | SEMapGroup t -> t
   | _ -> Spec.map_group_empty
 
+let name_env_included (s1 s2: name_env) : Tot prop =
+  (forall (i: name s1) . i `name_mem` s2)
+
 let semenv_included (s1 s2: semenv) : Tot prop =
-  s1.se_bound `FStar.GSet.subset` s2.se_bound /\
+  name_env_included s1.se_bound s2.se_bound /\
   (forall (i: name s1.se_bound) . s1.se_env i == s2.se_env i)
 
 let semenv_included_trans (s1 s2 s3: semenv) : Lemma
@@ -126,14 +139,14 @@ let semenv_extend_gen
   (a: semenv_elem)
 : Pure semenv
     (requires
-      (~ (FStar.GSet.mem new_name se.se_bound))
+      (~ (name_mem new_name se.se_bound))
     )
     (ensures fun se' ->
-      se'.se_bound == se.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      se'.se_bound == se.se_bound `extend_name_env` new_name /\
       semenv_included se se' /\
       se'.se_env new_name == a
     )
-= let se_bound' = se.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name in
+= let se_bound' = se.se_bound `extend_name_env` new_name in
   {
     se_bound = se_bound';
     se_env = (fun (i: name se_bound') -> if i = new_name then a else se.se_env i);
@@ -146,10 +159,10 @@ let semenv_extend_typ
   (a: Spec.typ)
 : Pure semenv
     (requires
-      (~ (FStar.GSet.mem new_name se.se_bound))
+      (~ (name_mem new_name se.se_bound))
     )
     (ensures fun se' ->
-      se'.se_bound == se.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      se'.se_bound == se.se_bound `extend_name_env` new_name /\
       semenv_included se se' /\
       se'.se_env new_name == SEType a
     )
@@ -162,10 +175,10 @@ let semenv_extend_array_group
   (a: Spec.array_group3 None)
 : Pure semenv
     (requires
-      (~ (FStar.GSet.mem new_name se.se_bound))
+      (~ (name_mem new_name se.se_bound))
     )
     (ensures fun se' ->
-      se'.se_bound == se.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      se'.se_bound == se.se_bound `extend_name_env` new_name /\
       semenv_included se se' /\
       se'.se_env new_name == SEArrayGroup a
     )
@@ -178,10 +191,10 @@ let semenv_extend_map_group
   (a: Spec.map_group None)
 : Pure semenv
     (requires
-      (~ (FStar.GSet.mem new_name se.se_bound))
+      (~ (name_mem new_name se.se_bound))
     )
     (ensures fun se' ->
-      se'.se_bound == se.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      se'.se_bound == se.se_bound `extend_name_env` new_name /\
       semenv_included se se' /\
       se'.se_env new_name == SEMapGroup a
     )
@@ -193,9 +206,9 @@ let elem_typ_bounded
   (t: elem_typ)
 : GTot bool
 = match t with
-  | TDef i -> i `FStar.GSet.mem` bound
-  | TArray j -> j `FStar.GSet.mem` bound
-  | TMap j -> j `FStar.GSet.mem` bound
+  | TDef i -> i `name_mem` bound
+  | TArray j -> j `name_mem` bound
+  | TMap j -> j `name_mem` bound
   | _ -> true
 
 [@@ sem_attr ]
@@ -257,7 +270,7 @@ let rec sem_typ_choice_bounded_incr
   (l: list elem_typ)
 : Lemma
   (requires
-    bound1 `FStar.GSet.subset` bound2 /\
+    bound1 `name_env_included` bound2 /\
     sem_typ_choice_bounded bound1 l
   )
   (ensures sem_typ_choice_bounded bound2 l)
@@ -298,7 +311,7 @@ let typ_bounded_incr
   (t: typ)
 : Lemma
   (requires
-    bound1 `FStar.GSet.subset` bound2 /\
+    bound1 `name_env_included` bound2 /\
     typ_bounded bound1 t
   )
   (ensures typ_bounded bound2 t)
@@ -339,7 +352,7 @@ let atom_array_group_bounded
   (t: atom_array_group)
 : GTot bool
 = match t with
-  | TADef i -> i `FStar.GSet.mem` bound
+  | TADef i -> i `name_mem` bound
   | TAElem t -> elem_typ_bounded bound t
 
 let atom_array_group_bounded_incr
@@ -347,7 +360,7 @@ let atom_array_group_bounded_incr
   (t: atom_array_group)
 : Lemma
   (requires
-    bound1 `FStar.GSet.subset` bound2 /\
+    bound1 `name_env_included` bound2 /\
     atom_array_group_bounded bound1 t
   )
   (ensures atom_array_group_bounded bound2 t)
@@ -371,7 +384,7 @@ let elem_array_group_bounded_incr
   (t: elem_array_group)
 : Lemma
   (requires
-    bound1 `FStar.GSet.subset` bound2 /\
+    bound1 `name_env_included` bound2 /\
     elem_array_group_bounded bound1 t
   )
   (ensures elem_array_group_bounded bound2 t)
@@ -391,7 +404,7 @@ let rec array_group_bounded_incr
   (t: array_group)
 : Lemma
   (requires
-    bound1 `FStar.GSet.subset` bound2 /\
+    bound1 `name_env_included` bound2 /\
     array_group_bounded bound1 t
   )
   (ensures array_group_bounded bound2 t)
@@ -678,11 +691,11 @@ and typ_env_sem
   | _ -> typ_sem e.e_semenv t
 
 [@@"opaque_to_smt"] irreducible // because of false_elim
-let e_env_empty (i: name FStar.GSet.empty) : Tot (env_elem empty_semenv (empty_semenv.se_env i)) = false_elim ()
+let e_env_empty (i: name empty_name_env) : Tot (env_elem empty_semenv (empty_semenv.se_env i)) = false_elim ()
 
 [@@"opaque_to_smt"; bounded_attr; sem_attr]
 let empty_env : (e: env {
-  e.e_semenv.se_bound == FStar.GSet.empty
+  e.e_semenv.se_bound == empty_name_env
 }) = {
   e_semenv = empty_semenv;
   e_env = e_env_empty;
@@ -708,10 +721,10 @@ let env_extend_gen
   (x: env_elem e.e_semenv s)
 : Pure env
     (requires
-      (~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))
+      (~ (new_name `name_mem` e.e_semenv.se_bound))
     )
     (ensures fun e' ->
-      e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
       env_included e e' /\
       e'.e_semenv.se_env new_name == s /\
       e'.e_env new_name == x
@@ -734,13 +747,13 @@ let env_extend_gen
 let env_extend_typ
   (e: env)
   (new_name: string)
-  (new_name_fresh: squash (~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: typ)
   (sq: squash (
     typ_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   ))
 : Tot (e': env {
-      e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
       env_included e e' /\
       e'.e_semenv.se_env new_name == SEType (typ_sem e.e_semenv a)   /\
       e'.e_env new_name == a
@@ -751,13 +764,13 @@ let env_extend_typ
 let env_extend_array_group
   (e: env)
   (new_name: string) // ideally by SMT
-  (new_name_fresh: squash (~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: array_group)
   (sq: squash (
     array_group_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   ))
 : Tot (e': env {
-      e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
       env_included e e' /\
       e'.e_semenv.se_env new_name == SEArrayGroup (array_group_sem e.e_semenv a) /\
       e'.e_env new_name == a
@@ -768,13 +781,13 @@ let env_extend_array_group
 let env_extend_map_group
   (e: env)
   (new_name: string) // ideally by SMT
-  (new_name_fresh: squash (~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: map_group)
   (sq: squash (
     map_group_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   ))
 : Tot (e': env {
-      e'.e_semenv.se_bound == e.e_semenv.se_bound `FStar.GSet.union` FStar.GSet.singleton new_name /\
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
       env_included e e' /\
       e'.e_semenv.se_env new_name == SEMapGroup (map_group_sem e.e_semenv a) /\
       e'.e_env new_name == a
@@ -1322,7 +1335,7 @@ let spec_array_group_splittable_threshold
     (requires True)
     (ensures fun b ->
       b == true ==> 
-      (i `FStar.GSet.mem` e.e_semenv.se_bound /\
+      (i `name_mem` e.e_semenv.se_bound /\
         SEArrayGroup? (e.e_semenv.se_env i) /\
         spec_array_group_splittable e.e_semenv (e.e_env i)
     ))
