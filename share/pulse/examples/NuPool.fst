@@ -45,6 +45,11 @@ type task_state (#code:vcode) : (post:erased code.t) -> Type u#2 =
   | Done     : #post:erased code.t -> task_state post
   | Claimed  : #post:erased code.t -> task_state post
 
+let unclaimed (#code:_) (#post:code.t) (s : task_state post) : task_state post =
+  match s with
+  | Claimed -> Done
+  | x -> x
+
 let v #code (#post:code.t) (s : task_state post) : int =
   match s with
   | Ready -> 0
@@ -90,6 +95,17 @@ type handle (#code:vcode) (post : erased code.t) : Type u#0 = {
   g_state : BAR.ref (task_state post) p_st anchor_rel; (* these two refs are kept in sync *)
 }
 
+let state_pred
+  (#code:vcode)
+  ([@@@equate_by_smt] pre : erased code.t)
+  ([@@@equate_by_smt] post : erased code.t)
+  ([@@@equate_by_smt] h : handle post)
+: vprop =
+   exists* (v_state : task_state post).
+     Big.pts_to h.state (unclaimed v_state) **
+     BAR.pts_to h.g_state v_state **
+     state_res pre post h.g_state v_state
+
 // FIXME: implement?
 assume
 val handle_eq
@@ -119,16 +135,6 @@ let list_preorder #a
 
 let list_anchor : FRAP.anchor_rel list_preorder = fun x y -> list_preorder x y /\ True
 
-let state_pred
-  (#code:vcode)
-  ([@@@equate_by_smt] pre : erased code.t)
-  ([@@@equate_by_smt] post : erased code.t)
-  ([@@@equate_by_smt] h : handle post)
-: vprop =
-   exists* (v_state : task_state post).
-     Big.pts_to h.state v_state **
-     BAR.pts_to h.g_state v_state **
-     state_res pre post h.g_state v_state
 
 // equate_by_smt due to #22
 let rec all_state_pred
@@ -451,7 +457,7 @@ fn intro_state_pred
   (h : handle post)
   (v_state : task_state post)
   requires
-    Big.pts_to h.state v_state **
+    Big.pts_to h.state (unclaimed v_state) **
     BAR.pts_to h.g_state v_state **
     state_res pre post h.g_state v_state
   ensures state_pred pre post h
@@ -470,7 +476,7 @@ fn elim_state_pred
   requires state_pred pre post h
   returns v_state : erased (task_state post)
   ensures
-    Big.pts_to h.state v_state **
+    Big.pts_to h.state (unclaimed v_state) **
     BAR.pts_to h.g_state v_state **
     state_res pre post h.g_state v_state
 {
@@ -639,8 +645,8 @@ fn try_await
 
   let v_state = elim_state_pred task.pre task.post task.h;
   
-  rewrite (Big.pts_to task.h.state (reveal v_state))
-       as (Big.pts_to h.state (reveal v_state));
+  rewrite (Big.pts_to task.h.state (unclaimed (reveal v_state)))
+       as (Big.pts_to h.state (unclaimed (reveal v_state)));
   let task_st = Big.op_Bang h.state;
   
   match task_st {
@@ -669,16 +675,26 @@ fn try_await
       false;
     }
     Done -> {
+      (* First prove that ghost state cannot be Claimed,
+      due to the anchor *)
+      rewrite (BAR.pts_to task.h.g_state v_state)
+           as (BAR.pts_to h.g_state v_state);
+      assert (BAR.pts_to h.g_state v_state);
+      assert (BAR.anchored h.g_state Ready);
+      BAR.recall_anchor h.g_state Ready;
+      assert (pure (v_state =!= Claimed));
       assert (pure (v_state == Done));
-      Big.op_Colon_Equals h.state Claimed;
+      rewrite (BAR.pts_to h.g_state v_state)
+           as (BAR.pts_to task.h.g_state v_state);
 
+      (* Now claim it *)
       claim_done_task #code #p #task.pre #task.post task.h;
 
       rewrite (code.up post)
            as (if true then code.up post else joinable p post h);
            
-      rewrite (Big.pts_to h.state Claimed)
-           as (Big.pts_to task.h.state Claimed);
+      rewrite (Big.pts_to h.state Done)
+           as (Big.pts_to task.h.state (unclaimed Claimed));
       intro_state_pred task.pre task.post task.h Claimed;
       elim_trade _ _; // undo extract_state_pred
       fold (lock_inv p.runnable p.g_runnable);
@@ -688,11 +704,7 @@ fn try_await
       true
     }
     Claimed -> {
-      assert (pure (v_state == Claimed));
-      assert (Big.pts_to h.state Claimed);
-      assert (BAR.pts_to task.h.g_state Claimed);
-      assert (BAR.anchored h.g_state Ready);
-      BAR.recall_anchor task.h.g_state Ready;
+      (* Concrete state is never Claimed *)
       unreachable ();
     }
   }
@@ -762,19 +774,8 @@ fn disown_aux
 
       fold (state_res et.pre et.post et.h.g_state Claimed);
       
-      // FIXME: concrete reference must change too. Idea:
-      // change the invariant in state_pred to something like
-      //
-      //   exists* (v_state : task_state post).
-      //     Big.pts_to h.state (unclaimed v_state) **
-      //     BAR.pts_to h.g_state v_state **
-      //     state_res pre post h.g_state v_state
-      //
-      // where unclaimed Claimed = Done. Claimed is really
-      // just a ghost state and we should not have to
-      // deal with it in the concrete ref.
-      drop_ (Big.pts_to et.h.state Done);
-      assume_ (Big.pts_to et.h.state Claimed);
+      rewrite (Big.pts_to et.h.state Done)
+           as (Big.pts_to et.h.state (unclaimed Claimed));
       
       intro_state_pred et.pre et.post et.h Claimed;
 
