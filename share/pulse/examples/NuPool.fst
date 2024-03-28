@@ -95,17 +95,6 @@ type handle (#code:vcode) (post : erased code.t) : Type u#0 = {
   g_state : BAR.ref (task_state post) p_st anchor_rel; (* these two refs are kept in sync *)
 }
 
-let state_pred
-  (#code:vcode)
-  ([@@@equate_by_smt] pre : erased code.t)
-  ([@@@equate_by_smt] post : erased code.t)
-  ([@@@equate_by_smt] h : handle post)
-: vprop =
-   exists* (v_state : task_state post).
-     Big.pts_to h.state (unclaimed v_state) **
-     BAR.pts_to h.g_state v_state **
-     state_res pre post h.g_state v_state
-
 noeq
 type task_t (code : vcode) : Type u#2 = {
   pre :  erased code.t;
@@ -116,6 +105,20 @@ type task_t (code : vcode) : Type u#2 = {
   thunk : unit -> stt unit (code.up pre) (fun _ -> code.up post);
 }
 
+let state_pred
+  (#code:vcode)
+  ([@@@equate_by_smt] pre : erased code.t)
+  ([@@@equate_by_smt] post : erased code.t)
+  ([@@@equate_by_smt] h : handle post)
+: vprop =
+  exists* (v_state : task_state post).
+    Big.pts_to
+      h.state
+      #(if Running? v_state then half_perm full_perm else full_perm)
+      (unclaimed v_state)
+      **
+    BAR.pts_to h.g_state v_state **
+    state_res pre post h.g_state v_state
 
 // equate_by_smt due to #22
 let rec all_state_pred
@@ -453,13 +456,32 @@ fn intro_state_pred
   (pre : erased code.t)
   (post : erased code.t)
   (h : handle post)
-  (v_state : task_state post)
+  (v_state : task_state post{~(Running? v_state)})
   requires
     Big.pts_to h.state (unclaimed v_state) **
     BAR.pts_to h.g_state v_state **
     state_res pre post h.g_state v_state
   ensures state_pred pre post h
 {
+  fold (state_pred pre post h);
+}
+```
+
+```pulse
+ghost
+fn intro_state_pred_Running
+  (#code:vcode)
+  (pre : erased code.t)
+  (post : erased code.t)
+  (h : handle post)
+  requires
+    Big.pts_to h.state #(half_perm full_perm) Running **
+    BAR.pts_to h.g_state Running **
+    state_res pre post h.g_state Running
+  ensures state_pred pre post h
+{
+  rewrite (Big.pts_to h.state #(half_perm full_perm) Running)
+       as (Big.pts_to h.state #(half_perm full_perm) (unclaimed Running));
   fold (state_pred pre post h);
 }
 ```
@@ -474,7 +496,7 @@ fn elim_state_pred
   requires state_pred pre post h
   returns v_state : erased (task_state post)
   ensures
-    Big.pts_to h.state (unclaimed v_state) **
+    Big.pts_to h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed v_state) **
     BAR.pts_to h.g_state v_state **
     state_res pre post h.g_state v_state
 {
@@ -643,8 +665,8 @@ fn try_await
 
   let v_state = elim_state_pred task.pre task.post task.h;
   
-  rewrite (Big.pts_to task.h.state (unclaimed (reveal v_state)))
-       as (Big.pts_to h.state (unclaimed (reveal v_state)));
+  rewrite (Big.pts_to task.h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed (reveal v_state)))
+       as (Big.pts_to h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed (reveal v_state)));
   let task_st = Big.op_Bang h.state;
   
   match task_st {
@@ -662,9 +684,9 @@ fn try_await
     }
     Running -> {
       (* NOOP *)
-      rewrite (Big.pts_to h.state (reveal v_state))
-           as (Big.pts_to task.h.state (reveal v_state));
-      intro_state_pred task.pre task.post task.h Running;
+      rewrite (Big.pts_to h.state #(half_perm full_perm) (reveal v_state))
+           as (Big.pts_to task.h.state #(half_perm full_perm) (reveal v_state));
+      intro_state_pred_Running task.pre task.post task.h;
       elim_trade _ _; // undo extract_state_pred
       fold (lock_inv p.runnable p.g_runnable);
       release p.lk;
@@ -832,12 +854,29 @@ fn pool_done_handle_done (#code:vcode) (#p:pool code)
 }
 ```
 
+let vopt (#a:Type) (o : option a) (p : a -> vprop) =
+  match o with
+  | Some x -> p x
+  | None -> emp
+  
+```pulse
+ghost
+fn get_vopt (#a:Type u#2) (#x : a) (#p : a -> vprop) ()
+  requires vopt (Some x) p
+  ensures p x
+{
+  unfold vopt (Some x) p;
+}
+```
+
 ```pulse
 (* Called with pool lock taken *)
 fn rec grab_work' (#code:vcode) (p:pool code)
   requires lock_inv p.runnable p.g_runnable
   returns  topt : option (task_t code)
-  ensures  lock_inv p.runnable p.g_runnable ** (if Some? topt then code.up (Some?.v topt).pre else emp)
+  ensures  lock_inv p.runnable p.g_runnable
+        ** vopt topt (fun t ->
+             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running)
 {
   unfold (lock_inv p.runnable p.g_runnable);
   with v_runnable. assert (Big.pts_to p.runnable v_runnable);
@@ -846,8 +885,8 @@ fn rec grab_work' (#code:vcode) (p:pool code)
   match runnable0 {
     Nil -> {
       let topt : option (task_t code) = None #(task_t code);
-      rewrite emp as
-        (if Some? topt then code.up (Some?.v topt).pre else emp);
+      rewrite emp
+           as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running);
       fold (lock_inv p.runnable p.g_runnable);
       topt
     }
@@ -864,13 +903,15 @@ fn rec grab_work' (#code:vcode) (p:pool code)
 
           Big.op_Colon_Equals t.h.state Running;
           BAR.write t.h.g_state Running;
+          
+          Big.share2 t.h.state;
 
-          intro_state_pred t.pre t.post t.h Running;
+          intro_state_pred_Running t.pre t.post t.h;
           add_one_state_pred t ts;
           fold (lock_inv p.runnable p.g_runnable);
           
-          rewrite code.up t.pre as
-            (if Some? topt then code.up (Some?.v topt).pre else emp);
+          rewrite code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running
+               as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running);
           
           topt
         }
@@ -888,7 +929,9 @@ fn rec grab_work' (#code:vcode) (p:pool code)
 fn grab_work (#code:vcode) (p:pool code)
   requires pool_alive #f p
   returns  topt : option (task_t code)
-  ensures  pool_alive #f p ** (if Some? topt then code.up (Some?.v topt).pre else emp)
+  ensures  pool_alive #f p
+        ** vopt topt (fun t ->
+             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running)
 {
   unfold (pool_alive #f p);
   acquire p.lk;
@@ -912,7 +955,7 @@ fn perf_work (#code:vcode) (t : task_t code)
 
 ```pulse
 fn put_back_result (#code:vcode) (p:pool code) (t : task_t code)
-  requires pool_alive #f p ** code.up t.post
+  requires pool_alive #f p ** code.up t.post ** Big.pts_to t.h.state #(half_perm full_perm) Running
   ensures  pool_alive #f p
 {
   admit();
@@ -932,6 +975,11 @@ fn rec worker (#code:vcode) (#f:perm) (p : pool code)
       worker p
     }
     Some t -> {
+      rewrite each topt as Some t;
+      get_vopt #(task_t code) #t ();
+      (* sigh *)
+      rewrite (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running) t
+           as code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running;
       perf_work t;
       put_back_result p t;
       worker p
@@ -940,6 +988,6 @@ fn rec worker (#code:vcode) (#f:perm) (p : pool code)
 }
 ```
 
-let await_pool'= magic()
-let await_pool= magic()
+let await_pool' = magic()
+let await_pool = magic()
 let deallocate_pool = magic()
