@@ -876,7 +876,7 @@ fn rec grab_work' (#code:vcode) (p:pool code)
   returns  topt : option (task_t code)
   ensures  lock_inv p.runnable p.g_runnable
         ** vopt topt (fun t ->
-             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running)
+             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** snapshot_mem p t.h)
 {
   unfold (lock_inv p.runnable p.g_runnable);
   with v_runnable. assert (Big.pts_to p.runnable v_runnable);
@@ -886,7 +886,7 @@ fn rec grab_work' (#code:vcode) (p:pool code)
     Nil -> {
       let topt : option (task_t code) = None #(task_t code);
       rewrite emp
-           as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running);
+           as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** snapshot_mem p t.h);
       fold (lock_inv p.runnable p.g_runnable);
       topt
     }
@@ -906,12 +906,16 @@ fn rec grab_work' (#code:vcode) (p:pool code)
           
           Big.share2 t.h.state;
 
+          BAR.take_snapshot' p.g_runnable;
+          intro_snapshot_mem p #t.post t.h t v_runnable;
+
           intro_state_pred_Running t.pre t.post t.h;
           add_one_state_pred t ts;
           fold (lock_inv p.runnable p.g_runnable);
+
           
-          rewrite code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running
-               as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running);
+          rewrite code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** snapshot_mem p t.h
+               as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** snapshot_mem p t.h);
           
           topt
         }
@@ -931,7 +935,7 @@ fn grab_work (#code:vcode) (p:pool code)
   returns  topt : option (task_t code)
   ensures  pool_alive #f p
         ** vopt topt (fun t ->
-             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running)
+             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** snapshot_mem p t.h)
 {
   unfold (pool_alive #f p);
   acquire p.lk;
@@ -955,12 +959,46 @@ fn perf_work (#code:vcode) (t : task_t code)
 
 ```pulse
 fn put_back_result (#code:vcode) (p:pool code) (t : task_t code)
-  requires pool_alive #f p ** code.up t.post ** Big.pts_to t.h.state #(half_perm full_perm) Running
+  requires pool_alive #f p **
+           snapshot_mem p t.h **
+           code.up t.post **
+           Big.pts_to t.h.state #(half_perm full_perm) Running
   ensures  pool_alive #f p
 {
-  admit();
+  acquire p.lk;
+  unfold (lock_inv p.runnable p.g_runnable);
+  recall_snapshot_mem p t.h;
+  let t' = extract_state_pred p t.h;
+  assume_ (pure (t == t'));
+  rewrite each t' as t;
+
+  (* Advance the state and place the post condition back into the pool *)
+  assert (state_pred t.pre t.post t.h ** Big.pts_to t.h.state #(half_perm full_perm) Running);
+    unfold (state_pred t.pre t.post t.h);
+    with v_st. assert (BAR.pts_to t.h.g_state v_st);
+    Big.pts_to_injective_eq t.h.state;
+    assert (pure (v_st == Running));
+    rewrite (Big.pts_to t.h.state #(if Running? v_st then half_perm full_perm else full_perm) (unclaimed v_st))
+        as (Big.pts_to t.h.state #(half_perm full_perm) v_st);
+    Big.gather2 t.h.state;
+    Big.op_Colon_Equals t.h.state Done;
+    BAR.write t.h.g_state Done;
+
+    rewrite (state_res t.pre t.post t.h.g_state Running) as emp;
+    rewrite code.up t.post as (state_res t.pre t.post t.h.g_state Done);
+
+    intro_state_pred t.pre t.post t.h Done;
+  assert (state_pred t.pre t.post t.h);
+
+  (* Restore full pool invariant with trade. *)
+  elim_trade _ _;
+
+  fold (lock_inv p.runnable p.g_runnable);
+  release p.lk;
+  drop_ (snapshot_mem p t.h);
 }
 ```
+
 
 ```pulse
 fn rec worker (#code:vcode) (#f:perm) (p : pool code)
@@ -978,8 +1016,8 @@ fn rec worker (#code:vcode) (#f:perm) (p : pool code)
       rewrite each topt as Some t;
       get_vopt #(task_t code) #t ();
       (* sigh *)
-      rewrite (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running) t
-           as code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running;
+      rewrite (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** snapshot_mem p t.h) t
+           as code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** snapshot_mem p t.h;
       perf_work t;
       put_back_result p t;
       worker p
