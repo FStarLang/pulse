@@ -794,6 +794,380 @@ let env_extend_map_group
   })
 = env_extend_gen e new_name (SEMapGroup (map_group_sem e.e_semenv a)) a
 
+(* Recursion *)
+
+let restrict_typ_spec
+  (bound: CBOR.Spec.raw_data_item)
+  (f: (x: CBOR.Spec.raw_data_item { x << bound }) -> GTot bool)
+  (x: CBOR.Spec.raw_data_item)
+: GTot bool
+= if FStar.StrongExcludedMiddle.strong_excluded_middle (x << bound)
+  then f x
+  else false
+
+let strong_excluded_middle_true_intro
+  (x: Type0)
+: Lemma
+  (requires x)
+  (ensures (FStar.StrongExcludedMiddle.strong_excluded_middle x == true))
+= ()
+
+#restart-solver
+let restrict_typ_spec_eq_intro
+  (bound: CBOR.Spec.raw_data_item)
+  (f: (x: CBOR.Spec.raw_data_item { x << bound }) -> GTot bool)
+  (x: CBOR.Spec.raw_data_item)
+: Lemma
+  (requires (x << bound))
+  (ensures (restrict_typ_spec bound f x == f x))
+= strong_excluded_middle_true_intro (x << bound)
+
+#restart-solver
+let elem_typ_sem_restrict_typ_spec_correct
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (x0: CBOR.Spec.raw_data_item)
+  (t: elem_typ { elem_typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+  (x: CBOR.Spec.raw_data_item { x << x0 })
+: Lemma
+  (ensures (
+    elem_typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    elem_typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s)))
+      t
+      x
+  ))
+= restrict_typ_spec_eq_intro x0 s x
+
+let rec sem_typ_choice_restrict_typ_spec_correct
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (x0: CBOR.Spec.raw_data_item)
+  (t: list elem_typ { sem_typ_choice_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+  (x: CBOR.Spec.raw_data_item { x << x0 })
+: Lemma
+  (ensures (
+    sem_typ_choice
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    sem_typ_choice
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s)))
+      t
+      x
+  ))
+  (decreases t)
+= match t with
+  | [] -> ()
+  | a :: q ->
+    elem_typ_sem_restrict_typ_spec_correct e new_name s x0 a x;
+    sem_typ_choice_restrict_typ_spec_correct e new_name s x0 q x
+
+#restart-solver
+let typ_sem_restrict_typ_spec_correct
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (x0: CBOR.Spec.raw_data_item)
+  (t: typ { typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+  (x: CBOR.Spec.raw_data_item { x << x0 })
+: Lemma
+  (ensures (
+    typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s)))
+      t
+      x
+  ))
+= let se1 = (semenv_extend_gen e.e_semenv new_name (SEType s)) in
+  let se2 = (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s))) in
+  match t with
+  | TElem t' -> elem_typ_sem_restrict_typ_spec_correct e new_name s x0 t' x
+  | TChoice l -> sem_typ_choice_restrict_typ_spec_correct e new_name s x0 l x
+  | TTag tag' t' ->
+    begin match x with
+    | CBOR.Spec.Tagged tag x' ->
+      if tag = tag'
+      then elem_typ_sem_restrict_typ_spec_correct e new_name s x0 t' x'
+      else ()
+    | _ -> ()
+    end
+  | TEscapeHatch _ -> ()
+
+noeq
+type result =
+| ResultSuccess
+| ResultFailure of string
+| ResultOutOfFuel
+
+#restart-solver
+let rec elem_typ_productive
+  (fuel: nat)
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (t: elem_typ { elem_typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+: Tot result
+  (decreases fuel)
+= match t with
+  | TDef i ->
+    if fuel = 0
+    then ResultOutOfFuel
+    else if i = new_name
+    then ResultFailure "elem_typ_productive: unguarded recursive call"
+    else if SEType? (e.e_semenv.se_env i)
+    then begin
+      let t = e.e_env i in
+      typ_bounded_incr e.e_semenv.se_bound (extend_name_env e.e_semenv.se_bound new_name) t;
+      typ_productive (fuel - 1) e new_name t
+    end
+    else ResultSuccess
+  | _ -> ResultSuccess
+
+and typ_productive
+  (fuel: nat)
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (t: typ { typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+: Tot result
+  (decreases fuel)
+= if fuel = 0
+  then ResultOutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match t with
+  | TElem t -> elem_typ_productive fuel' e new_name t
+  | TChoice l -> choice_typ_productive fuel' e new_name l
+  | _ -> ResultSuccess
+
+and choice_typ_productive
+  (fuel: nat)
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (t: list elem_typ { sem_typ_choice_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+: Tot result
+  (decreases fuel)
+= if fuel = 0
+  then ResultOutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match t with
+  | [] -> ResultSuccess
+  | a :: q ->
+    let res1 = elem_typ_productive fuel' e new_name a in
+    if not (ResultSuccess? res1)
+    then res1
+    else choice_typ_productive fuel' e new_name q
+
+let rec elem_typ_productive_correct
+  (fuel: nat)
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (t: elem_typ { elem_typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t /\
+    elem_typ_productive fuel e new_name t == ResultSuccess
+  })
+  (x: CBOR.Spec.raw_data_item)
+: Lemma
+  (ensures (
+    elem_typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    elem_typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x s)))
+      t
+      x
+  ))
+  (decreases fuel)
+= match t with
+  | TDef i ->
+    if SEType? (e.e_semenv.se_env i)
+    then begin
+      let t = e.e_env i in
+      typ_bounded_incr e.e_semenv.se_bound (extend_name_env e.e_semenv.se_bound new_name) t;
+      typ_productive_correct (fuel - 1) e new_name s t x
+    end
+    else ()
+  | _ -> ()
+
+and typ_productive_correct
+  (fuel: nat)
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (t: typ { typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t /\
+    typ_productive fuel e new_name t == ResultSuccess
+  })
+  (x: CBOR.Spec.raw_data_item)
+: Lemma
+  (ensures (
+    typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x s)))
+      t
+      x
+  ))
+  (decreases fuel)
+= match t with
+  | TElem t -> elem_typ_productive_correct (fuel - 1) e new_name s t x
+  | TChoice l -> choice_typ_productive_correct (fuel - 1) e new_name s l x
+  | TTag tag t' ->
+    begin match x with
+    | CBOR.Spec.Tagged tag' x' ->
+      if tag = tag'
+      then elem_typ_sem_restrict_typ_spec_correct e new_name s x t' x'
+      else ()
+    | _ -> ()
+    end
+  | TEscapeHatch _ -> ()
+
+and choice_typ_productive_correct
+  (fuel: nat)
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (t: list elem_typ { sem_typ_choice_bounded (extend_name_env e.e_semenv.se_bound new_name) t /\
+    choice_typ_productive fuel e new_name t == ResultSuccess
+  })
+  (x: CBOR.Spec.raw_data_item)
+: Lemma
+  (ensures (
+    sem_typ_choice
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    sem_typ_choice
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x s)))
+      t
+      x
+  ))
+  (decreases fuel)
+= match t with
+  | [] -> ()
+  | a :: q ->
+    elem_typ_productive_correct (fuel - 1) e new_name s a x;
+    choice_typ_productive_correct (fuel - 1) e new_name s q x
+
+[@@"opaque_to_smt"]
+let rec rec_typ_sem
+  (e: semenv)
+  (new_name: string {~ (name_mem new_name e.se_bound) })
+  (t: typ { typ_bounded (extend_name_env e.se_bound new_name) t })
+  (x: CBOR.Spec.raw_data_item)
+: GTot bool
+  (decreases x)
+= typ_sem
+    (semenv_extend_gen e new_name (SEType (restrict_typ_spec x (rec_typ_sem e new_name t))))
+    t
+    x
+
+#restart-solver
+let rec_typ_sem_correct
+  (fuel: nat)
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (t: typ { typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t /\
+    typ_productive fuel e new_name t == ResultSuccess
+  })
+: Lemma
+  (ensures (
+    rec_typ_sem e.e_semenv new_name t
+    `CDDL.Spec.typ_equiv`
+    typ_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType (rec_typ_sem e.e_semenv new_name t)))
+      t
+  ))
+= let prf
+    (x: CBOR.Spec.raw_data_item)
+  : Lemma
+    (
+      rec_typ_sem e.e_semenv new_name t x ==
+      typ_sem
+        (semenv_extend_gen e.e_semenv new_name (SEType (rec_typ_sem e.e_semenv new_name t)))
+        t
+        x
+    )
+  = assert_norm (rec_typ_sem e.e_semenv new_name t x ==
+      typ_sem
+        (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x (rec_typ_sem e.e_semenv new_name t))))
+        t
+        x
+    );
+    typ_productive_correct fuel e new_name (rec_typ_sem e.e_semenv new_name t) t x
+  in
+  Classical.forall_intro prf
+
+let env_extend_rec_typ_post
+  (e: env)
+  (new_name: string)
+  (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  (a: typ)
+  (sq: squash (
+    typ_bounded (extend_name_env e.e_semenv.se_bound new_name) a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  ))
+  (e': env)
+: Tot prop
+=
+      e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
+      env_included e e' /\
+      typ_bounded e'.e_semenv.se_bound a /\
+      new_name `name_mem` e'.e_semenv.se_bound == true /\
+      SEType? (e'.e_semenv.se_env new_name) /\
+      e'.e_env new_name == a
+
+let env_extend_rec_typ_fuel
+  (e: env)
+  (new_name: string { ~ (new_name `name_mem` e.e_semenv.se_bound)})
+  (a: typ {
+    typ_bounded (extend_name_env e.e_semenv.se_bound new_name) a
+  })
+: Type0
+= (fuel: nat { typ_productive fuel e new_name a == ResultSuccess })
+
+[@@ bounded_attr; sem_attr]
+let env_extend_rec_typ
+  (e: env)
+  (new_name: string)
+  (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  (a: typ)
+  (sq: squash (
+    typ_bounded (extend_name_env e.e_semenv.se_bound new_name) a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  ))
+  (fuel: env_extend_rec_typ_fuel e new_name a)
+: Tot (e': env { env_extend_rec_typ_post e new_name new_name_fresh a sq e' })
+= let s = SEType (rec_typ_sem e.e_semenv new_name a) in
+  rec_typ_sem_correct fuel e new_name a;
+  let se' = semenv_extend_gen e.e_semenv new_name s in
+  {
+    e_semenv = se';
+    e_env = (fun (i: name se'.se_bound) ->
+      if i = new_name
+      then a
+      else begin
+        let x' = e.e_env i in
+        env_elem_prop_included e.e_semenv se' (se'.se_env i) x';
+        x'
+      end
+    );
+  }
+
+(* Equivalence, disjointness, splittability *)
+
 let spec_array_group3_zero_or_more_equiv #b
  (a1 a2: Spec.array_group3 b)
 : Lemma
@@ -950,12 +1324,6 @@ and array_group_equiv
 
 let spec_typ_disjoint (a1 a2: Spec.typ) : Tot prop
 = (forall (l: CBOR.Spec.raw_data_item) . ~ (a1 l /\ a2 l))
-
-noeq
-type result =
-| ResultSuccess
-| ResultFailure of string
-| ResultOutOfFuel
 
 #push-options "--z3rlimit 32"
 
