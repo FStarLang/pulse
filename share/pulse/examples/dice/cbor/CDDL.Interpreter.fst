@@ -55,12 +55,18 @@ type name_env = FStar.GSet.set string
 
 let name (e: name_env) : eqtype = (s: string { FStar.GSet.mem s e })
 
+irreducible let bounded_attr : unit = ()
+
+irreducible let sem_attr : unit = ()
+
+[@@ bounded_attr; sem_attr]
 noeq
 type semenv_elem =
 | SEType of Spec.typ
 | SEArrayGroup of Spec.array_group3 None
 | SEMapGroup of Spec.map_group None
 
+[@@ bounded_attr; sem_attr]
 noeq
 type semenv = {
   se_bound: name_env;
@@ -70,11 +76,13 @@ type semenv = {
 [@@"opaque_to_smt"] irreducible
 let name_empty_elim (t: Type) (x: name FStar.GSet.empty) : Tot t = false_elim ()
 
+[@@ bounded_attr; sem_attr]
 let empty_semenv = {
   se_bound = FStar.GSet.empty;
   se_env = name_empty_elim _;
 }
 
+[@@ sem_attr]
 let se_typ
   (se: semenv)
   (i: name se.se_bound)
@@ -83,6 +91,7 @@ let se_typ
   | SEType t -> t
   | _ -> Spec.t_always_false
 
+[@@ sem_attr]
 let se_array_group
   (se: semenv)
   (i: name se.se_bound)
@@ -91,6 +100,7 @@ let se_array_group
   | SEArrayGroup t -> t
   | _ -> Spec.array_group3_always_false
 
+[@@ sem_attr]
 let se_map_group
   (se: semenv)
   (i: name se.se_bound)
@@ -103,7 +113,13 @@ let semenv_included (s1 s2: semenv) : Tot prop =
   s1.se_bound `FStar.GSet.subset` s2.se_bound /\
   (forall (i: name s1.se_bound) . s1.se_env i == s2.se_env i)
 
-[@@"opaque_to_smt"]
+let semenv_included_trans (s1 s2 s3: semenv) : Lemma
+  (requires (semenv_included s1 s2 /\ semenv_included s2 s3))
+  (ensures (semenv_included s1 s3))
+  [SMTPat (semenv_included s1 s3); SMTPat (semenv_included s1 s2)]
+= ()
+
+[@@"opaque_to_smt"; bounded_attr; sem_attr]
 let semenv_extend_gen
   (se: semenv)
   (new_name: string)
@@ -123,6 +139,7 @@ let semenv_extend_gen
     se_env = (fun (i: name se_bound') -> if i = new_name then a else se.se_env i);
   }
 
+[@@bounded_attr; sem_attr]
 let semenv_extend_typ
   (se: semenv)
   (new_name: string)
@@ -138,6 +155,7 @@ let semenv_extend_typ
     )
 = semenv_extend_gen se new_name (SEType a)
 
+[@@bounded_attr; sem_attr]
 let semenv_extend_array_group
   (se: semenv)
   (new_name: string)
@@ -153,6 +171,7 @@ let semenv_extend_array_group
     )
 = semenv_extend_gen se new_name (SEArrayGroup a)
 
+[@@bounded_attr; sem_attr]
 let semenv_extend_map_group
   (se: semenv)
   (new_name: string)
@@ -168,8 +187,6 @@ let semenv_extend_map_group
     )
 = semenv_extend_gen se new_name (SEMapGroup a)
 
-irreducible let bounded_attr : unit = ()
-
 [@@ bounded_attr ]
 let elem_typ_bounded
   (bound: name_env)
@@ -180,8 +197,6 @@ let elem_typ_bounded
   | TArray j -> j `FStar.GSet.mem` bound
   | TMap j -> j `FStar.GSet.mem` bound
   | _ -> true
-
-irreducible let sem_attr : unit = ()
 
 [@@ sem_attr ]
 let elem_typ_sem
@@ -587,6 +602,7 @@ let map_group_sem (_: semenv) (x: map_group) : Pure (Spec.map_group None)
   (ensures (fun _ -> True))
 = x // TODO
 
+[@@ sem_attr]
 let env_elem0 (s: semenv_elem) : Type0 =
   match s with
   | SEType _ -> typ
@@ -615,19 +631,56 @@ let env_elem_prop_included (e1 e2: semenv) (s: semenv_elem) (x: env_elem0 s) : L
   | SEArrayGroup _ -> array_group_sem_included e1 e2 x
   | SEMapGroup _ -> () // TODO
 
+[@@ sem_attr]
 let env_elem (e_semenv: semenv) (s: semenv_elem) =
   (x: env_elem0 s { env_elem_prop e_semenv s x })
 
+[@@ bounded_attr; sem_attr]
 noeq
 type env = {
   e_semenv: semenv;
   e_env: (i: name e_semenv.se_bound) -> (env_elem e_semenv (e_semenv.se_env i));
 }
 
+[@@sem_attr]
+let rec elem_typ_env_sem
+  (e: env)
+  (fuel: nat)
+  (t: elem_typ)
+: Pure Spec.typ
+  (requires elem_typ_bounded e.e_semenv.se_bound t)
+  (ensures fun t' -> t' `Spec.typ_equiv` elem_typ_sem e.e_semenv t)
+  (decreases fuel)
+= if fuel = 0
+  then elem_typ_sem e.e_semenv t
+  else let fuel' : nat = fuel - 1 in
+  match t with
+  | TDef i ->
+    if SEType? (e.e_semenv.se_env i)
+    then typ_env_sem e fuel' (e.e_env i)
+    else elem_typ_sem e.e_semenv t
+  | _ ->  elem_typ_sem e.e_semenv t
+
+and typ_env_sem
+  (e: env)
+  (fuel: nat)
+  (t: typ)
+: Pure Spec.typ
+  (requires typ_bounded e.e_semenv.se_bound t)
+  (ensures fun t' -> t' `Spec.typ_equiv` typ_sem e.e_semenv t)
+  (decreases fuel)
+= if fuel = 0
+  then typ_sem e.e_semenv t
+  else let fuel' : nat = fuel - 1 in
+  match t with
+  | TElem t -> elem_typ_env_sem e fuel' t
+  | TTag tag t -> Spec.t_tag tag (elem_typ_env_sem e fuel' t)
+  | _ -> typ_sem e.e_semenv t
+
 [@@"opaque_to_smt"] irreducible // because of false_elim
 let e_env_empty (i: name FStar.GSet.empty) : Tot (env_elem empty_semenv (empty_semenv.se_env i)) = false_elim ()
 
-[@@"opaque_to_smt"]
+[@@"opaque_to_smt"; bounded_attr; sem_attr]
 let empty_env : (e: env {
   e.e_semenv.se_bound == FStar.GSet.empty
 }) = {
@@ -641,7 +694,13 @@ let env_included
 = semenv_included e1.e_semenv e2.e_semenv /\
   (forall (i: name e1.e_semenv.se_bound) . e2.e_env i == e1.e_env i)
 
-[@@"opaque_to_smt"]
+let env_included_trans (s1 s2 s3: env) : Lemma
+  (requires (env_included s1 s2 /\ env_included s2 s3))
+  (ensures (env_included s1 s3))
+  [SMTPat (env_included s1 s3); SMTPat (env_included s1 s2)]
+= ()
+
+[@@"opaque_to_smt"; bounded_attr; sem_attr]
 let env_extend_gen
   (e: env)
   (new_name: string)
@@ -671,9 +730,11 @@ let env_extend_gen
     );
   }
 
+[@@ bounded_attr; sem_attr]
 let env_extend_typ
   (e: env)
-  (new_name: string {(~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))}) // ideally by SMT
+  (new_name: string)
+  (new_name_fresh: squash (~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: typ)
   (sq: squash (
     typ_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
@@ -686,9 +747,11 @@ let env_extend_typ
   })
 = env_extend_gen e new_name (SEType (typ_sem e.e_semenv a)) a
 
+[@@ bounded_attr; sem_attr]
 let env_extend_array_group
   (e: env)
-  (new_name: string {(~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))}) // ideally by SMT
+  (new_name: string) // ideally by SMT
+  (new_name_fresh: squash (~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: array_group)
   (sq: squash (
     array_group_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
@@ -701,9 +764,11 @@ let env_extend_array_group
   })
 = env_extend_gen e new_name (SEArrayGroup (array_group_sem e.e_semenv a)) a
 
+[@@ bounded_attr; sem_attr]
 let env_extend_map_group
   (e: env)
-  (new_name: string {(~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))}) // ideally by SMT
+  (new_name: string) // ideally by SMT
+  (new_name_fresh: squash (~ (new_name `FStar.GSet.mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: map_group)
   (sq: squash (
     map_group_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
