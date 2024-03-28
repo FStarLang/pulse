@@ -2,7 +2,7 @@ module COSE.AST
 open CDDL.Interpreter
 module Spec = COSE.Spec
 
-#set-options "--fuel 0"
+#push-options "--fuel 0"
 
 [@@ bounded_attr; sem_attr]
 let e0 = empty_env
@@ -50,11 +50,7 @@ let _ : squash (
     by (solve_sem_equiv ())
 
 [@@ bounded_attr; sem_attr]
-let e5 =
-  env_extend_typ e4 "bstr"
-    (_ by (solve_env_extend_array_group ()))
-    (TEscapeHatch CDDL.Spec.bstr)
-    (_ by (solve_env_extend_array_group ()))
+let e5 = e4
 
 [@@ bounded_attr; sem_attr]
 let e6 =
@@ -62,7 +58,7 @@ let e6 =
     (_ by (solve_env_extend_array_group ()))
     [
       "headers", TAAtom (TADef "headers");
-      "signature", TAAtom (TAElem (TDef "bstr"));
+      "signature", TAAtom (TAElem (TByteString));
     ]
     (_ by (solve_env_extend_array_group ()))
 
@@ -88,7 +84,7 @@ let _ : squash (
 
 [@@ bounded_attr; sem_attr]
 let e8 =
-  env_extend_typ e7 "cose_signature_payload" 
+  env_extend_typ e7 "cose_sign_payload" 
     (_ by (solve_env_extend_array_group ()))
     (TChoice [
       TByteString;
@@ -115,7 +111,7 @@ let e10 =
     (_ by (solve_env_extend_array_group ()))
     [
       "headers", TAAtom (TADef "headers");
-      "payload", TAAtom (TAElem (TDef "cose_signature_payload"));
+      "payload", TAAtom (TAElem (TDef "cose_sign_payload"));
       "signatures", TAAtom (TAElem (TArray "cose_signatures"));
     ]
     (_ by (solve_env_extend_array_group ()))
@@ -150,3 +146,69 @@ let e12 =
     (_ by (solve_env_extend_array_group ()))
     (TTag Spec.tag_cose_sign (TDef "cose_sign"))
     (_ by (solve_env_extend_array_group ()))
+
+#push-options "--z3rlimit 16" // cannot reason about typ_equiv
+
+let _ : squash (
+  se_typ e12.e_semenv "cose_sign_tagged" `CDDL.Spec.typ_equiv` Spec.cose_sign_tagged
+) = 
+  let a = normalize_term (e12.e_env "cose_sign_tagged") in
+  assert (typ_sem e12.e_semenv a `CDDL.Spec.typ_equiv` Spec.cose_sign_tagged)
+    by (solve_sem_equiv ())
+
+#pop-options
+
+[@@ bounded_attr; sem_attr]
+let e13 =
+  env_extend_array_group e12 "cose_sign1_array"
+    (_ by (solve_env_extend_array_group ()))
+    [
+      "headers", TAAtom (TADef "headers");
+      "payload", TAAtom (TAElem (TDef "cose_sign_payload"));
+      "signature", TAAtom (TAElem TByteString);
+    ]
+    (_ by (solve_env_extend_array_group ()))
+
+let thr13 : spec_array_group_splittable_threshold e13 =
+  spec_array_group_splittable_threshold_extend
+    (spec_array_group_splittable_threshold_extend_env thr10 e13)
+    "cose_sign1_array"
+    (_ by (solve_spec_array_group_splittable ()))
+
+[@@ bounded_attr; sem_attr]
+let e14 =
+  env_extend_typ e13 "cose_sign1"
+    (_ by (solve_env_extend_array_group ()))
+    (TElem (TArray "cose_sign1_array"))
+    (_ by (solve_env_extend_array_group ()))
+
+#push-options "--z3rlimit 16" // cannot reason about typ_equiv
+
+let _ : squash (
+  se_typ e14.e_semenv "cose_sign1" `CDDL.Spec.typ_equiv` Spec.cose_sign1
+) = 
+  let a = normalize_term (e14.e_env "cose_sign1") in
+  assert (typ_sem e14.e_semenv a `CDDL.Spec.typ_equiv` Spec.cose_sign1)
+    by (solve_sem_equiv ())
+
+#pop-options
+
+[@@ bounded_attr; sem_attr]
+let e15 =
+  env_extend_typ e14 "cose_sign1_tagged"
+    (_ by (solve_env_extend_array_group ()))
+    (TTag Spec.tag_cose_sign1 (TDef "cose_sign1"))
+    (_ by (solve_env_extend_array_group ()))
+
+#push-options "--z3rlimit 16" // cannot reason about typ_equiv
+
+let _ : squash (
+  se_typ e15.e_semenv "cose_sign1_tagged" `CDDL.Spec.typ_equiv` Spec.cose_sign1_tagged
+) = 
+  let a = normalize_term (e15.e_env "cose_sign1_tagged") in
+  assert (typ_sem e15.e_semenv a `CDDL.Spec.typ_equiv` Spec.cose_sign1_tagged)
+    by (solve_sem_equiv ())
+
+#pop-options
+
+#pop-options
