@@ -65,7 +65,7 @@ let anchor_rel #code (#post:code.t) : FRAP.anchor_rel (p_st #code #post) =
     // match x, y with
     // | Ready, Claimed -> False
     // | x, y -> squash (p_st x y)
-    // ^ Fails with Variable "uu___#178" not found
+    // ^ Fails with Variable "uu___#178" not found. See F* bug #3230
 
 let anchor_rel_refl (#code:_) (#post:code.t) (x:task_state post) :
   Lemma (anchor_rel x x) [SMTPat (anchor_rel x x)]
@@ -106,15 +106,6 @@ let state_pred
      BAR.pts_to h.g_state v_state **
      state_res pre post h.g_state v_state
 
-// FIXME: implement?
-assume
-val handle_eq
-  (#code:vcode)
-  (#post1 #post2 : code.t)
-  (h1 : handle post1)
-  (h2 : handle post2)
-  : GTot (b:bool{b <==> h1 === h2})
-
 noeq
 type task_t (code : vcode) : Type u#2 = {
   pre :  erased code.t;
@@ -125,21 +116,10 @@ type task_t (code : vcode) : Type u#2 = {
   thunk : unit -> stt unit (code.up pre) (fun _ -> code.up post);
 }
 
-let list_extension #a (t0 t1 : list a)
-  : prop
-  = Cons? t1 /\ t0 == List.Tot.tail t1
- 
-let list_preorder #a
-  : FStar.Preorder.preorder (list a)
-  = FStar.ReflexiveTransitiveClosure.closure list_extension
-
-let list_anchor : FRAP.anchor_rel list_preorder = fun x y -> list_preorder x y /\ True
-
 
 // equate_by_smt due to #22
 let rec all_state_pred
   (#code:vcode)
-
   ([@@@equate_by_smt] v_runnable : list (task_t code))
 : vprop
 = match v_runnable with
@@ -173,6 +153,22 @@ fn take_one_h11 (#code:vcode)
   unfold (all_state_pred (t :: v_runnable));
 }
 ```
+(** List preorder and anchor relation. Used for the runnable lists
+which are monotonically increasing. **)
+let list_extension #a (t0 t1 : list a)
+  : prop
+  = Cons? t1 /\ t0 == List.Tot.tail t1
+
+let list_preorder #a
+  : FStar.Preorder.preorder (list a)
+  = FStar.ReflexiveTransitiveClosure.closure list_extension
+
+let list_anchor : FRAP.anchor_rel list_preorder = fun x y -> list_preorder x y /\ True
+
+let mem_lemma (#a:Type) (x:a) (l1 l2:list a)
+: Lemma (requires List.memP x l1 /\ list_preorder l1 l2)
+        (ensures List.memP x l2)
+= admit()
 
 let lock_inv (#code:vcode)
   (runnable   : Big.ref (list (task_t code)))
@@ -193,14 +189,14 @@ type pool_st (code:vcode) : Type u#0 = {
 
   lk : lock (lock_inv runnable g_runnable);
 }
+type pool (code:vcode) = pool_st code
 
+(* Assuming a vprop for lock ownership. *)
 assume val lock_alive
   (#p:vprop)
   (#[exact (`full_perm)] f : perm)
   (l : lock p)
   : (v:vprop{is_small v})
-
-type pool (code:vcode) = pool_st code
 
 let pool_alive (#[exact (`full_perm)] f : perm) (#code:vcode) (p:pool code) : vprop =
   lock_alive #_ #f p.lk
@@ -231,11 +227,6 @@ let snapshot_mem (#code:vcode)
     BAR.snapshot p.g_runnable v_runnable **
     pure (handle_in_task_list h v_runnable)
 
-let mem_lemma (#a:Type) (x:a) (l1 l2:list a)
-: Lemma (requires List.memP x l1 /\ list_preorder l1 l2)
-        (ensures List.memP x l2)
-= admit()
-
 ```pulse
 ghost
 fn intro_snapshot_mem
@@ -265,12 +256,22 @@ fn recall_snapshot_mem0
 
 ```pulse
 ghost
+fn elim_exists_explicit (#a:Type u#2) (p : a -> prop)
+  requires pure (exists x. p x)
+  returns  x : a
+  ensures  pure (p x)
+{
+  admit();
+}
+```
+```pulse
+ghost
 fn recall_snapshot_mem
   (#code:vcode) (p : pool code) (#post : erased code.t) (h : handle post) (#ts : list (task_t code))
   requires BAR.pts_to_full p.g_runnable ts ** snapshot_mem p h
   returns  task : erased (task_t code)
   ensures  BAR.pts_to_full p.g_runnable ts ** snapshot_mem p h **
-            pure (task.post == post /\ task.h == h /\ List.memP task v_runnable /\
+            pure (task.post == post /\ task.h == h /\ List.memP (reveal task) ts /\
                   handle_in_task_list h ts)
 {
   unfold (snapshot_mem p h);
@@ -279,19 +280,16 @@ fn recall_snapshot_mem
   BAR.recall_snapshot p.g_runnable;
   BAR.lift_anchor p.g_runnable ts;
   assert (pure (list_preorder ts0 ts /\ True));
-  // with task. assert ( pure (task.post == post /\ task.h == h /\ List.memP task ts)
   assert (pure (handle_in_task_list h ts0));
   fold (snapshot_mem p h);
-  // mem_lemma (get_addr h.state) hs0 hs;
+  assert (pure (handle_in_task_list h ts0));
   assert (pure (exists (task : task_t code). 
       (task.post == post /\ task.h == h /\ List.memP task ts0)));
-  // with (task : task_t code). assert (pure
-  //     (task.post == post /\ task.h == h /\ List.memP task ts0));
-  // Scoping bug from above, trying to obtain the task from the existential
-  // - Tactic logged issue:
-  // - Variable "code#180" not found
-  // - Raised within Tactics.refl_instantiate_implicits
-  admit();
+  let task = elim_exists_explicit (fun (task : task_t code) ->
+      (task.post == post /\ task.h == h /\ List.memP task ts0));
+      ();
+  mem_lemma task ts0 ts;
+  hide task
 }
 ```
 
@@ -909,38 +907,36 @@ fn perf_work (#code:vcode) (t : task_t code)
 {
   let f = t.thunk;
   f ()
-  // unfold (task_alive t);
-  // let tv = !t;
-  // let tlk = tv.lk;
-  // acquire tlk;
-  // let task_st = !tv.state;
-  // match task_st {
-  //   Ready -> {
-  //     assert (state_res tv.pre tv.post tv.g_state Ready);
-  //     rewrite (state_res tv.pre tv.post tv.g_state Ready) as code.up tv.pre;
+}
+```
 
-  //     (* Needed? We are not releasing the lock. *)
-  //     // tv.state := Running;
-  //     // AR.write tv.g_state Running;
-      
-  //     let f = tv.thunk;
-  //     f ();
-      
-  //     assert (code.up tv.post);
-  //     rewrite code.up tv.post as (state_res tv.pre tv.post tv.g_state Done);
+```pulse
+fn put_back_result (#code:vcode) (p:pool code) (t : task_t code)
+  requires pool_alive #f p ** code.up t.post
+  ensures  pool_alive #f p
+{
+  admit();
+}
+```
 
-  //     tv.state := Done;
-  //     AR.write tv.g_state Done;
-      
-  //     release tlk;
-  //     fold (task_alive t);
-  //     ();
-  //   }
-  //   _ -> {
-  //     (* Anything else should be impossible *)
-  //     admit();
-  //   }
-  // }
+```pulse
+fn rec worker (#code:vcode) (#f:perm) (p : pool code)
+  requires pool_alive #f p
+  ensures  pool_alive #f p
+{
+  let topt = grab_work p;
+  match topt {
+    None -> {
+      rewrite (if Some? topt then code.up (Some?.v topt).pre else emp)
+           as emp;
+      worker p
+    }
+    Some t -> {
+      perf_work t;
+      put_back_result p t;
+      worker p
+    }
+  }
 }
 ```
 
