@@ -14,7 +14,7 @@
    limitations under the License.
 *)
 
-module Pulse.Lib.AnchoredReference
+module Pulse.Lib.BigAnchoredReference
 
 open Pulse.Lib.Core
 open PulseCore.FractionalPermission
@@ -26,9 +26,9 @@ module U32 = FStar.UInt32
 module T = FStar.Tactics
 
 [@@erasable]
-val ref ([@@@unused]a:Type u#0) (p : preorder a) (anc : anchor_rel p) : Type u#0
+val ref ([@@@unused]a:Type u#2) (p : preorder a) (anc : anchor_rel p) : Type u#0
 
-instance val ref_non_informative (a:Type0) (p : preorder a) (anc : anchor_rel p)
+instance val ref_non_informative (a:Type u#2) (p : preorder a) (anc : anchor_rel p)
   : NonInformative.non_informative (ref a p anc)
 
 val pts_to_full
