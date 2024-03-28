@@ -1,6 +1,8 @@
 module NuPool
 
- // TODO: can we remove permission to the pool in await / try_await?
+ // TODO
+ //
+ // 1- can we remove permission to the pool in await / try_await?
  // Ideally we do not lock the pool or even care much about it.
 
 open Pulse.Lib.Pervasives
@@ -11,8 +13,11 @@ open Pulse.Lib.Par.Pledge
 open Pulse.Lib.Trade
 module SmallTrade = Pulse.Lib.SmallTrade
 
+open Pulse.Lib.InvList
+
 module FRAP = Pulse.Lib.FractionalAnchoredPreorder
 module AR = Pulse.Lib.AnchoredReference
+module BAR = Pulse.Lib.BigAnchoredReference
 open Pulse.Lib.CoreRef
 
 open Pulse.Class.Duplicable
@@ -21,108 +26,89 @@ module Big = Pulse.Lib.BigReference
 module BigGhost = Pulse.Lib.BigGhostReference
 module Ghost = Pulse.Lib.GhostReference
 
-module MS = MonotonicSet
-
-let gref = Pulse.Lib.GhostReference.ref
-
-#set-options "--debug NuPool --debug_level SMTQuery --log_failing_queries"
+// #set-options "--debug NuPool --debug_level SMTQuery --log_failing_queries"
 // #set-options "--print_implicits"
 // #set-options "--print_universes"
+// #set-options "--split_queries always"
 
 noeq
-type vcode = {
+type vcode : Type u#3 = {
     t : Type u#2;
-    up : t -> v:vprop{is_small v};
+    up : t -> vprop;
     emp : (emp:t{up emp == Pulse.Lib.Core.emp});
 }
 
-type task_state =
-  | Ready
-  | Running
-  | Done
-  | Claimed
-  
-let v (s : task_state) : int =
+noeq
+type task_state (#code:vcode) : (post:erased code.t) -> Type u#2 =
+  | Ready    : #post:erased code.t -> task_state post
+  | Running  : #post:erased code.t -> task_state post
+  | Done     : #post:erased code.t -> task_state post
+  | Claimed  : #post:erased code.t -> task_state post
+
+let v #code (#post:code.t) (s : task_state post) : int =
   match s with
   | Ready -> 0
   | Running -> 1
   | Done -> 2
   | Claimed -> 3
   
-let p_st : preorder task_state = fun x y -> b2t (v x <= v y)
+let p_st #code (#post : code.t) : preorder (task_state post) = fun x y -> b2t (v x <= v y)
 
-let anchor_rel : FRAP.anchor_rel p_st =
-  fun x y ->
-    match x, y with
-    | Ready, Claimed -> false
-    | x, y -> squash (p_st x y)
+let anchor_rel #code (#post:code.t) : FRAP.anchor_rel (p_st #code #post) =
+  fun (x y : task_state post) ->
+    if Ready? x && Claimed? y then False else squash (p_st x y)
+    // match x, y with
+    // | Ready, Claimed -> False
+    // | x, y -> squash (p_st x y)
+    // ^ Fails with Variable "uu___#178" not found
 
-let anchor_rel_refl (x:task_state) : Lemma (anchor_rel x x) [SMTPat (anchor_rel x x)] =
-  assert_norm (anchor_rel Ready Ready);
-  assert_norm (anchor_rel Running Running);
-  assert_norm (anchor_rel Done Done);
-  assert_norm (anchor_rel Claimed Claimed)
+let anchor_rel_refl (#code:_) (#post:code.t) (x:task_state post) :
+  Lemma (anchor_rel x x) [SMTPat (anchor_rel x x)]
+  =
+  assert_norm (anchor_rel #_ #post Ready Ready);
+  assert_norm (anchor_rel #_ #post Running Running);
+  assert_norm (anchor_rel #_ #post Done Done);
+  assert_norm (anchor_rel #_ #post Claimed Claimed)
 
 unfold let p12 : perm = half_perm full_perm
 
 let state_res #code
   ([@@@equate_by_smt]pre : erased code.t)
   ([@@@equate_by_smt]post : erased code.t)
-  (g_state : AR.ref task_state p_st anchor_rel)
-  ([@@@equate_by_smt] st : task_state)
+  (g_state : BAR.ref (task_state post) p_st anchor_rel)
+  ([@@@equate_by_smt] st : task_state post)
 =
   match st with
   | Ready -> code.up pre
   | Running -> emp
   | Done -> code.up post
-  | Claimed -> AR.anchored g_state Claimed
+  | Claimed -> BAR.anchored g_state Claimed
 
 noeq
-type task_handle : Type u#0 = {
-  state   : ref task_state;
-  g_state : AR.ref task_state p_st anchor_rel; (* these two refs are kept in sync *)
+type handle (#code:vcode) (post : erased code.t) : Type u#0 = {
+  state   : Big.ref (task_state post);
+  g_state : BAR.ref (task_state post) p_st anchor_rel; (* these two refs are kept in sync *)
 }
 
-assume val task_handle_eq (h1 h2 : task_handle) : b:bool{b <==> h1 == h2}
+// FIXME: implement?
+assume
+val handle_eq
+  (#code:vcode)
+  (#post1 #post2 : code.t)
+  (h1 : handle post1)
+  (h2 : handle post2)
+  : GTot (b:bool{b <==> h1 === h2})
 
 noeq
 type task_t (code : vcode) : Type u#2 = {
-  h : task_handle;
-
   pre :  erased code.t;
   post : erased code.t;
+
+  h : handle post;
+
   thunk : unit -> stt unit (code.up pre) (fun _ -> code.up post);
-
-  // lk : lock (exists* v_state.
-  //   pts_to h.state v_state **
-  //   AR.pts_to h.g_state v_state **
-  //   state_res pre post h.g_state v_state);
-
-  (* Does this task have a handle?
-  If so, after executing the task, set to Done and release lock.
-  If not, it's disowned, and the worker who executes it will free it. *)
-  // owned : ref bool;
 }
 
-// let state_live #code (t : task_t code) =
-//   exists* (v_state : task_state).
-//     pts_to t.state v_state **
-//     AR.pts_to t.g_state v_state ** 
-//     state_res t v_state
-
-// let rec all_live #code (v_runnable : list (task_t code)) =
-//   match v_runnable with
-//   | [] -> emp
-//   | r :: rs ->
-//     exists* (v_task : task_t code).
-//       Big.pts_to r #p12 v_task ** (* state_live v_task ** *) all_live rs
-
-// let __growing_list (#a:Type) (l1 l2 : list a) : prop =
-//   exists (l : list a). l @ l1 == l2
-  
-// let growing_list (#a:Type) : preorder (list a) =
-//   admit(); __growing_list
-  
 let list_extension #a (t0 t1 : list a)
   : prop
   = Cons? t1 /\ t0 == List.Tot.tail t1
@@ -135,88 +121,71 @@ let list_anchor : FRAP.anchor_rel list_preorder = fun x y -> list_preorder x y /
 
 let state_pred
   (#code:vcode)
-  ([@@@equate_by_smt]pre : code.t)
-  ([@@@equate_by_smt]post : code.t)
-  (h : task_handle)
+  ([@@@equate_by_smt] pre : erased code.t)
+  ([@@@equate_by_smt] post : erased code.t)
+  ([@@@equate_by_smt] h : handle post)
 : vprop =
-  exists* (v_state : task_state).
-    pts_to h.state v_state **
-    AR.pts_to h.g_state v_state **
-    state_res pre post h.g_state v_state
+   exists* (v_state : task_state post).
+     Big.pts_to h.state v_state **
+     BAR.pts_to h.g_state v_state **
+     state_res pre post h.g_state v_state
 
 // equate_by_smt due to #22
-let rec handles_one_to_one
+let rec all_state_pred
   (#code:vcode)
+
   ([@@@equate_by_smt] v_runnable : list (task_t code))
-  ([@@@equate_by_smt] v_handles : list task_handle)
 : vprop
-= match v_runnable, v_handles with
-  | [], [] -> emp
-  | r :: rs, h :: hs ->
-    pure (r.h == h) **
-    state_pred r.pre r.post h **
-    handles_one_to_one rs hs
-  | _, _ -> pure False
+= match v_runnable with
+  | [] -> emp
+  | t :: ts ->
+    state_pred t.pre t.post t.h **
+    all_state_pred ts
 
 ```pulse
 ghost
-fn add_one_h11 (#code:vcode)
-  (t : task_t code) (h : task_handle)
-  (v_runnable : list (task_t code)) (v_handles : list task_handle)
-  requires pure (t.h == h) ** state_pred t.pre t.post h ** handles_one_to_one v_runnable v_handles
-  returns _:unit
-  ensures  handles_one_to_one (t :: v_runnable) (h :: v_handles)
+fn add_one_state_pred (#code:vcode)
+  (t : task_t code)
+  (v_runnable : list (task_t code))
+  requires state_pred t.pre t.post t.h
+        ** all_state_pred v_runnable
+  ensures  all_state_pred (t :: v_runnable)
 {
-  fold (handles_one_to_one (t :: v_runnable) (h :: v_handles));
+  fold (all_state_pred (t :: v_runnable));
 }
 ```
 
 ```pulse
 ghost
 fn take_one_h11 (#code:vcode)
-  (t : task_t code) (h : task_handle)
-  (v_runnable : list (task_t code)) (v_handles : list task_handle)
-  requires handles_one_to_one (t :: v_runnable) (h :: v_handles)
-  returns _:unit
-  ensures  pure (t.h == h) ** state_pred t.pre t.post h ** handles_one_to_one v_runnable v_handles
+  (t : task_t code)
+  (v_runnable : list (task_t code))
+  requires all_state_pred (t :: v_runnable)
+  ensures  state_pred t.pre t.post t.h
+        ** all_state_pred v_runnable
 {
-  unfold (handles_one_to_one (t :: v_runnable) (h :: v_handles));
+  unfold (all_state_pred (t :: v_runnable));
 }
 ```
 
-let rec state_res_forall
-  (#code:vcode) (v_runnable : list (task_t code))
-: vprop
-= match v_runnable with
-  | [] -> emp
-  | r :: rs ->
-    state_pred r.pre r.post r.h **
-    state_res_forall rs
-
 let lock_inv (#code:vcode)
   (runnable   : Big.ref (list (task_t code)))
-  (g_runnable : BigGhost.ref (list (task_t code)))
-  (handles : AR.ref (list task_handle) list_preorder list_anchor)
+  (g_runnable : BAR.ref (list (task_t code)) list_preorder list_anchor)
 : vprop
 = 
   exists*
     (v_runnable : list (task_t code))
-    (v_handles : list task_handle)
   .
-    Big.pts_to      runnable v_runnable **
-    BigGhost.pts_to g_runnable v_runnable **
-    AR.pts_to_full handles v_handles **
-    handles_one_to_one v_runnable v_handles ** 
-    state_res_forall v_runnable
+    Big.pts_to runnable v_runnable **
+    BAR.pts_to_full g_runnable v_runnable **
+    all_state_pred v_runnable
 
 noeq
 type pool_st (code:vcode) : Type u#0 = {
-  runnable   : Big.ref  (list (task_t code));
-  g_runnable : BigGhost.ref (list (task_t code));
+  runnable   : Big.ref (list (task_t code));
+  g_runnable : BAR.ref (list (task_t code)) list_preorder list_anchor;
 
-  handles    : AR.ref (list task_handle) list_preorder list_anchor;
-
-  lk : lock (lock_inv runnable g_runnable handles);
+  lk : lock (lock_inv runnable g_runnable);
 }
 
 assume val lock_alive
@@ -230,18 +199,31 @@ type pool (code:vcode) = pool_st code
 let pool_alive (#[exact (`full_perm)] f : perm) (#code:vcode) (p:pool code) : vprop =
   lock_alive #_ #f p.lk
 
-type handle = task_handle
-
-let state_res' #code (post : erased code.t) ([@@@equate_by_smt] st : task_state) =
+let state_res' #code (post : erased code.t) ([@@@equate_by_smt] st : task_state post) =
   match st with
   | Done -> code.up post
   | Claimed -> emp
   | _ -> pure False
 
-let snapshot_mem (#code:vcode) (p : pool code) (h : handle) : vprop =
-  exists* v_handles.
-    AR.snapshot p.handles v_handles **
-    pure (List.memP h v_handles)
+let handle_in_task_list
+  (#code:vcode) (#post : erased code.t)
+  (h : handle post)
+  (ts : list (task_t code))
+  : prop
+  =
+  exists (task : task_t code).
+    task.post == post
+    /\ task.h == h
+    /\ List.memP task ts
+
+let snapshot_mem (#code:vcode)
+  (p : pool code)
+  (#[@@@equate_by_smt]post : erased code.t)
+  (h : handle post)
+: vprop =
+  exists* v_runnable.
+    BAR.snapshot p.g_runnable v_runnable **
+    pure (handle_in_task_list h v_runnable)
 
 let mem_lemma (#a:Type) (x:a) (l1 l2:list a)
 : Lemma (requires List.memP x l1 /\ list_preorder l1 l2)
@@ -250,18 +232,60 @@ let mem_lemma (#a:Type) (x:a) (l1 l2:list a)
 
 ```pulse
 ghost
+fn intro_snapshot_mem
+    (#code:vcode) (p : pool code)
+    (#post:erased code.t) (h : handle post)
+    (task : task_t code)
+    (ts : list (task_t code))
+  requires BAR.snapshot p.g_runnable ts
+      ** pure (task.post == post /\ task.h == h /\ List.memP task ts)
+  ensures  snapshot_mem p h
+{
+  fold (snapshot_mem p h);
+}
+```
+
+```pulse
+ghost
+fn recall_snapshot_mem0
+  (#code:vcode) (p : pool code) (#post : erased code.t) (h : handle post) (#ts : list (task_t code))
+  requires BAR.pts_to_full p.g_runnable ts ** snapshot_mem p h
+  ensures  BAR.pts_to_full p.g_runnable ts ** snapshot_mem p h **
+            pure (handle_in_task_list h ts)
+{
+  admit();
+}
+```
+
+```pulse
+ghost
 fn recall_snapshot_mem
-  (#code:vcode) (p : pool code) (h : handle) (#hs : list handle)
-  requires AR.pts_to p.handles hs ** snapshot_mem p h
-  ensures  AR.pts_to p.handles hs ** snapshot_mem p h ** pure (List.memP h hs)
+  (#code:vcode) (p : pool code) (#post : erased code.t) (h : handle post) (#ts : list (task_t code))
+  requires BAR.pts_to_full p.g_runnable ts ** snapshot_mem p h
+  returns  task : erased (task_t code)
+  ensures  BAR.pts_to_full p.g_runnable ts ** snapshot_mem p h **
+            pure (task.post == post /\ task.h == h /\ List.memP task v_runnable /\
+                  handle_in_task_list h ts)
 {
   unfold (snapshot_mem p h);
-  with hs0. assert (AR.snapshot p.handles hs0);
-  AR.recall_snapshot p.handles;
-  assert (pure (list_preorder hs0 hs /\ True));
+  with ts0. assert (BAR.snapshot p.g_runnable ts0);
+  BAR.drop_anchor p.g_runnable;
+  BAR.recall_snapshot p.g_runnable;
+  BAR.lift_anchor p.g_runnable ts;
+  assert (pure (list_preorder ts0 ts /\ True));
+  // with task. assert ( pure (task.post == post /\ task.h == h /\ List.memP task ts)
+  assert (pure (handle_in_task_list h ts0));
   fold (snapshot_mem p h);
-  mem_lemma h hs0 hs;
-  ();
+  // mem_lemma (get_addr h.state) hs0 hs;
+  assert (pure (exists (task : task_t code). 
+      (task.post == post /\ task.h == h /\ List.memP task ts0)));
+  // with (task : task_t code). assert (pure
+  //     (task.post == post /\ task.h == h /\ List.memP task ts0));
+  // Scoping bug from above, trying to obtain the task from the existential
+  // - Tactic logged issue:
+  // - Variable "code#180" not found
+  // - Raised within Tactics.refl_instantiate_implicits
+  admit();
 }
 ```
 
@@ -283,84 +307,90 @@ fn star_to_trade (p q : vprop)
 }
 ```
 
+module SEM = FStar.StrongExcludedMiddle
+
 ```pulse
 ghost // or concrete?
-fn extract_state_res
-  (#code:vcode) (p : pool code) (h : handle) (#ts : list (task_t code)) (#hs : list handle)
-  requires handles_one_to_one ts hs
-        ** state_res_forall ts
-        ** pure (List.memP h hs)
-  returns et : erased (task_t code)
-  ensures  handles_one_to_one ts hs
-        ** pure (et.h == h)
-        ** state_pred et.pre et.post h
-        ** trade (state_pred et.pre et.post h) (state_res_forall ts) // wand to put things back together
+fn rec extract_state_pred
+  (#code:vcode)
+  (p : pool code) (#post:code.t) (h : handle post)
+  (#ts : list (task_t code))
+  requires all_state_pred ts ** pure (handle_in_task_list h ts)
+  returns task : erased (task_t code)
+  ensures pure (task.post == post /\ task.h == h /\ List.memP (reveal task) ts)
+       ** state_pred task.pre task.post task.h
+       ** trade (state_pred task.pre task.post task.h) (all_state_pred ts) // trade to put things back togtaskher
+  decreases ts
 {
-  match hs {
+  open Pulse.Lib.InvList;
+  match ts {
     Nil -> { unreachable () }
-    Cons h' hs' -> {
-      if task_handle_eq h h' {
-        admit();
+    Cons t' ts' -> {
+      let b = SEM.strong_excluded_middle (t'.post == post /\ t'.h == h /\ List.memP t' ts);
+      if not b {
+        take_one_h11 t' ts';
+        let ret = extract_state_pred p h #ts';
+
+        ghost
+        fn aux (_:unit)
+          requires invlist_v invlist_empty **
+                   state_pred t'.pre t'.post t'.h **
+                   all_state_pred ts'
+          ensures  invlist_v invlist_empty ** all_state_pred ts
+        {
+          add_one_state_pred t' ts';
+        };
+        intro_trade (all_state_pred ts') (all_state_pred ts)
+                    (state_pred t'.pre t'.post t'.h) aux;
+
+        trade_compose (state_pred ret.pre ret.post ret.h) (all_state_pred ts') (all_state_pred ts);
+
+        ret
       } else {
-        match ts {
-          Nil -> {
-            rewrite (handles_one_to_one ts hs) as pure False;
-            unreachable ()
-          }
-          Cons t' ts' -> {
-            take_one_h11 t' h' ts' hs';
+        let ret = hide t';
+        take_one_h11 t' ts';
 
-            assert (pure (t'.h == h'));
-            rewrite each t'.h as h';
-            // rewrite each ts as (t'::ts');
-            rewrite (state_res_forall (t'::ts'))
-                 as (state_pred t'.pre t'.post t'.h ** state_res_forall ts');
-            star_to_trade (state_pred t'.pre t'.post t'.h) (state_res_forall ts');
-            rewrite (state_pred t'.pre t'.post t'.h) as state_pred t'.pre t'.post t'.h;
-            assert (state_pred t'.pre t'.post t'.h);
+        ghost
+        fn aux (_:unit)
+          requires (invlist_v invlist_empty ** (pure (ts == t'::ts') ** all_state_pred ts'))
+                ** state_pred t'.pre t'.post t'.h
+          ensures   invlist_v invlist_empty ** all_state_pred ts
+        {
+          add_one_state_pred t' ts';
+        };
+        intro_trade (state_pred ret.pre ret.post ret.h) (all_state_pred ts)
+                    (pure (ts == t'::ts') ** all_state_pred ts') aux;
 
-            add_one_h11 t' h' ts' hs'; (* fold back *)
-
-            hide t'
-          }
-        }
+        ret
       }
     }
   }
 }
 ```
 
-```pulse
-ghost
-fn intro_snapshot_mem
-    (#code:vcode) (p : pool code) (h : handle)
-    (v_handles : list handle)
-  requires AR.snapshot p.handles v_handles ** pure (List.memP h v_handles)
-  ensures  snapshot_mem p h
-{
-  fold (snapshot_mem p h);
-}
-```
-
-let joinable (#code:vcode) (p : pool code) ([@@@equate_by_smt]post:erased code.t) (h : handle) : vprop =
-  AR.anchored h.g_state Ready **
+let joinable
+  (#code:vcode) (p : pool code)
+  ([@@@equate_by_smt]post:erased code.t)
+  ([@@@equate_by_smt]h : handle post)
+: vprop =
+  BAR.anchored h.g_state Ready **
   snapshot_mem p h
 
 ```pulse
 ghost
 fn setup_task_eliminator0
   (#code:vcode)
-  (post:erased code.t)
-  (r : AR.ref task_state p_st anchor_rel)
+  (#post:erased code.t)
+  (r : BAR.ref (task_state post) p_st anchor_rel)
   (_:unit)
   (* invlist_v [] needed to make the trade introduction below work... *)
   requires Pulse.Lib.InvList.invlist_v [] **
-           AR.anchored r Ready **
-           (exists* (s : task_state). AR.pts_to r s ** state_res' post s)
+           BAR.anchored r Ready **
+           (exists* (s : task_state post). BAR.pts_to r s ** state_res' post s)
   ensures  Pulse.Lib.InvList.invlist_v [] **
            code.up post
 {
-  with s. assert (AR.pts_to r s);
+  with s. assert (BAR.pts_to r s);
   let ss = reveal s;
   (* Important! We match on the reveal of the existentially
   quantified s, not on the result of reading the reference, which
@@ -376,64 +406,98 @@ fn setup_task_eliminator0
     }
     Done -> { 
       rewrite (state_res' post s) as code.up post;
-      drop_ (AR.anchored r Ready);
-      drop_ (AR.pts_to r Done);
+      drop_ (BAR.anchored r Ready);
+      drop_ (BAR.pts_to r Done);
       ()
     }
     Claimed -> {
-      assert (AR.pts_to r Claimed);
-      assert (AR.anchored r Ready);
-      AR.recall_anchor r Ready;
+      assert (BAR.pts_to r Claimed);
+      assert (BAR.anchored r Ready);
+      BAR.recall_anchor r Ready;
       unreachable ();
     }
   }
 }
 ```
 
-#set-options "--split_queries always"
-
 ```pulse
 ghost
-fn setup_task_eliminator (#code:vcode) (post:erased code.t) (r : AR.ref task_state p_st anchor_rel)
-  requires AR.anchored r Ready
-  ensures  emp // task_eliminator post r
+fn setup_task_eliminator (#code:vcode) (#post:erased code.t) (r : BAR.ref (task_state post) p_st anchor_rel)
+  requires BAR.anchored r Ready
+  ensures  SmallTrade.trade (exists* (s : task_state post). BAR.pts_to r s ** state_res' post s) (code.up post)
 {
-  SmallTrade.intro_trade #[] (exists* (s : task_state).
-     AR.pts_to r s ** state_res' post s
-   ) (code.up post) (AR.anchored r Ready) (setup_task_eliminator0 #code post r);
-  admit();
-  // fold (task_eliminator post r);
+  SmallTrade.intro_trade #Pulse.Lib.InvList.invlist_empty (exists* (s : task_state post).
+     BAR.pts_to r s ** state_res' post s
+   ) (code.up post) (BAR.anchored r Ready) (setup_task_eliminator0 #code #post r);
 }
 ```
 
 ```pulse
 ghost
-fn push_handle (#a:Type) (x:a) (r : AR.ref (list a) list_preorder list_anchor) (#xs:erased (list a))
-  requires AR.pts_to_full r xs
-  ensures  AR.pts_to_full r (x::xs)
+fn push_handle (#a:Type) (x:a) (r : BAR.ref (list a) list_preorder list_anchor) (#xs:erased (list a))
+  requires BAR.pts_to_full r xs
+  ensures  BAR.pts_to_full r (x::xs)
 {
-  AR.write_full r (x::xs);
+  BAR.write_full r (x::xs);
+}
+```
+
+```pulse
+ghost
+fn intro_state_pred
+  (#code:vcode)
+  (pre : erased code.t)
+  (post : erased code.t)
+  (h : handle post)
+  (v_state : task_state post)
+  requires
+    Big.pts_to h.state v_state **
+    BAR.pts_to h.g_state v_state **
+    state_res pre post h.g_state v_state
+  ensures state_pred pre post h
+{
+  fold (state_pred pre post h);
+}
+```
+
+```pulse
+ghost
+fn elim_state_pred
+  (#code:vcode)
+  (pre : erased code.t)
+  (post : erased code.t)
+  (h : handle post)
+  requires state_pred pre post h
+  returns v_state : erased (task_state post)
+  ensures
+    Big.pts_to h.state v_state **
+    BAR.pts_to h.g_state v_state **
+    state_res pre post h.g_state v_state
+{
+  unfold (state_pred pre post h);
+  with v_state. assert (state_res pre post h.g_state v_state);
+  hide v_state
 }
 ```
 
 ```pulse
 fn spawn' (code:vcode) (p:pool code)
     (#pf:perm)
-    (#pre : code.t)
-    (#post : code.t)
+    (#pre : erased code.t)
+    (#post : erased code.t)
     (f : unit -> stt unit (code.up pre) (fun _ -> (code.up post)))
     requires pool_alive #pf p ** (code.up pre)
-    returns  h : handle
+    returns  h : handle post
     ensures  pool_alive #pf p ** joinable #code p post h
 {
-  let task_st = Ready;
-  assert (pure (anchor_rel Ready Ready));
-  let r_task_st : ref task_state = alloc task_st;
-  let gr_task_st : AR.ref task_state p_st anchor_rel = AR.alloc #task_state task_st #p_st #anchor_rel;
-  
-  AR.drop_anchor gr_task_st;
-  
-  let handle : task_handle = {
+  let task_st : task_state #code post = Ready #code #post;
+  assert (pure (anchor_rel #code #post Ready Ready));
+  let r_task_st : Big.ref (task_state post) = Big.alloc task_st;
+  let gr_task_st : BAR.ref (task_state post) p_st anchor_rel = BAR.alloc #(task_state post) task_st #p_st #anchor_rel;
+
+  BAR.drop_anchor gr_task_st;
+
+  let handle : handle post = {
     state = r_task_st;
     g_state = gr_task_st;
   };
@@ -450,52 +514,44 @@ fn spawn' (code:vcode) (p:pool code)
   
   let lk = p.lk;
   acquire lk;
-  unfold (lock_inv p.runnable p.g_runnable p.handles);
+  unfold (lock_inv p.runnable p.g_runnable);
   
   let v_runnable = Big.op_Bang p.runnable;
+
   Big.op_Colon_Equals p.runnable (task :: v_runnable);
-  BigGhost.op_Colon_Equals p.g_runnable (task :: v_runnable);
-  with v_handles. assert (AR.pts_to_full p.handles v_handles);
+  BAR.write_full p.g_runnable (task :: v_runnable);
 
-  push_handle handle p.handles;
-  assert (Big.pts_to p.runnable (task :: v_runnable));
-  
-  rewrite each task_st as Ready;
-  
+  rewrite each task_st as (Ready #code #post);
   rewrite each gr_task_st as task.h.g_state;
-  assert (AR.anchored task.h.g_state Ready);
-
-  with v_handles'. assert (AR.pts_to_full p.handles v_handles');
-  AR.take_snapshot' p.handles;
+  assert (BAR.anchored task.h.g_state (Ready #code #post));
   
-  assert (pure (List.memP handle v_handles'));
-  intro_snapshot_mem p task.h v_handles';
 
-  assert (snapshot_mem p task.h);
+  BAR.take_snapshot' p.g_runnable;
+  
+  assert (pure (List.memP task (task :: v_runnable)));
+  intro_snapshot_mem p task.h task (task :: v_runnable);
 
   fold (joinable #code p post task.h);
-  
-  fold (pool_alive #pf p);
 
+
+  fold (pool_alive #pf p);
+  
+  assert (Big.pts_to #(task_state post) r_task_st (Ready #code #post));
+
+  rewrite each r_task_st as handle.state;
   rewrite (code.up pre)
        as (state_res pre post gr_task_st Ready);
-  rewrite each r_task_st as handle.state;
   rewrite each gr_task_st as handle.g_state;
   rewrite each handle as task.h;
   rewrite each pre as task.pre;
   rewrite each post as task.post;
-  fold (state_pred task.pre task.post task.h);
+   
+  intro_state_pred task.pre task.post task.h (Ready #code #task.post);
+  // fold (state_pred #code task.pre task.post task.h);
 
-  add_one_h11 task task.h v_runnable v_handles;
-  
-  assert  (Big.pts_to      p.runnable (task :: v_runnable));
-  assert  (BigGhost.pts_to p.g_runnable (task :: v_runnable));
-  assert  (AR.pts_to_full p.handles (handle :: v_handles));
-  assert  (handles_one_to_one (task :: v_runnable) (handle :: v_handles));
-  
-  // FIXME: an explicit rewrite of the above 4 vprops into this
-  // here fails. The fold is anyway better, but would be good to investigate.
-  fold (lock_inv p.runnable p.g_runnable p.handles);
+  add_one_state_pred task v_runnable;
+
+  fold (lock_inv p.runnable p.g_runnable);
 
   release lk;
 
@@ -507,28 +563,19 @@ fn spawn' (code:vcode) (p:pool code)
 ghost
 fn claim_done_task
          (#code:vcode) (#p:pool code)
-         (#pre : code.t) (#post : code.t)
-         (h : task_handle)
-  requires state_res pre post h.g_state Done    ** AR.pts_to h.g_state Done    ** AR.anchored h.g_state Ready
-  ensures  state_res pre post h.g_state Claimed ** AR.pts_to h.g_state Claimed ** code.up post
+         (#pre : erased code.t) (#post : erased code.t)
+         (h : handle post)
+  requires state_res pre post h.g_state Done    ** BAR.pts_to h.g_state Done    ** BAR.anchored h.g_state Ready
+  ensures  state_res pre post h.g_state Claimed ** BAR.pts_to h.g_state Claimed ** code.up post
 {
-  unfold (state_res pre post h.g_state Done);
-  rewrite
-    (match Done with
-    | Ready -> code.up pre
-    | Running -> emp
-    | Done -> code.up post
-    | Claimed -> AR.anchored h.g_state Claimed)
-  as
-    code.up post;
+  rewrite (state_res pre post h.g_state Done)
+       as code.up post;
 
-  AR.lift_anchor h.g_state Ready;
+  BAR.lift_anchor h.g_state Ready;
 
-  AR.write_full h.g_state Claimed;
+  BAR.write_full h.g_state Claimed;
 
-  AR.drop_anchor h.g_state;
-
-  rewrite (code.up post) as code.up post;
+  BAR.drop_anchor h.g_state;
 
   fold (state_res pre post h.g_state Claimed);
 
@@ -536,61 +583,116 @@ fn claim_done_task
 }
 ```
 
+assume
+val ar_get_addr : #a:Type0 -> #p:preorder a -> #anc:FRAP.anchor_rel p -> AR.ref a p anc -> core_ref
+
+assume
+val same_ref_anchor (#a #b : Type0)
+  (#p1 : preorder a) (#p2 : preorder b)
+  (#a1 : FRAP.anchor_rel p1) (#a2 : FRAP.anchor_rel p2)
+  (r1 : AR.ref a p1 a1) (r2 : AR.ref b p2 a2)
+  (v1 : a) (v2 : b)
+  (_ : squash (ar_get_addr r1 == ar_get_addr r2))
+: stt_ghost unit
+      (AR.pts_to r1 v1 ** AR.anchored r2 v2)
+      (fun _ -> AR.pts_to r1 v1 ** AR.anchored r2 v2 ** pure (a == b))
+
 (* Trying to await for a spawned task. Note: no preconditions about the pool
 here. The task contains its own lock, and we can modify it without synchronizing
 with the pool. *)
 ```pulse
 fn try_await
          (#code:vcode) (#p:pool code)
-         (#pre : code.t)
-         (#post : code.t)
-         (h : handle)
+         (#post : erased code.t)
+         (h : handle post)
          (#f:perm)
   requires pool_alive #f p ** joinable p post h
   returns  ok : bool
   ensures  pool_alive #f p ** (if ok then code.up post else joinable p post h)
 {
   unfold (joinable p post h);
-  
-  // FIXME: from pool. Also what about pre?
-  assume_ (state_pred pre post h);
-  unfold (state_pred pre post h);
 
-  let task_st = !h.state;
+  unfold (pool_alive #f p);
+  acquire p.lk;
+  unfold (lock_inv p.runnable p.g_runnable);
+  
+  with v_runnable. assert (Big.pts_to p.runnable v_runnable);
+
+  // let task = recall_snapshot_mem #code p #post h #v_runnable;
+  // ^fails: ill-typed substitution or solver could not prove uvar
+  // let task : erased (task_t code) = magic u#2 #(erased (task_t code)) ();
+  // assume_ (pure (task.post == post /\ task.h == h /\ List.memP (reveal task) v_runnable));
+
+  assert (BAR.pts_to_full p.g_runnable v_runnable);
+  assert (snapshot_mem p h);
+  
+  recall_snapshot_mem0 #code p #post h #v_runnable;
+
+  // recall_snapshot_mem #code p #post h #v_runnable;
+  // - Tactic logged issue:
+  // - prover error: ill-typed substitutions (prover could not prove uvar _#11)
+  
+  assert (pure (handle_in_task_list h v_runnable));
+  let task = extract_state_pred p h #v_runnable;
+
+  // assume_ (pure (post == task.post)); // fixme: core ref construction
+
+  let v_state = elim_state_pred task.pre task.post task.h;
+  
+  rewrite (Big.pts_to task.h.state (reveal v_state))
+       as (Big.pts_to h.state (reveal v_state));
+  let task_st = Big.op_Bang h.state;
   
   match task_st {
     Ready -> {
       (* NOOP *)
+      rewrite (Big.pts_to h.state (reveal v_state))
+           as (Big.pts_to task.h.state (reveal v_state));
+      intro_state_pred task.pre task.post task.h Ready;
+      elim_trade _ _; // undo extract_state_pred
+      fold (lock_inv p.runnable p.g_runnable);
+      release p.lk;
+      fold (pool_alive #f p);
       fold (joinable p post h);
-      fold (state_pred pre post h);
-      drop_ (state_pred pre post h); // fixme
       false;
     }
     Running -> {
       (* NOOP *)
+      rewrite (Big.pts_to h.state (reveal v_state))
+           as (Big.pts_to task.h.state (reveal v_state));
+      intro_state_pred task.pre task.post task.h Running;
+      elim_trade _ _; // undo extract_state_pred
+      fold (lock_inv p.runnable p.g_runnable);
+      release p.lk;
+      fold (pool_alive #f p);
       fold (joinable p post h);
-      fold (state_pred pre post h);
-      drop_ (state_pred pre post h); // fixme
       false;
     }
     Done -> {
-      h.state := Claimed;
+      assert (pure (v_state == Done));
+      Big.op_Colon_Equals h.state Claimed;
 
-      claim_done_task #code #p #pre #post h;
+      claim_done_task #code #p #task.pre #task.post task.h;
 
       rewrite (code.up post)
            as (if true then code.up post else joinable p post h);
            
-      fold (state_pred pre post h);
-      drop_ (state_pred pre post h); // fixme
+      rewrite (Big.pts_to h.state Claimed)
+           as (Big.pts_to task.h.state Claimed);
+      intro_state_pred task.pre task.post task.h Claimed;
+      elim_trade _ _; // undo extract_state_pred
+      fold (lock_inv p.runnable p.g_runnable);
+      release p.lk;
+      fold (pool_alive #f p);
       drop_ (snapshot_mem p h);
       true
     }
     Claimed -> {
-      assert (pts_to h.state Claimed);
-      assert (AR.pts_to h.g_state Claimed);
-      assert (AR.anchored h.g_state Ready);
-      AR.recall_anchor h.g_state Ready;
+      assert (pure (v_state == Claimed));
+      assert (Big.pts_to h.state Claimed);
+      assert (BAR.pts_to task.h.g_state Claimed);
+      assert (BAR.anchored h.g_state Ready);
+      BAR.recall_anchor task.h.g_state Ready;
       unreachable ();
     }
   }
@@ -600,9 +702,8 @@ fn try_await
 ```pulse
 // Busy waiting version of await
 fn await (#code:vcode) (#p:pool code)
-         (#pre  : code.t)
-         (#post : code.t)
-         (h : handle)
+         (#post : erased code.t)
+         (h : handle post)
          (#f:perm) // TODO: remove permission on pool. If h is joinable, pool must be alive
   requires pool_alive #f p ** joinable p post h
   ensures  pool_alive #f p ** code.up post
@@ -611,144 +712,234 @@ fn await (#code:vcode) (#p:pool code)
   while (let v = !done; (not v))
     invariant b.
       exists* v_done.
+        pool_alive #f p **
         pts_to done v_done **
         (if v_done then code.up post else joinable p post h) **
         pure (b == not v_done)
   {
-    let b = try_await #code #p #pre #post h #f;
+    let b = try_await #code #p #post h #f;
     done := b;
   };
 }
 ```
 
-// ```pulse
-// ghost
-// fn reedem_disowned
-//          (#code:vcode) (#p:pool code)
-//          (#post : code.t)
-//          (t : task_t code)
-//          (#f:perm) // TODO: remove permission on pool. If h is joinable, pool must be alive
-//   requires pool_done p **
-//            AR.anchored t.g_state Ready
-//   ensures  pool_done p ** code.up post
-// {
-//   admit();
-// }
-// ```
-
-// ```pulse
-// fn disown
-//          (#code:vcode) (#p:pool code)
-//          (#post : code.t)
-//          (h : handle p post)
-//          (#f:perm) // TODO: remove permission on pool. If h is joinable, pool must be alive
-//   requires pool_alive #f p ** joinable h
-//   returns  _:unit
-//   ensures  pool_alive #f p ** pledge [] (pool_done p) (code.up post)
-// {
-//   // unfold (joinable h);
-//   admit();
-// }
-// ```
-
-(* Trying to await for a spawned task. Note: no preconditions about the pool
-here. The task contains its own lock, and we can modify it without synchronizing
-with the pool. *)
+let handle_done (#code:vcode) (#post:erased code.t) (h:handle post) : vprop =
+  BAR.snapshot h.g_state Done
+  
 ```pulse
-fn grab_work (#code:vcode) (p:pool code)
-  requires pool_alive #f p
-  returns  topt : option (post: erased (code.t) & h : handle p post)
-  ensures  pool_alive #f p **
-           (if Some? topt then task_alive (Some?.v topt)._2 else emp)
+ghost
+fn disown_aux
+  (#code:vcode) (#p:pool code)
+  (#post : erased code.t)
+  (h : handle post)
+  (_:unit)
+  requires invlist_v invlist_empty ** ((lock_inv p.runnable p.g_runnable ** handle_done h) ** joinable p post h)
+  ensures  invlist_v invlist_empty ** ((lock_inv p.runnable p.g_runnable ** handle_done h) ** code.up post)
 {
-  unfold (pool_alive #f p);
-  let pv = !p;
-  let lk = pv.lk;
-  acquire lk;
-  unfold (lock_inv pv.runnable pv.g_runnable pv.disowned pv.g_disowned);
+  unfold (handle_done h);
+  unfold (lock_inv p.runnable p.g_runnable);
+  unfold (joinable p post h);
 
-  let runnable0 = !pv.runnable;
-  match runnable0 {
-    Nil -> {
-      fold (lock_inv pv.runnable pv.g_runnable pv.disowned pv.g_disowned);
-      release lk;
-      fold (pool_alive #f p);
+  with v_runnable. assert (Big.pts_to p.runnable v_runnable);
+
+  (* FIXME: calling recall_snapshot_mem (not the 0 version) fails *)
+  recall_snapshot_mem0 #code p #post h #v_runnable;
+  let et = extract_state_pred p h #v_runnable;
+
+  unfold (state_pred et.pre et.post et.h);
+
+  with st. assert (BAR.pts_to et.h.g_state st);
+  let st = reveal st;
+
+  match st {
+    Done -> {
+      rewrite (state_res et.pre et.post et.h.g_state Done)
+           as code.up post;
+
+      BAR.lift_anchor et.h.g_state Ready;
+      BAR.write_full et.h.g_state Claimed;
+      BAR.drop_anchor et.h.g_state;
+
+      fold (state_res et.pre et.post et.h.g_state Claimed);
       
-      let topt = None #(post: erased (code.t) & h : handle p post);
-      rewrite emp as
-        (if Some? topt then task_alive (Some?.v topt)._2 else emp);
-      topt
+      // FIXME: concrete reference must change too. Idea:
+      // change the invariant in state_pred to something like
+      //
+      //   exists* (v_state : task_state post).
+      //     Big.pts_to h.state (unclaimed v_state) **
+      //     BAR.pts_to h.g_state v_state **
+      //     state_res pre post h.g_state v_state
+      //
+      // where unclaimed Claimed = Done. Claimed is really
+      // just a ghost state and we should not have to
+      // deal with it in the concrete ref.
+      drop_ (Big.pts_to et.h.state Done);
+      assume_ (Big.pts_to et.h.state Claimed);
+      
+      intro_state_pred et.pre et.post et.h Claimed;
+
+      fold (handle_done h);
+      drop_ (snapshot_mem p h);
+      
+      elim_trade_ghost _ _;
+      
+      fold (lock_inv p.runnable p.g_runnable);
+      
+      ();
     }
-    Cons t ts -> {
-      let v_task = get_one_live t ts;
-      
-      pv.runnable := ts;
-      fold (lock_inv pv.runnable pv.g_runnable pv.disowned pv.g_disowned);
-      release lk;
-      fold (pool_alive #f p);
-      let topt = Some #(post: erased (code.t) & h : handle p post) (| v_task.post, t |);
-      fold (task_alive #code #p #v_task.post t);
-      
-      assert (pure (Some? topt));
-      assert (pure ((Some?.v topt)._1 == v_task.post ));
-      assert (pure ((Some?.v topt)._2 == t));
-
-      rewrite
-        task_alive #code #p #v_task.post t
-      as
-        (if true then task_alive #code #p #v_task.post (Some?.v topt)._2 else emp);
-
-      (* FIXME: This should be trivial *)
-      rewrite_by 
-        (if true       then task_alive #code #p #v_task.post (Some?.v topt)._2 else emp)
-        (if Some? topt then task_alive #code #p #v_task.post (Some?.v topt)._2 else emp)
-        tadmit
-        ();
-
-      topt
+    Claimed -> {
+      assert (BAR.anchored h.g_state Ready);
+      BAR.recall_anchor et.h.g_state Ready;
+      unreachable();
+    }
+    Ready -> {
+      rewrite (BAR.pts_to et.h.g_state Ready)
+           as BAR.pts_to h.g_state Ready;
+      BAR.recall_snapshot h.g_state;
+      unreachable();
+    }
+    Running -> { 
+      rewrite (BAR.pts_to et.h.g_state Running)
+           as BAR.pts_to h.g_state Running;
+      BAR.recall_snapshot h.g_state;
+      unreachable();
     }
   }
 }
 ```
 
 ```pulse
-fn perf_work (#code:vcode) (#p : pool code) (post : erased (code.t)) (t : handle p post)
-  requires task_alive t (* ** task_ready t ? *)
-  returns  _:unit
-  ensures  task_alive t (* ** task_done t ? *)
+fn disown (#code:vcode) (#p:pool code)
+      (#post : erased code.t)
+      (h : handle post)
+  requires joinable p post h
+  ensures  pledge [] (lock_inv p.runnable p.g_runnable ** handle_done h) (code.up post)
 {
-  unfold (task_alive t);
-  let tv = !t;
-  let tlk = tv.lk;
-  acquire tlk;
-  let task_st = !tv.state;
-  match task_st {
-    Ready -> {
-      assert (state_res tv.pre tv.post tv.g_state Ready);
-      rewrite (state_res tv.pre tv.post tv.g_state Ready) as code.up tv.pre;
+  make_pledge [] (lock_inv p.runnable p.g_runnable ** handle_done h) (code.up post) (joinable p post h)
+      (disown_aux #code #p #post h)
+}
+```
 
-      (* Needed? We are not releasing the lock. *)
-      // tv.state := Running;
-      // AR.write tv.g_state Running;
-      
-      let f = tv.thunk;
-      f ();
-      
-      assert (code.up tv.post);
-      rewrite code.up tv.post as (state_res tv.pre tv.post tv.g_state Done);
+let pool_done (#code:vcode) (p : pool code) = emp // what is pool_done ????
+```pulse
+ghost
+fn pool_done_handle_done (#code:vcode) (#p:pool code)
+      (#post : erased code.t)
+      (h : handle post)
+  requires emp
+  ensures pledge [] (pool_done p) (handle_done h)
+{
+  admit();
+}
+```
 
-      tv.state := Done;
-      AR.write tv.g_state Done;
-      
-      release tlk;
-      fold (task_alive t);
-      ();
+```pulse
+(* Called with pool lock taken *)
+fn rec grab_work' (#code:vcode) (p:pool code)
+  requires lock_inv p.runnable p.g_runnable
+  returns  topt : option (task_t code)
+  ensures  lock_inv p.runnable p.g_runnable ** (if Some? topt then code.up (Some?.v topt).pre else emp)
+{
+  unfold (lock_inv p.runnable p.g_runnable);
+  with v_runnable. assert (Big.pts_to p.runnable v_runnable);
+
+  let runnable0 = Big.op_Bang p.runnable;
+  match runnable0 {
+    Nil -> {
+      let topt : option (task_t code) = None #(task_t code);
+      rewrite emp as
+        (if Some? topt then code.up (Some?.v topt).pre else emp);
+      fold (lock_inv p.runnable p.g_runnable);
+      topt
     }
-    _ -> {
-      (* Anything else should be impossible *)
-      admit();
+    Cons t ts -> {
+      take_one_h11 t ts;
+      unfold (state_pred t.pre t.post t.h);
+      
+      let st = Big.op_Bang t.h.state;
+      match st {
+        Ready -> {
+          let topt = Some #(task_t code) t;
+          rewrite (emp ** state_res t.pre t.post t.h.g_state Ready)
+               as (state_res t.pre t.post t.h.g_state Running ** code.up t.pre);
+
+          Big.op_Colon_Equals t.h.state Running;
+          BAR.write t.h.g_state Running;
+
+          intro_state_pred t.pre t.post t.h Running;
+          add_one_state_pred t ts;
+          fold (lock_inv p.runnable p.g_runnable);
+          
+          rewrite code.up t.pre as
+            (if Some? topt then code.up (Some?.v topt).pre else emp);
+          
+          topt
+        }
+        _ -> {
+          (* recurse. should be straightforward after refactoring this fn *)
+          admit();
+        }
+      }
     }
   }
+}
+```
+
+```pulse
+fn grab_work (#code:vcode) (p:pool code)
+  requires pool_alive #f p
+  returns  topt : option (task_t code)
+  ensures  pool_alive #f p ** (if Some? topt then code.up (Some?.v topt).pre else emp)
+{
+  unfold (pool_alive #f p);
+  acquire p.lk;
+  let res = grab_work' #code p;
+  release p.lk;
+  fold (pool_alive #f p);
+  res
+}
+```
+
+```pulse
+fn perf_work (#code:vcode) (t : task_t code)
+  requires code.up t.pre
+  returns  _:unit
+  ensures  code.up t.post
+{
+  let f = t.thunk;
+  f ()
+  // unfold (task_alive t);
+  // let tv = !t;
+  // let tlk = tv.lk;
+  // acquire tlk;
+  // let task_st = !tv.state;
+  // match task_st {
+  //   Ready -> {
+  //     assert (state_res tv.pre tv.post tv.g_state Ready);
+  //     rewrite (state_res tv.pre tv.post tv.g_state Ready) as code.up tv.pre;
+
+  //     (* Needed? We are not releasing the lock. *)
+  //     // tv.state := Running;
+  //     // AR.write tv.g_state Running;
+      
+  //     let f = tv.thunk;
+  //     f ();
+      
+  //     assert (code.up tv.post);
+  //     rewrite code.up tv.post as (state_res tv.pre tv.post tv.g_state Done);
+
+  //     tv.state := Done;
+  //     AR.write tv.g_state Done;
+      
+  //     release tlk;
+  //     fold (task_alive t);
+  //     ();
+  //   }
+  //   _ -> {
+  //     (* Anything else should be impossible *)
+  //     admit();
+  //   }
+  // }
 }
 ```
 
