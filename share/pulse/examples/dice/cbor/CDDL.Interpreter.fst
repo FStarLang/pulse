@@ -15,8 +15,20 @@ type elem_typ =
 | TByteString
 | TTextString
 | TUIntLiteral: (v: U64.t) -> elem_typ
-| TArray: (i: string) -> elem_typ
+| TElemArray: (i: elem_array_group) -> elem_typ // to avoid spurious alias-style type definitions
 | TMap: (i: string) -> elem_typ
+
+and atom_array_group =
+| TADef: (i: string) -> atom_array_group
+| TAElem: (t: elem_typ) -> atom_array_group
+
+and elem_array_group =
+| TAAtom: (t: atom_array_group) -> elem_array_group
+| TAZeroOrMore: (t: atom_array_group) -> elem_array_group
+| TAOneOrMore: (t: atom_array_group) -> elem_array_group
+| TAZeroOrOne: (t: atom_array_group) -> elem_array_group
+
+type array_group = list (string & elem_array_group)
 
 noeq
 type typ =
@@ -24,6 +36,7 @@ type typ =
 | TChoice: (l: list elem_typ) -> typ
 | TTag: (tag: U64.t) -> (i: elem_typ) -> typ
 | TEscapeHatch: (t: Spec.typ) -> typ
+| TArray: (a: array_group) -> typ
 
 let typ_eq
   (t1 t2: typ)
@@ -38,18 +51,6 @@ let typ_eq
   | TTag tag1 i1, TTag tag2 i2 -> tag1 = tag2 && i1 = i2
   | TEscapeHatch _, TEscapeHatch _ -> false
   | _ -> false
-
-type atom_array_group =
-| TADef: (i: string) -> atom_array_group
-| TAElem: (t: elem_typ) -> atom_array_group
-
-type elem_array_group =
-| TAAtom: (t: atom_array_group) -> elem_array_group
-| TAZeroOrMore: (t: atom_array_group) -> elem_array_group
-| TAOneOrMore: (t: atom_array_group) -> elem_array_group
-| TAZeroOrOne: (t: atom_array_group) -> elem_array_group
-
-type array_group = list (string & elem_array_group)
 
 type name_env = (string -> GTot bool)
 
@@ -201,18 +202,36 @@ let semenv_extend_map_group
 = semenv_extend_gen se new_name (SEMapGroup a)
 
 [@@ bounded_attr ]
-let elem_typ_bounded
+let rec elem_typ_bounded
   (bound: name_env)
   (t: elem_typ)
 : GTot bool
 = match t with
   | TDef i -> i `name_mem` bound
-  | TArray j -> j `name_mem` bound
+  | TElemArray j -> elem_array_group_bounded bound j
   | TMap j -> j `name_mem` bound
   | _ -> true
 
+and atom_array_group_bounded
+  (bound: name_env)
+  (t: atom_array_group)
+: GTot bool
+= match t with
+  | TADef i -> i `name_mem` bound
+  | TAElem t -> elem_typ_bounded bound t
+
+and elem_array_group_bounded
+  (bound: name_env)
+  (t: elem_array_group)
+: GTot bool
+= match t with
+  | TAAtom t -> atom_array_group_bounded bound t
+  | TAZeroOrMore t -> atom_array_group_bounded bound t
+  | TAOneOrMore t -> atom_array_group_bounded bound t
+  | TAZeroOrOne t -> atom_array_group_bounded bound t
+
 [@@ sem_attr ]
-let elem_typ_sem
+let rec elem_typ_sem
   (env: semenv)
   (t: elem_typ)
 : Pure Spec.typ
@@ -220,7 +239,7 @@ let elem_typ_sem
   (ensures fun _ -> True)
 = match t with
   | TDef i -> se_typ env i
-  | TArray i -> Spec.t_array3 (se_array_group env i)
+  | TElemArray i -> Spec.t_array3 (elem_array_group_sem env i)
   | TMap i -> Spec.t_map (se_map_group env i)
   | TFalse -> Spec.t_false
   | TTrue -> Spec.t_true
@@ -231,7 +250,83 @@ let elem_typ_sem
   | TTextString -> Spec.tstr
   | TUIntLiteral n -> Spec.t_uint_literal n
 
-let elem_typ_sem_included (s1 s2: semenv) (t: elem_typ) : Lemma
+and atom_array_group_sem
+  (env: semenv)
+  (t: atom_array_group)
+: Pure (Spec.array_group3 None)
+    (requires atom_array_group_bounded env.se_bound t)
+    (ensures fun _ -> True)
+= match t with
+  | TADef i -> se_array_group env i
+  | TAElem j -> Spec.array_group3_item (elem_typ_sem env j)
+
+and elem_array_group_sem
+  (env: semenv)
+  (t: elem_array_group)
+: Pure (Spec.array_group3 None)
+    (requires elem_array_group_bounded env.se_bound t)
+    (ensures fun _ -> True)
+= match t with
+  | TAAtom i -> atom_array_group_sem env i
+  | TAZeroOrMore i -> Spec.array_group3_zero_or_more (atom_array_group_sem env i)
+  | TAOneOrMore i -> Spec.array_group3_one_or_more (atom_array_group_sem env i)
+  | TAZeroOrOne i -> Spec.array_group3_zero_or_one (atom_array_group_sem env i)
+
+let rec elem_typ_bounded_incr
+  (bound1 bound2: name_env)
+  (t: elem_typ)
+: Lemma
+  (requires
+    bound1 `name_env_included` bound2 /\
+    elem_typ_bounded bound1 t
+  )
+  (ensures elem_typ_bounded bound2 t)
+  [SMTPatOr [
+    [SMTPat (elem_typ_bounded bound1 t); SMTPat (bound1 `name_env_included` bound2)];
+    [SMTPat (elem_typ_bounded bound2 t); SMTPat (bound1 `name_env_included` bound2)];
+  ]]
+= match t with
+  | TElemArray i -> elem_array_group_bounded_incr bound1 bound2 i
+  | _ -> ()
+
+and atom_array_group_bounded_incr
+  (bound1 bound2: name_env)
+  (t: atom_array_group)
+: Lemma
+  (requires
+    bound1 `name_env_included` bound2 /\
+    atom_array_group_bounded bound1 t
+  )
+  (ensures atom_array_group_bounded bound2 t)
+  [SMTPatOr [
+    [SMTPat (atom_array_group_bounded bound1 t); SMTPat (bound1 `name_env_included` bound2)];
+    [SMTPat (atom_array_group_bounded bound2 t); SMTPat (bound1 `name_env_included` bound2)];
+  ]]
+= match t with
+  | TAElem t -> elem_typ_bounded_incr bound1 bound2 t
+  | _ -> ()
+
+and elem_array_group_bounded_incr
+  (bound1 bound2: name_env)
+  (t: elem_array_group)
+: Lemma
+  (requires
+    bound1 `name_env_included` bound2 /\
+    elem_array_group_bounded bound1 t
+  )
+  (ensures elem_array_group_bounded bound2 t)
+  [SMTPatOr [
+    [SMTPat (elem_array_group_bounded bound1 t); SMTPat (bound1 `name_env_included` bound2)];
+    [SMTPat (elem_array_group_bounded bound2 t); SMTPat (bound1 `name_env_included` bound2)];
+  ]]
+= match t with
+  | TAAtom t
+  | TAZeroOrMore t
+  | TAOneOrMore t
+  | TAZeroOrOne t
+  -> atom_array_group_bounded_incr bound1 bound2 t
+
+let rec elem_typ_sem_included (s1 s2: semenv) (t: elem_typ) : Lemma
   (requires 
     semenv_included s1 s2 /\
     elem_typ_bounded s1.se_bound t
@@ -241,7 +336,52 @@ let elem_typ_sem_included (s1 s2: semenv) (t: elem_typ) : Lemma
     elem_typ_bounded s2.se_bound t /\
     elem_typ_sem s2 t == elem_typ_sem s1 t
   )
-= ()
+  [SMTPatOr [
+    [SMTPat (elem_typ_sem s1 t); SMTPat (semenv_included s1 s2)];
+    [SMTPat (elem_typ_sem s2 t); SMTPat (semenv_included s1 s2)];
+  ]]
+= match t with
+  | TElemArray l -> elem_array_group_sem_included s1 s2 l
+  | _ -> ()
+
+and atom_array_group_sem_included (s1 s2: semenv) (t: atom_array_group) : Lemma
+  (requires 
+    semenv_included s1 s2 /\
+    atom_array_group_bounded s1.se_bound t
+  )
+  (ensures
+    atom_array_group_bounded s1.se_bound t /\
+    atom_array_group_bounded s2.se_bound t /\
+    atom_array_group_sem s2 t == atom_array_group_sem s1 t
+  )
+  [SMTPatOr [
+    [SMTPat (atom_array_group_sem s1 t); SMTPat (semenv_included s1 s2)];
+    [SMTPat (atom_array_group_sem s2 t); SMTPat (semenv_included s1 s2)];
+  ]]
+= match t with
+  | TAElem t -> elem_typ_sem_included s1 s2 t
+  | _ -> ()
+
+and elem_array_group_sem_included (s1 s2: semenv) (t: elem_array_group) : Lemma
+  (requires 
+    semenv_included s1 s2 /\
+    elem_array_group_bounded s1.se_bound t
+  )
+  (ensures
+    elem_array_group_bounded s1.se_bound t /\
+    elem_array_group_bounded s2.se_bound t /\
+    elem_array_group_sem s2 t == elem_array_group_sem s1 t
+  )
+  [SMTPatOr [
+    [SMTPat (elem_array_group_sem s1 t); SMTPat (semenv_included s1 s2)];
+    [SMTPat (elem_array_group_sem s2 t); SMTPat (semenv_included s1 s2)];
+  ]]
+= match t with
+  | TAAtom t
+  | TAZeroOrMore t
+  | TAOneOrMore t
+  | TAZeroOrOne t
+  -> atom_array_group_sem_included s1 s2 t
 
 [@@ bounded_attr ]
 let rec sem_typ_choice_bounded
@@ -296,101 +436,6 @@ let rec sem_typ_choice_included (s1 s2: semenv) (t: list elem_typ) : Lemma
   | _ :: q -> sem_typ_choice_included s1 s2 q
 
 [@@ bounded_attr ]
-let typ_bounded
-  (bound: name_env)
-  (t: typ)
-: GTot bool
-= match t with
-  | TElem t -> elem_typ_bounded bound t
-  | TChoice l -> sem_typ_choice_bounded bound l
-  | TTag _tag t -> elem_typ_bounded bound t
-  | TEscapeHatch _ -> true
-
-let typ_bounded_incr
-  (bound1 bound2: name_env)
-  (t: typ)
-: Lemma
-  (requires
-    bound1 `name_env_included` bound2 /\
-    typ_bounded bound1 t
-  )
-  (ensures typ_bounded bound2 t)
-= match t with
-  | TChoice l -> sem_typ_choice_bounded_incr bound1 bound2 l
-  | _ -> ()
-
-[@@ sem_attr ]
-let typ_sem
-  (env: semenv)
-  (t: typ)
-: Pure Spec.typ
-  (requires typ_bounded env.se_bound t)
-  (ensures fun _ -> True)
-= match t with
-  | TElem t -> elem_typ_sem env t
-  | TChoice l -> sem_typ_choice env l
-  | TTag tag t -> Spec.t_tag tag (elem_typ_sem env t)
-  | TEscapeHatch t -> t
-
-let typ_sem_included (s1 s2: semenv) (t: typ) : Lemma
-  (requires 
-    semenv_included s1 s2 /\
-    typ_bounded s1.se_bound t
-  )
-  (ensures
-    typ_bounded s1.se_bound t /\
-    typ_bounded s2.se_bound t /\
-    typ_sem s2 t == typ_sem s1 t
-  )
-= match t with
-  | TChoice l -> sem_typ_choice_included s1 s2 l
-  | _ -> ()
-
-[@@ bounded_attr ]
-let atom_array_group_bounded
-  (bound: name_env)
-  (t: atom_array_group)
-: GTot bool
-= match t with
-  | TADef i -> i `name_mem` bound
-  | TAElem t -> elem_typ_bounded bound t
-
-let atom_array_group_bounded_incr
-  (bound1 bound2: name_env)
-  (t: atom_array_group)
-: Lemma
-  (requires
-    bound1 `name_env_included` bound2 /\
-    atom_array_group_bounded bound1 t
-  )
-  (ensures atom_array_group_bounded bound2 t)
-= ()
-
-[@@ bounded_attr ]
-let elem_array_group_bounded
-  (bound: name_env)
-  (t: elem_array_group)
-: GTot bool
-= match t with
-  | TAAtom t -> atom_array_group_bounded bound t
-  | TAZeroOrMore t -> atom_array_group_bounded bound t
-  | TAOneOrMore t -> atom_array_group_bounded bound t
-  | TAZeroOrOne t -> atom_array_group_bounded bound t
-
-#push-options "--ifuel 4"
-
-let elem_array_group_bounded_incr
-  (bound1 bound2: name_env)
-  (t: elem_array_group)
-: Lemma
-  (requires
-    bound1 `name_env_included` bound2 /\
-    elem_array_group_bounded bound1 t
-  )
-  (ensures elem_array_group_bounded bound2 t)
-= ()
-
-[@@ bounded_attr ]
 let rec array_group_bounded
   (bound: name_env)
   (t: array_group)
@@ -409,69 +454,15 @@ let rec array_group_bounded_incr
   )
   (ensures array_group_bounded bound2 t)
   (decreases t)
+  [SMTPatOr [
+    [SMTPat (array_group_bounded bound1 t); SMTPat (bound1 `name_env_included` bound2)];
+    [SMTPat (array_group_bounded bound2 t); SMTPat (bound1 `name_env_included` bound2)];
+  ]]
 = match t with
   | [] -> ()
   | (_, a) :: q ->
     assert (elem_array_group_bounded bound2 a);
     array_group_bounded_incr bound1 bound2 q
-
-#pop-options
-
-let rec array_group_bounded_append
-  (bound: name_env)
-  (t1 t2: array_group)
-: Lemma
-  (ensures
-    array_group_bounded bound (t1 `List.Tot.append` t2) <==>
-    (array_group_bounded bound t1 /\
-       array_group_bounded bound t2
-    )
-  )
-  (decreases t1)
-  [SMTPat (array_group_bounded bound (t1 `List.Tot.append` t2))]
-= match t1 with
-  | [] -> ()
-  | _ :: q -> array_group_bounded_append bound q t2
-
-[@@ sem_attr ]
-let atom_array_group_sem
-  (env: semenv)
-  (t: atom_array_group)
-: Pure (Spec.array_group3 None)
-    (requires atom_array_group_bounded env.se_bound t)
-    (ensures fun _ -> True)
-= match t with
-  | TADef i -> se_array_group env i
-  | TAElem j -> Spec.array_group3_item (elem_typ_sem env j)
-
-[@@ sem_attr ]
-let elem_array_group_sem
-  (env: semenv)
-  (t: elem_array_group)
-: Pure (Spec.array_group3 None)
-    (requires elem_array_group_bounded env.se_bound t)
-    (ensures fun _ -> True)
-= match t with
-  | TAAtom i -> atom_array_group_sem env i
-  | TAZeroOrMore i -> Spec.array_group3_zero_or_more (atom_array_group_sem env i)
-  | TAOneOrMore i -> Spec.array_group3_one_or_more (atom_array_group_sem env i)
-  | TAZeroOrOne i -> Spec.array_group3_zero_or_one (atom_array_group_sem env i)
-
-#push-options "--ifuel 4"
-
-let elem_array_group_sem_included (s1 s2: semenv) (t: elem_array_group) : Lemma
-  (requires 
-    semenv_included s1 s2 /\
-    elem_array_group_bounded s1.se_bound t
-  )
-  (ensures
-    elem_array_group_bounded s1.se_bound t /\
-    elem_array_group_bounded s2.se_bound t /\
-    elem_array_group_sem s2 t == elem_array_group_sem s1 t
-  )
-= ()
-
-#pop-options
 
 [@@ sem_attr ]
 let rec array_group_sem
@@ -496,12 +487,93 @@ let rec array_group_sem_included (s1 s2: semenv) (t: array_group) : Lemma
     array_group_bounded s2.se_bound t /\
     array_group_sem s2 t == array_group_sem s1 t
   )
+  [SMTPatOr [
+    [SMTPat (array_group_sem s1 t); SMTPat (semenv_included s1 s2)];
+    [SMTPat (array_group_sem s2 t); SMTPat (semenv_included s1 s2)];
+  ]]
 = match t with
   | [] -> ()
   | [_, a] -> elem_array_group_sem_included s1 s2 a
   | (_, a) :: q ->
     elem_array_group_sem_included s1 s2 a;
     array_group_sem_included s1 s2 q
+
+[@@ bounded_attr ]
+let typ_bounded
+  (bound: name_env)
+  (t: typ)
+: GTot bool
+= match t with
+  | TElem t -> elem_typ_bounded bound t
+  | TChoice l -> sem_typ_choice_bounded bound l
+  | TTag _tag t -> elem_typ_bounded bound t
+  | TArray a -> array_group_bounded bound a
+  | TEscapeHatch _ -> true
+
+let typ_bounded_incr
+  (bound1 bound2: name_env)
+  (t: typ)
+: Lemma
+  (requires
+    bound1 `name_env_included` bound2 /\
+    typ_bounded bound1 t
+  )
+  (ensures typ_bounded bound2 t)
+  [SMTPatOr [
+    [SMTPat (typ_bounded bound1 t); SMTPat (bound1 `name_env_included` bound2)];
+    [SMTPat (typ_bounded bound2 t); SMTPat (bound1 `name_env_included` bound2)];
+  ]]
+= match t with
+  | TChoice l -> sem_typ_choice_bounded_incr bound1 bound2 l
+  | _ -> ()
+
+[@@ sem_attr ]
+let typ_sem
+  (env: semenv)
+  (t: typ)
+: Pure Spec.typ
+  (requires typ_bounded env.se_bound t)
+  (ensures fun _ -> True)
+= match t with
+  | TElem t -> elem_typ_sem env t
+  | TChoice l -> sem_typ_choice env l
+  | TTag tag t -> Spec.t_tag tag (elem_typ_sem env t)
+  | TArray a -> Spec.t_array3 (array_group_sem env a)
+  | TEscapeHatch t -> t
+
+let typ_sem_included (s1 s2: semenv) (t: typ) : Lemma
+  (requires 
+    semenv_included s1 s2 /\
+    typ_bounded s1.se_bound t
+  )
+  (ensures
+    typ_bounded s1.se_bound t /\
+    typ_bounded s2.se_bound t /\
+    typ_sem s2 t == typ_sem s1 t
+  )
+  [SMTPatOr [
+    [SMTPat (typ_sem s1 t); SMTPat (semenv_included s1 s2)];
+    [SMTPat (typ_sem s2 t); SMTPat (semenv_included s1 s2)];
+  ]]
+= match t with
+  | TChoice l -> sem_typ_choice_included s1 s2 l
+  | _ -> ()
+
+let rec array_group_bounded_append
+  (bound: name_env)
+  (t1 t2: array_group)
+: Lemma
+  (ensures
+    array_group_bounded bound (t1 `List.Tot.append` t2) <==>
+    (array_group_bounded bound t1 /\
+       array_group_bounded bound t2
+    )
+  )
+  (decreases t1)
+  [SMTPat (array_group_bounded bound (t1 `List.Tot.append` t2))]
+= match t1 with
+  | [] -> ()
+  | _ :: q -> array_group_bounded_append bound q t2
 
 let spec_close_array_group
   (#b: _)
@@ -822,8 +894,43 @@ let restrict_typ_spec_eq_intro
   (ensures (restrict_typ_spec bound f x == f x))
 = strong_excluded_middle_true_intro (x << bound)
 
+let rec array_group3_zero_or_more_bounded_ext
+  (#t: Type)
+  (a1 a2: Spec.array_group3 None)
+  (x0: t)
+  (phi: (x: list CBOR.Spec.raw_data_item {Spec.opt_precedes_list x (Some x0)}) ->
+    Lemma (a1 x == a2 x)
+  )
+  (x: list CBOR.Spec.raw_data_item {Spec.opt_precedes_list x (Some x0)})
+: Lemma
+  (ensures (Spec.array_group3_zero_or_more a1 x == Spec.array_group3_zero_or_more a2 x))
+  (decreases (List.Tot.length x))
+= phi x;
+  match a1 x with
+  | None -> ()
+  | Some (x1, x2) ->
+    List.Tot.append_length x1 x2;
+    if Nil? x1
+    then ()
+    else array_group3_zero_or_more_bounded_ext a1 a2 x0 phi x2
+
+let array_group3_one_or_more_bounded_ext
+  (#t: Type)
+  (a1 a2: Spec.array_group3 None)
+  (x0: t)
+  (phi: (x: list CBOR.Spec.raw_data_item {Spec.opt_precedes_list x (Some x0)}) ->
+    Lemma (a1 x == a2 x)
+  )
+  (x: list CBOR.Spec.raw_data_item {Spec.opt_precedes_list x (Some x0)})
+: Lemma
+  (ensures (Spec.array_group3_one_or_more a1 x == Spec.array_group3_one_or_more a2 x))
+= phi x;
+  match a1 x with
+  | None -> ()
+  | Some (x1, x2) -> array_group3_zero_or_more_bounded_ext a1 a2 x0 phi x2
+
 #restart-solver
-let elem_typ_sem_restrict_typ_spec_correct
+let rec elem_typ_sem_restrict_typ_spec_correct
   (e: env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
@@ -842,7 +949,96 @@ let elem_typ_sem_restrict_typ_spec_correct
       t
       x
   ))
-= restrict_typ_spec_eq_intro x0 s x
+  (decreases t)
+= restrict_typ_spec_eq_intro x0 s x;
+  match t with
+  | TElemArray i ->
+    begin match x with
+    | CBOR.Spec.Array x' ->
+      elem_array_group_sem_restrict_typ_spec_correct e new_name s x0 i x'
+    | _ -> ()
+    end
+  | _ -> ()
+
+and atom_array_group_sem_restrict_typ_spec_correct
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (x0: CBOR.Spec.raw_data_item)
+  (t: atom_array_group { atom_array_group_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+  (x: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list x (Some x0) })
+: Lemma
+  (ensures (
+    atom_array_group_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    atom_array_group_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s)))
+      t
+      x
+  ))
+  (decreases t)
+= match t with
+  | TAElem t ->
+    begin match x with
+    | [] -> ()
+    | x' :: _ ->
+      elem_typ_sem_restrict_typ_spec_correct e new_name s x0 t x'
+    end
+  | _ -> ()
+
+and elem_array_group_sem_restrict_typ_spec_correct
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (x0: CBOR.Spec.raw_data_item)
+  (t: elem_array_group { elem_array_group_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+  (x: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list x (Some x0) })
+: Lemma
+  (ensures (
+    elem_array_group_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    elem_array_group_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s)))
+      t
+      x
+  ))
+  (decreases t)
+= match t with
+  | TAZeroOrOne t
+  | TAAtom t ->
+    atom_array_group_sem_restrict_typ_spec_correct e new_name s x0 t x
+  | TAZeroOrMore t ->
+    array_group3_zero_or_more_bounded_ext
+      (atom_array_group_sem
+        (semenv_extend_gen e.e_semenv new_name (SEType s))
+        t
+      )
+      (atom_array_group_sem
+        (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s)))
+        t
+      )
+      x0
+      (fun x -> atom_array_group_sem_restrict_typ_spec_correct e new_name s x0 t x)
+      x
+  | TAOneOrMore t ->
+    array_group3_one_or_more_bounded_ext
+      (atom_array_group_sem
+        (semenv_extend_gen e.e_semenv new_name (SEType s))
+        t
+      )
+      (atom_array_group_sem
+        (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s)))
+        t
+      )
+      x0
+      (fun x -> atom_array_group_sem_restrict_typ_spec_correct e new_name s x0 t x)
+      x
 
 let rec sem_typ_choice_restrict_typ_spec_correct
   (e: env)
@@ -870,6 +1066,41 @@ let rec sem_typ_choice_restrict_typ_spec_correct
     elem_typ_sem_restrict_typ_spec_correct e new_name s x0 a x;
     sem_typ_choice_restrict_typ_spec_correct e new_name s x0 q x
 
+let rec array_group_sem_restrict_typ_spec_correct
+  (e: env)
+  (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
+  (s: CDDL.Spec.typ)
+  (x0: CBOR.Spec.raw_data_item)
+  (t: array_group { array_group_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
+  (x: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list x (Some x0) })
+: Lemma
+  (ensures (
+    array_group_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType s))
+      t
+      x
+    ==
+    array_group_sem
+      (semenv_extend_gen e.e_semenv new_name (SEType (restrict_typ_spec x0 s)))
+      t
+      x
+  ))
+  (decreases t)
+= match t with
+  | [] -> ()
+  | [_, t] -> elem_array_group_sem_restrict_typ_spec_correct e new_name s x0 t x
+  | (_, t) :: t' ->
+    elem_array_group_sem_restrict_typ_spec_correct e new_name s x0 t x;
+    begin match 
+      elem_array_group_sem
+        (semenv_extend_gen e.e_semenv new_name (SEType s))
+        t
+        x
+    with
+    | None -> ()
+    | Some (_, x') -> array_group_sem_restrict_typ_spec_correct e new_name s x0 t' x'
+    end
+
 #restart-solver
 let typ_sem_restrict_typ_spec_correct
   (e: env)
@@ -895,6 +1126,11 @@ let typ_sem_restrict_typ_spec_correct
   match t with
   | TElem t' -> elem_typ_sem_restrict_typ_spec_correct e new_name s x0 t' x
   | TChoice l -> sem_typ_choice_restrict_typ_spec_correct e new_name s x0 l x
+  | TArray a ->
+    begin match x with
+    | CBOR.Spec.Array x' -> array_group_sem_restrict_typ_spec_correct e new_name s x0 a x'
+    | _ -> ()
+    end
   | TTag tag' t' ->
     begin match x with
     | CBOR.Spec.Tagged tag x' ->
@@ -998,6 +1234,12 @@ let rec elem_typ_productive_correct
       typ_productive_correct (fuel - 1) e new_name s t x
     end
     else ()
+  | TElemArray t ->
+    begin match x with
+    | CBOR.Spec.Array x' ->
+      elem_array_group_sem_restrict_typ_spec_correct e new_name s x t x'
+    | _ -> ()
+    end
   | _ -> ()
 
 and typ_productive_correct
@@ -1031,6 +1273,12 @@ and typ_productive_correct
       if tag = tag'
       then elem_typ_sem_restrict_typ_spec_correct e new_name s x t' x'
       else ()
+    | _ -> ()
+    end
+  | TArray t ->
+    begin match x with
+    | CBOR.Spec.Array x' ->
+      array_group_sem_restrict_typ_spec_correct e new_name s x t x'
     | _ -> ()
     end
   | TEscapeHatch _ -> ()
@@ -1246,15 +1494,10 @@ let rec typ_equiv
     if tag1 <> tag2
     then false
     else typ_equiv e fuel' (TElem t1) (TElem t2)
-  | TElem (TArray i1), TElem (TArray i2) ->
-    let s1 = e.e_semenv.se_env i1 in
-    let s2 = e.e_semenv.se_env i2 in
-    if SEArrayGroup? s1 && SEArrayGroup? s2
-    then
-      let t1' = e.e_env i1 in
-      let t2' = e.e_env i2 in
-      array_group_equiv e fuel' t1' t2'
-    else false
+  | TArray t1, TArray t2 ->
+    array_group_equiv e fuel' t1 t2
+  | TElem (TElemArray i1), TElem (TElemArray i2) ->
+    array_group_equiv e fuel' ["", i1] ["", i2]
   | TElem (TMap i1), TElem (TMap i2) -> i1 = i2 // TODO
   | _ -> false
 
@@ -1374,18 +1617,26 @@ let rec typ_disjoint
     else typ_disjoint e fuel' (TElem t1) (TElem t2)
   | _, TTag _ _
   | TTag _ _, _ -> ResultSuccess
-  | TElem (TArray i1), TElem (TArray i2) ->
-    let s1 = e.e_semenv.se_env i1 in
-    let s2 = e.e_semenv.se_env i2 in
-    if SEArrayGroup? s1 && SEArrayGroup? s2
-    then begin
-      let t1' = e.e_env i1 in
-      let t2' = e.e_env i2 in
-      spec_array3_close_array_group (SEArrayGroup?._0 s1);
-      spec_array3_close_array_group (SEArrayGroup?._0 s2);
-      array_group_disjoint e fuel' true t1' t2'
-    end
-    else ResultSuccess
+  | TArray i1, TArray i2 ->
+    spec_array3_close_array_group (array_group_sem e.e_semenv i1);
+    spec_array3_close_array_group (array_group_sem e.e_semenv i2);
+    array_group_disjoint e fuel' true i1 i2
+  | TElem (TElemArray i1), TElem (TElemArray i2) ->
+    spec_array3_close_array_group (array_group_sem e.e_semenv ["", i1]);
+    spec_array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
+    array_group_disjoint e fuel' true ["", i1] ["", i2]
+  | TArray i1, TElem (TElemArray i2)
+    ->
+    spec_array3_close_array_group (array_group_sem e.e_semenv i1);
+    spec_array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
+    array_group_disjoint e fuel' true i1 ["", i2]
+  | TElem (TElemArray i2), TArray i1
+    ->
+    spec_array3_close_array_group (array_group_sem e.e_semenv i1);
+    spec_array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
+    array_group_disjoint e fuel' true ["", i2] i1
+  | TArray _, _
+  | _, TArray _ -> ResultSuccess
   | TElem TFalse, TElem TBool -> ResultFailure "typ_disjoint: TFalse, TBool"
   | TElem TBool, TElem TFalse -> ResultFailure "typ_disjoint: TBool, TFalse"
   | TElem TTrue, TElem TBool -> ResultFailure "typ_disjoint: TTrue, TBool"
