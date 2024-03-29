@@ -754,8 +754,13 @@ fn await (#code:vcode) (#p:pool code)
 }
 ```
 
-let handle_done (#code:vcode) (#post:erased code.t) (h:handle post) : vprop =
-  BAR.snapshot h.g_state Done
+let handle_done (h:handle) : vprop =
+  exists* (st : task_state).
+    pure (st == Done \/ st == Claimed) **
+    BAR.snapshot h.g_state st
+
+let task_done (#code:vcode) (t : task_t code)  : vprop =
+  handle_done t.h
 
 ```pulse
 ghost
@@ -848,27 +853,123 @@ let rec pool_done_fa (#code:vcode) (p : pool code) (ts : list (task_t code)) =
     exists* (st : task_state).
       pure (st == Done \/ st == Claimed) **
       BAR.snapshot t.h.g_state st **
-      pool_done_fa p ts
+      pool_done_fa p ts'
+
+let vprop_equiv_refl (v1 v2 : vprop) (_ : squash (v1 == v2)) 
+  : vprop_equiv v1 v2 = vprop_equiv_refl _
+
+let helper_tac () : Tac unit =
+  apply (`vprop_equiv_refl);
+  trefl()
+
+```pulse
+ghost
+fn unfold_pool_done_fa_cons (#code:vcode) (p : pool code) (t : task_t code) (ts : list (task_t code))
+  requires pool_done_fa p (t :: ts)
+  returns  st : task_state
+  ensures  pure (st == Done \/ st == Claimed) **
+           BAR.snapshot t.h.g_state st **
+           pool_done_fa p ts
+{
+  // This should not be so hard.
+  rewrite_by
+    (pool_done_fa p (t :: ts))
+    (exists* (st : task_state).
+      pure (st == Done \/ st == Claimed) **
+      BAR.snapshot t.h.g_state st **
+      pool_done_fa p ts)
+    helper_tac
+    ();
+  with st. assert BAR.snapshot t.h.g_state st;
+  st
+}
+```
+
+```pulse
+ghost
+fn fold_pool_done_fa_cons (#code:vcode) (p : pool code) (t : task_t code) (ts : list (task_t code))
+  (st : task_state)
+  requires pure (st == Done \/ st == Claimed) **
+           BAR.snapshot t.h.g_state st **
+           pool_done_fa p ts
+  ensures  pool_done_fa p (t :: ts)
+{
+  // This should not be so hard.
+  rewrite_by
+    (exists* (st : task_state).
+      pure (st == Done \/ st == Claimed) **
+      BAR.snapshot t.h.g_state st **
+      pool_done_fa p ts)
+    (pool_done_fa p (t :: ts))
+    helper_tac
+    ();
+}
+```
 
 let pool_done (#code:vcode) (p : pool code) : vprop =
-  exists* ts. BAR.pts_to p.g_runnable ts ** pool_done_fa p ts
+  exists* ts. BAR.pts_to_full p.g_runnable ts ** pool_done_fa p ts
+
+instance dup_snapshot
+  (#t:Type u#2)
+  (#pre : preorder t)
+  (#anc : FRAP.anchor_rel pre)
+  (r:BAR.ref t pre anc)
+  (v : t)
+: duplicable (BAR.snapshot r v) = {
+  dup_f = admit();
+}
 
 ```pulse
 ghost
 fn rec __pool_done_task_done_aux (#code:vcode) (#p:pool code)
       (t : task_t code)
       (ts : list (task_t code))
-  requires pool_done_fa p ts 
-  ensures  pool_done_fa p ts ** handle_done h
+  requires pool_done_fa p ts ** pure (List.memP t ts)
+  ensures  pool_done_fa p ts ** task_done t
+  decreases ts
 {
   match ts {
     Nil -> {
-      admit(); // should be impossible, handle must be in ts
+      unreachable();
     }
-    Cons t ts' -> {
-      admit();
+    Cons t' ts' -> {
+      let b = SEM.strong_excluded_middle (t == t');
+      if b {
+        rewrite each t' as t;
+        let st = unfold_pool_done_fa_cons #code p t ts';
+        dup (BAR.snapshot t.h.g_state st) ();
+        fold (handle_done t.h);
+        fold (task_done t);
+        
+        fold_pool_done_fa_cons #code p t ts' st;
+        
+        ();
+      } else {
+        (* Must be in the tail *)
+        assert (pure (List.memP t ts'));
+        let st = unfold_pool_done_fa_cons #code p t' ts';
+        __pool_done_task_done_aux #code #p t ts';
+        fold_pool_done_fa_cons #code p t' ts' st;
+      }
     }
   }
+}
+```
+
+```pulse
+ghost
+fn __pool_done_handle_done_aux2 (#code:vcode) (#p:pool code)
+      (#post : erased code.t)
+      (h : handle)
+      (ts : list (task_t code))
+  requires BAR.pts_to_full p.g_runnable ts ** pool_done_fa p ts ** handle_spotted p post h
+  ensures  BAR.pts_to_full p.g_runnable ts ** pool_done_fa p ts ** handle_done h
+{
+  let t = recall_handle_spotted #code p post h #ts;
+  __pool_done_task_done_aux #code #p t ts;
+  unfold (task_done t);
+  rewrite each t.h as h;
+  drop_ (handle_spotted p post h);
 }
 ```
 
@@ -937,7 +1038,7 @@ fn weaken_vopt (#a:Type u#2) (o : option a)
     }
   }
 }
-```
+``` 
 
 ```pulse
 (* Called with pool lock taken *)
@@ -987,7 +1088,7 @@ fn rec grab_work'' (#code:vcode) (p:pool code) (v_runnable : list (task_t code))
           fold (state_pred t.pre t.post t.h);
           let topt = grab_work'' #code p ts;
           add_one_state_pred t ts;
-
+          
           (* Weaken the pure inside the vopt *)
           ghost fn weaken (t : task_t code)
             requires emp ** (code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t ts))
