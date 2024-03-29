@@ -219,7 +219,7 @@ let task_spotted (#code:vcode)
     pure (List.memP t v_runnable)
 
 // TODO: rename to handle_spotted
-let snapshot_mem (#code:vcode)
+let handle_spotted (#code:vcode)
   (p : pool code)
   (#[@@@equate_by_smt]post : erased code.t)
   (h : handle post)
@@ -244,16 +244,16 @@ fn intro_task_spotted
 
 ```pulse
 ghost
-fn intro_snapshot_mem
+fn intro_handle_spotted
     (#code:vcode) (p : pool code)
     (t : task_t code)
     (ts : list (task_t code))
   requires BAR.snapshot p.g_runnable ts
         ** pure (List.memP t ts)
-  ensures  snapshot_mem p t.h
+  ensures  handle_spotted p t.h
 {
   intro_task_spotted #code p t ts;
-  fold (snapshot_mem p t.h);
+  fold (handle_spotted p t.h);
 }
 ```
 
@@ -301,17 +301,17 @@ fn elim_exists_explicit (#a:Type u#2) (p : a -> prop)
 
 ```pulse
 ghost
-fn recall_snapshot_mem
+fn recall_handle_spotted
   (#code:vcode) (p : pool code) (#post : erased code.t) (h : handle post) (#ts : list (task_t code))
-  requires BAR.pts_to_full p.g_runnable ts ** snapshot_mem p h
+  requires BAR.pts_to_full p.g_runnable ts ** handle_spotted p h
   returns  task : erased (task_t code)
-  ensures  BAR.pts_to_full p.g_runnable ts ** snapshot_mem p h **
+  ensures  BAR.pts_to_full p.g_runnable ts ** handle_spotted p h **
             pure (task.post == post /\ task.h == h /\ List.memP (reveal task) ts)
 {
-  unfold (snapshot_mem p h);
+  unfold (handle_spotted p h);
   with t. assert (task_spotted p t);
   recall_task_spotted #code p t #ts;
-  fold (snapshot_mem p h);
+  fold (handle_spotted p h);
   hide t
 }
 ```
@@ -399,7 +399,7 @@ let joinable
   ([@@@equate_by_smt]h : handle post)
 : vprop =
   BAR.anchored h.g_state Ready **
-  snapshot_mem p h
+  handle_spotted p h
 
 // ```pulse
 // ghost
@@ -573,7 +573,7 @@ fn spawn' (code:vcode) (p:pool code)
   
   assert (pure (List.memP task (task :: v_runnable)));
   // intro_task_spotted p task (task :: v_runnable);
-  intro_snapshot_mem p task (task :: v_runnable);
+  intro_handle_spotted p task (task :: v_runnable);
 
   fold (joinable #code p post task.h);
 
@@ -661,7 +661,7 @@ fn try_await
 
   with v_runnable. assert (Big.pts_to p.runnable v_runnable);
 
-  unfold (snapshot_mem p h);
+  unfold (handle_spotted p h);
 
   with t. assert (task_spotted p t);
   recall_task_spotted #code p t #v_runnable;
@@ -686,7 +686,7 @@ fn try_await
       fold (lock_inv p.runnable p.g_runnable);
       release p.lk;
       fold (pool_alive #f p);
-      fold (snapshot_mem p h);
+      fold (handle_spotted p h);
       fold (joinable p post h);
       false;
     }
@@ -699,7 +699,7 @@ fn try_await
       fold (lock_inv p.runnable p.g_runnable);
       release p.lk;
       fold (pool_alive #f p);
-      fold (snapshot_mem p h);
+      fold (handle_spotted p h);
       fold (joinable p post h);
       false;
     }
@@ -780,7 +780,7 @@ fn disown_aux
   unfold (handle_done h);
   unfold (lock_inv p.runnable p.g_runnable);
   unfold (joinable p post h);
-  unfold (snapshot_mem p h);
+  unfold (handle_spotted p h);
 
   with v_runnable. assert (Big.pts_to p.runnable v_runnable);
   with t. assert (task_spotted p t);
@@ -942,7 +942,7 @@ fn rec grab_work' (#code:vcode) (p:pool code)
     Nil -> {
       let topt : option (task_t code) = None #(task_t code);
       rewrite emp
-           as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** snapshot_mem p t.h);
+           as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** handle_spotted p t.h);
       fold (lock_inv p.runnable p.g_runnable);
       topt
     }
