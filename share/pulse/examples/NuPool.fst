@@ -168,10 +168,11 @@ let list_preorder #a
 
 let list_anchor : FRAP.anchor_rel list_preorder = fun x y -> list_preorder x y /\ True
 
-let mem_lemma (#a:Type) (x:a) (l1 l2:list a)
-: Lemma (requires List.memP x l1 /\ list_preorder l1 l2)
-        (ensures List.memP x l2)
-= admit()
+let list_preorder_mono_memP (#a:Type) (x:a) (l1 l2:list a)
+  : Lemma (requires List.memP x l1 /\ list_preorder l1 l2)
+          (ensures List.memP x l2)
+          [SMTPat (list_preorder l1 l2); SMTPat (List.memP x l1)]
+      = admit()
 
 let lock_inv (#code:vcode)
   (runnable   : Big.ref (list (task_t code)))
@@ -265,12 +266,6 @@ fn intro_handle_spotted
 // =
 //   assume (forall x. List.memP x ts1 ==> List.memP x ts2); // should follow from list_preorder
 //   ()
-
-let list_preorder_mono_memP (#a:Type) (x:a) (l1 l2:list a)
-  : Lemma (requires List.memP x l1 /\ list_preorder l1 l2)
-          (ensures List.memP x l2)
-          [SMTPat (list_preorder l1 l2); SMTPat (List.memP x l1)]
-      = admit()
 
 ```pulse
 ghost
@@ -667,8 +662,6 @@ fn try_await
   recall_task_spotted #code p t #v_runnable;
   
   extract_state_pred p t #v_runnable;
-
-  // assume_ (pure (post == task.post)); // fixme: core ref construction
 
   let v_state = elim_state_pred t.pre t.post t.h;
 
