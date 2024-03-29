@@ -919,24 +919,43 @@ fn get_vopt (#a:Type u#2) (#x : a) (#p : a -> vprop) ()
 ```
 
 ```pulse
-(* Called with pool lock taken *)
-fn rec grab_work' (#code:vcode) (p:pool code)
-  requires lock_inv p.runnable p.g_runnable
-  returns  topt : option (task_t code)
-  ensures  lock_inv p.runnable p.g_runnable
-        ** vopt topt (fun t ->
-             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t)
+ghost
+fn weaken_vopt (#a:Type u#2) (o : option a)
+    (#p1 #p2 : a -> vprop)
+    (extra : vprop) // CAUTION: this can be dropped!
+    (f : (x:a) -> stt_ghost unit (extra ** p1 x) (fun _ -> p2 x))
+  requires extra ** vopt o p1
+  ensures  vopt o p2
 {
-  unfold (lock_inv p.runnable p.g_runnable);
-  with v_runnable. assert (Big.pts_to p.runnable v_runnable);
+  match o {
+    None -> {
+      // Not sure I understand why this just works without unfolding+folding, but good!
+      drop_ extra;
+      ()
+    }
+    Some v -> {
+      rewrite (vopt o p1) as p1 v;
+      f v;
+      fold (vopt o p2);
+    }
+  }
+}
+```
 
-  let runnable0 = Big.op_Bang p.runnable;
-  match runnable0 {
+```pulse
+(* Called with pool lock taken *)
+fn rec grab_work'' (#code:vcode) (p:pool code) (v_runnable : list (task_t code))
+  requires all_state_pred v_runnable
+  returns  topt : option (task_t code)
+  ensures  all_state_pred v_runnable
+        ** vopt topt (fun t ->
+             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable))
+{
+  match v_runnable {
     Nil -> {
       let topt : option (task_t code) = None #(task_t code);
       rewrite emp
            as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** handle_spotted p t.h);
-      fold (lock_inv p.runnable p.g_runnable);
       topt
     }
     Cons t ts -> {
@@ -955,26 +974,63 @@ fn rec grab_work' (#code:vcode) (p:pool code)
           
           Big.share2 t.h.state;
 
-          BAR.take_snapshot' p.g_runnable;
-          intro_task_spotted p t v_runnable;
-
           intro_state_pred_Running t.pre t.post t.h;
           add_one_state_pred t ts;
-          fold (lock_inv p.runnable p.g_runnable);
 
-          
-          rewrite code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t
-               as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t);
+          rewrite code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable)
+               as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable));
           
           topt
         }
         _ -> {
-          (* recurse. should be straightforward after refactoring this fn *)
-          admit();
+          fold (state_pred t.pre t.post t.h);
+          let topt = grab_work'' #code p ts;
+          add_one_state_pred t ts;
+
+          (* Weaken the pure inside the vopt *)
+          ghost fn weaken (t : task_t code)
+            requires emp ** (code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t ts))
+            ensures  code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable)
+          {
+            ()
+          };
+          weaken_vopt topt emp weaken;
+
+          topt
         }
       }
     }
   }
+}
+```
+
+
+```pulse
+(* Called with pool lock taken *)
+fn rec grab_work' (#code:vcode) (p:pool code)
+  requires lock_inv p.runnable p.g_runnable
+  returns  topt : option (task_t code)
+  ensures  lock_inv p.runnable p.g_runnable
+        ** vopt topt (fun t ->
+             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t)
+{
+  unfold (lock_inv p.runnable p.g_runnable);
+  let v_runnable = Big.op_Bang p.runnable;
+  let topt = grab_work'' #code p v_runnable;
+
+  BAR.take_snapshot' p.g_runnable;
+
+  (* If Some, the task is spotted *)
+  ghost fn spot (t:task_t code)
+    requires BAR.snapshot p.g_runnable v_runnable ** (code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable))
+    ensures  code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t
+  {
+    intro_task_spotted #code p t v_runnable;
+  };
+  weaken_vopt topt (BAR.snapshot p.g_runnable v_runnable) spot;
+
+  fold (lock_inv p.runnable p.g_runnable);
+  topt
 }
 ```
 
