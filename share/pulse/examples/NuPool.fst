@@ -1378,12 +1378,46 @@ fn await_pool
 ```
 
 ```pulse
-fn deallocate_pool
+fn rec deallocate_pool
   (#code:vcode)
-  (p:pool code) (#f:perm) (q : vprop)
-  requires pool_alive #f p ** pledge [] (pool_done p) q
-  ensures  q
+  (p:pool code) (#f:perm)
+  requires pool_alive #f p
+  ensures  pool_done p
 {
-  admit()
+  unfold (pool_alive #f p);
+  let lk = p.lk;
+  acquire lk;
+  unfold (lock_inv p.runnable p.g_runnable);
+
+  let runnable = Big.op_Bang p.runnable;
+  let b = check_if_all_done #code runnable;
+  if b {
+    rewrite ite b (all_tasks_done runnable) emp
+         as all_tasks_done runnable;
+    BAR.share2' p.g_runnable;
+    fold (pool_done p);
+
+    drop_ (all_state_pred runnable);
+    // huh? this is clearly wrong, but it is working
+    // since pool_done is NOT enough to redeem the pledges,
+    // which also require the lock invariant. I think
+    // it should suffice to put all_state_pred into pool_done
+    // and shuffle some resources.
+
+    (* Drop the other ghost half. *)
+    drop_ (BAR.pts_to_full p.g_runnable #p12 runnable);
+
+    (* TODO: actually deallocate. *)
+    drop_ (Big.pts_to p.runnable runnable);
+    drop_ (lock_alive #_ #f p.lk);
+  } else {
+    rewrite ite b (all_tasks_done runnable) emp
+         as emp;
+    (* Spin *)
+    fold (lock_inv p.runnable p.g_runnable);
+    release lk;
+    fold (pool_alive #f p);
+    deallocate_pool p;
+  }
 }
 ```
