@@ -34,14 +34,14 @@ instance val ref_non_informative (a:Type u#2) (p : preorder a) (anc : anchor_rel
 val pts_to_full
   (#a:Type) (#p:_) (#anc:_)
   (r:ref a p anc)
-  (#[T.exact (`full_perm)] p:perm)
-  (n:a) : vprop
+  (#[T.exact (`full_perm)] [@@@equate_by_smt] p:perm)
+  ([@@@equate_by_smt] n:a) : vprop
 
 val pts_to
   (#a:Type) (#p:_) (#anc:_)
   (r:ref a p anc)
-  (#[T.exact (`full_perm)] p:perm)
-  (n:a) : vprop
+  (#[T.exact (`full_perm)] [@@@equate_by_smt] p:perm)
+  ([@@@equate_by_smt] n:a) : vprop
 
 val is_small_pts_to
   (#a:Type) (#p:_) (#anc:_)
@@ -75,6 +75,16 @@ val read_full' (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#f:perm) (#v:erased a)
   : stt_ghost (erased (w:a{p v w}))
         (pts_to_full r #f v)
         (fun w -> pts_to_full r #f w)
+
+val share2' (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v:erased a)
+  : stt_ghost unit
+        (pts_to_full r v)
+        (fun _ -> pts_to_full r #(half_perm full_perm) v ** pts_to_full r #(half_perm full_perm) v)
+
+val gather2' (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v1 #v2:erased a)
+  : stt_ghost unit
+        (pts_to_full r #(half_perm full_perm) v1 ** pts_to_full r #(half_perm full_perm) v2)
+        (fun _ -> pts_to_full r v1 ** pure (v1 == v2))
 
 val write (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v:erased a) (w : erased a)
   : stt_ghost unit
@@ -114,7 +124,12 @@ val take_snapshot' (#a:Type) (#p:_) (#f:perm) (#anc:anchor_rel p) (r : ref a p a
         (pts_to_full r #f v)
         (fun _ -> pts_to_full r #f v ** snapshot r v)
 
-val recall_snapshot (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#v0 #v:a)
+val recall_snapshot (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#f:perm) (#v0 #v:a)
   : stt_ghost unit
-        (pts_to r v ** snapshot r v0)
-        (fun _ -> pts_to r v ** snapshot r v0 ** pure (p v0 v /\ True))
+        (pts_to r #f v ** snapshot r v0)
+        (fun _ -> pts_to r #f v ** snapshot r v0 ** pure (p v0 v /\ True))
+
+val recall_snapshot' (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#f:perm) (#v0 #v:a)
+  : stt_ghost unit
+        (pts_to_full r #f v ** snapshot r v0)
+        (fun _ -> pts_to_full r #f v ** snapshot r v0 ** pure (p v0 v /\ True))
