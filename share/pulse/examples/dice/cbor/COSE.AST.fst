@@ -54,26 +54,24 @@ let e5 = e4
 
 [@@ bounded_attr; sem_attr]
 let e6 =
-  env_extend_array_group e5 "cose_signature_array"
+  env_extend_typ e5 "cose_signature"
     (_ by (solve_env_extend_array_group ()))
-    [
+    (TArray [
       "headers", TAAtom (TADef "headers");
       "signature", TAAtom (TAElem (TByteString));
-    ]
+    ])
     (_ by (solve_env_extend_array_group ()))
 
+(* // TODO: type well-formedness, i.e. inner array type splittable 
 let thr6 : spec_array_group_splittable_threshold e6 =
   spec_array_group_splittable_threshold_extend
     (spec_array_group_splittable_threshold_extend_env thr4 e6)
     "cose_signature_array"
     (_ by (solve_spec_array_group_splittable ()))
+*)
 
 [@@ bounded_attr; sem_attr]
-let e7 =
-  env_extend_typ e6 "cose_signature"
-    (_ by (solve_env_extend_array_group ()))
-    (TElem (TArray "cose_signature_array"))
-    (_ by (solve_env_extend_array_group ()))
+let e7 = e6
 
 let _ : squash (
   se_typ e7.e_semenv "cose_signature" `CDDL.Spec.typ_equiv` Spec.cose_signature
@@ -93,40 +91,28 @@ let e8 =
     (_ by (solve_env_extend_array_group ()))
 
 [@@ bounded_attr; sem_attr]
-let e9 =
-  env_extend_array_group e8 "cose_signatures"
-    (_ by (solve_env_extend_array_group ()))
-    ["signatures", TAOneOrMore (TAElem (TDef "cose_signature"))]
-    (_ by (solve_env_extend_array_group ()))
-
-let thr9 : spec_array_group_splittable_threshold e9 =
-  spec_array_group_splittable_threshold_extend
-    (spec_array_group_splittable_threshold_extend_env thr6 e9)
-    "cose_signatures"
-    (_ by (solve_spec_array_group_splittable ()))
+let e9 = e8
 
 [@@ bounded_attr; sem_attr]
-let e10 =
-  env_extend_array_group e9 "cose_sign_array"
-    (_ by (solve_env_extend_array_group ()))
-    [
-      "headers", TAAtom (TADef "headers");
-      "payload", TAAtom (TAElem (TDef "cose_sign_payload"));
-      "signatures", TAAtom (TAElem (TArray "cose_signatures"));
-    ]
-    (_ by (solve_env_extend_array_group ()))
+let e10 = e9
 
+(* // TODO
 let thr10 : spec_array_group_splittable_threshold e10 =
   spec_array_group_splittable_threshold_extend
     (spec_array_group_splittable_threshold_extend_env thr9 e10)
     "cose_sign_array"
     (_ by (solve_spec_array_group_splittable ()))
+*)
 
 [@@ bounded_attr; sem_attr]
 let e11 =
   env_extend_typ e10 "cose_sign"
     (_ by (solve_env_extend_array_group ()))
-    (TElem (TArray "cose_sign_array"))
+    (TArray [
+      "headers", TAAtom (TADef "headers");
+      "payload", TAAtom (TAElem (TDef "cose_sign_payload"));
+      "signatures", TAAtom (TAElem (TElemArray (TAOneOrMore (TAElem (TDef "cose_signature")))));
+    ])
     (_ by (solve_env_extend_array_group ()))
 
 #push-options "--z3rlimit 16" // cannot reason about typ_equiv
@@ -159,27 +145,25 @@ let _ : squash (
 #pop-options
 
 [@@ bounded_attr; sem_attr]
-let e13 =
-  env_extend_array_group e12 "cose_sign1_array"
-    (_ by (solve_env_extend_array_group ()))
-    [
-      "headers", TAAtom (TADef "headers");
-      "payload", TAAtom (TAElem (TDef "cose_sign_payload"));
-      "signature", TAAtom (TAElem TByteString);
-    ]
-    (_ by (solve_env_extend_array_group ()))
+let e13 = e12
 
+(* // TODO
 let thr13 : spec_array_group_splittable_threshold e13 =
   spec_array_group_splittable_threshold_extend
     (spec_array_group_splittable_threshold_extend_env thr10 e13)
     "cose_sign1_array"
     (_ by (solve_spec_array_group_splittable ()))
+*)
 
 [@@ bounded_attr; sem_attr]
 let e14 =
   env_extend_typ e13 "cose_sign1"
     (_ by (solve_env_extend_array_group ()))
-    (TElem (TArray "cose_sign1_array"))
+    (TArray [
+      "headers", TAAtom (TADef "headers");
+      "payload", TAAtom (TAElem (TDef "cose_sign_payload"));
+      "signature", TAAtom (TAElem TByteString);
+    ])
     (_ by (solve_env_extend_array_group ()))
 
 #push-options "--z3rlimit 16" // cannot reason about typ_equiv
