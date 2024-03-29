@@ -31,6 +31,8 @@ module Ghost = Pulse.Lib.GhostReference
 // #set-options "--print_universes"
 // #set-options "--split_queries always"
 
+unfold let p12 : perm = half_perm full_perm
+
 noeq
 type vcode : Type u#3 = {
     t : Type u#2;
@@ -72,8 +74,6 @@ let anchor_rel_refl (x:task_state) :
   assert_norm (anchor_rel Running Running);
   assert_norm (anchor_rel Done Done);
   assert_norm (anchor_rel Claimed Claimed)
-
-unfold let p12 : perm = half_perm full_perm
 
 let state_res #code
   ([@@@equate_by_smt]pre : erased code.t)
@@ -268,14 +268,13 @@ fn intro_handle_spotted
 ghost
 fn recall_task_spotted
   (#code:vcode) (p : pool code) (t : task_t code) (#ts : list (task_t code))
-  requires BAR.pts_to_full p.g_runnable ts ** task_spotted p t
-  ensures  BAR.pts_to_full p.g_runnable ts ** task_spotted p t
+  (#f:perm)
+  requires BAR.pts_to_full p.g_runnable #f ts ** task_spotted p t
+  ensures  BAR.pts_to_full p.g_runnable #f ts ** task_spotted p t
            ** pure (List.memP t ts)
 {
   unfold (task_spotted p t);
-  BAR.drop_anchor p.g_runnable;
-  BAR.recall_snapshot p.g_runnable;
-  BAR.lift_anchor p.g_runnable ts;
+  BAR.recall_snapshot' p.g_runnable;
   fold (task_spotted p t);
 }
 ```
@@ -295,9 +294,10 @@ fn elim_exists_explicit (#a:Type u#2) (p : a -> prop)
 ghost
 fn recall_handle_spotted
   (#code:vcode) (p : pool code) (post : erased code.t) (h : handle) (#ts : list (task_t code))
-  requires BAR.pts_to_full p.g_runnable ts ** handle_spotted p post h
+  (#f:perm)
+  requires BAR.pts_to_full p.g_runnable #f ts ** handle_spotted p post h
   returns  task : erased (task_t code)
-  ensures  BAR.pts_to_full p.g_runnable ts ** handle_spotted p post h **
+  ensures  BAR.pts_to_full p.g_runnable #f ts ** handle_spotted p post h **
             pure (task.post == post /\ task.h == h /\ List.memP (reveal task) ts)
 {
   unfold (handle_spotted p post h);
@@ -846,14 +846,14 @@ fn disown (#code:vcode) (#p:pool code)
 }
 ```
 
-let rec pool_done_fa (#code:vcode) (p : pool code) (ts : list (task_t code)) =
+let rec all_tasks_done (#code:vcode) (ts : list (task_t code)) =
   match ts with
   | [] -> emp
   | t::ts' ->
     exists* (st : task_state).
       pure (st == Done \/ st == Claimed) **
       BAR.snapshot t.h.g_state st **
-      pool_done_fa p ts'
+      all_tasks_done ts'
 
 let vprop_equiv_refl (v1 v2 : vprop) (_ : squash (v1 == v2)) 
   : vprop_equiv v1 v2 = vprop_equiv_refl _
@@ -864,20 +864,20 @@ let helper_tac () : Tac unit =
 
 ```pulse
 ghost
-fn unfold_pool_done_fa_cons (#code:vcode) (p : pool code) (t : task_t code) (ts : list (task_t code))
-  requires pool_done_fa p (t :: ts)
+fn unfold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t code))
+  requires all_tasks_done (t :: ts)
   returns  st : task_state
   ensures  pure (st == Done \/ st == Claimed) **
            BAR.snapshot t.h.g_state st **
-           pool_done_fa p ts
+           all_tasks_done ts
 {
   // This should not be so hard.
   rewrite_by
-    (pool_done_fa p (t :: ts))
+    (all_tasks_done (t :: ts))
     (exists* (st : task_state).
       pure (st == Done \/ st == Claimed) **
       BAR.snapshot t.h.g_state st **
-      pool_done_fa p ts)
+      all_tasks_done ts)
     helper_tac
     ();
   with st. assert BAR.snapshot t.h.g_state st;
@@ -887,27 +887,27 @@ fn unfold_pool_done_fa_cons (#code:vcode) (p : pool code) (t : task_t code) (ts 
 
 ```pulse
 ghost
-fn fold_pool_done_fa_cons (#code:vcode) (p : pool code) (t : task_t code) (ts : list (task_t code))
+fn fold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t code))
   (st : task_state)
   requires pure (st == Done \/ st == Claimed) **
            BAR.snapshot t.h.g_state st **
-           pool_done_fa p ts
-  ensures  pool_done_fa p (t :: ts)
+           all_tasks_done ts
+  ensures  all_tasks_done (t :: ts)
 {
   // This should not be so hard.
   rewrite_by
     (exists* (st : task_state).
       pure (st == Done \/ st == Claimed) **
       BAR.snapshot t.h.g_state st **
-      pool_done_fa p ts)
-    (pool_done_fa p (t :: ts))
+      all_tasks_done ts)
+    (all_tasks_done (t :: ts))
     helper_tac
     ();
 }
 ```
 
 let pool_done (#code:vcode) (p : pool code) : vprop =
-  exists* ts. BAR.pts_to_full p.g_runnable ts ** pool_done_fa p ts
+  exists* ts. BAR.pts_to_full p.g_runnable #p12 ts ** all_tasks_done ts
 
 instance dup_snapshot
   (#t:Type u#2)
@@ -924,11 +924,11 @@ instance dup_snapshot
 
 ```pulse
 ghost
-fn rec __pool_done_task_done_aux (#code:vcode) (#p:pool code)
+fn rec __pool_done_task_done_aux (#code:vcode)
       (t : task_t code)
       (ts : list (task_t code))
-  requires pool_done_fa p ts ** pure (List.memP t ts)
-  ensures  pool_done_fa p ts ** task_done t
+  requires all_tasks_done ts ** pure (List.memP t ts)
+  ensures  all_tasks_done ts ** task_done t
   decreases ts
 {
   match ts {
@@ -939,20 +939,20 @@ fn rec __pool_done_task_done_aux (#code:vcode) (#p:pool code)
       let b = SEM.strong_excluded_middle (t == t');
       if b {
         rewrite each t' as t;
-        let st = unfold_pool_done_fa_cons #code p t ts';
+        let st = unfold_all_tasks_done_cons #code t ts';
         dup (BAR.snapshot t.h.g_state st) ();
         fold (handle_done t.h);
         fold (task_done t);
         
-        fold_pool_done_fa_cons #code p t ts' st;
+        fold_all_tasks_done_cons #code t ts' st;
         
         ();
       } else {
         (* Must be in the tail *)
         assert (pure (List.memP t ts'));
-        let st = unfold_pool_done_fa_cons #code p t' ts';
-        __pool_done_task_done_aux #code #p t ts';
-        fold_pool_done_fa_cons #code p t' ts' st;
+        let st = unfold_all_tasks_done_cons #code t' ts';
+        __pool_done_task_done_aux #code t ts';
+        fold_all_tasks_done_cons #code t' ts' st;
       }
     }
   }
@@ -965,11 +965,11 @@ fn __pool_done_handle_done_aux2 (#code:vcode) (#p:pool code)
       (#post : erased code.t)
       (h : handle)
       (ts : list (task_t code))
-  requires BAR.pts_to_full p.g_runnable ts ** pool_done_fa p ts ** handle_spotted p post h
-  ensures  BAR.pts_to_full p.g_runnable ts ** pool_done_fa p ts ** handle_done h
+  requires BAR.pts_to_full p.g_runnable #p12 ts ** all_tasks_done ts ** handle_spotted p post h
+  ensures  BAR.pts_to_full p.g_runnable #p12 ts ** all_tasks_done ts ** handle_done h
 {
   let t = recall_handle_spotted #code p post h #ts;
-  __pool_done_task_done_aux #code #p t ts;
+  __pool_done_task_done_aux #code t ts;
   unfold (task_done t);
   rewrite each t.h as h;
   drop_ (handle_spotted p post h);
@@ -1237,15 +1237,63 @@ let ite (b:bool) (p q : vprop) : vprop =
   if b then p else q
 
 ```pulse
-fn check_if_all_done
+fn rec check_if_all_done
   (#code:vcode)
-  (p:pool code) (#f:perm)
   (ts : list (task_t code))
-  requires BAR.pts_to_full p.g_runnable ts
+  requires all_state_pred ts
   returns  b : bool
-  ensures  ite b (pool_done p) (BAR.pts_to_full p.g_runnable ts)
+  ensures  all_state_pred ts ** ite b (all_tasks_done ts) emp
 {
-  admit();
+  match ts {
+    Nil -> {
+      rewrite emp as (all_tasks_done ts);
+      fold (ite true (all_tasks_done ts) emp);
+      true;
+    }
+    Cons t ts' -> {
+      take_one_h11 t ts';
+      unfold (state_pred t.pre t.post t.h);
+      let st = Big.op_Bang t.h.state;
+      match st {
+        Done -> {
+          let bb = check_if_all_done ts';
+          if bb {
+            rewrite (ite bb (all_tasks_done ts') emp) as (all_tasks_done ts');
+            with g_st. assert (BAR.pts_to t.h.g_state g_st);
+            assert (pure (g_st == Done \/ g_st == Claimed));
+            BAR.take_snapshot t.h.g_state;
+            fold_all_tasks_done_cons #code t ts' g_st;
+            rewrite (all_tasks_done (t::ts')) as (all_tasks_done ts);
+            fold (ite true (all_tasks_done ts) emp);
+            fold (state_pred t.pre t.post t.h);
+            add_one_state_pred t ts';
+            true;
+          } else {
+            drop_ (ite bb (all_tasks_done ts') emp);
+            fold (state_pred t.pre t.post t.h);
+            add_one_state_pred t ts';
+            rewrite emp as ite false (all_tasks_done ts) emp;
+            false;
+          }
+        }
+        Running -> {
+          fold (state_pred t.pre t.post t.h);
+          add_one_state_pred t ts';
+          rewrite emp as ite false (all_tasks_done ts) emp;
+          false;
+        }
+        Ready -> {
+          fold (state_pred t.pre t.post t.h);
+          add_one_state_pred t ts';
+          rewrite emp as ite false (all_tasks_done ts) emp;
+          false;
+        }
+        Claimed -> {
+          unreachable();
+        }
+      }
+    }
+  }
 }
 ```
 
@@ -1263,26 +1311,33 @@ fn try_await_pool
   unfold (lock_inv p.runnable p.g_runnable);
 
   let runnable = Big.op_Bang p.runnable;
-  let done = check_if_all_done #code p #f runnable;
+  let done = check_if_all_done #code runnable;
   if done {
     rewrite each done as true;
-    rewrite (ite true (pool_done p) (BAR.pts_to_full p.g_runnable runnable))
-         as pool_done p;
-    redeem_pledge _ _ _;
+    rewrite (ite true (all_tasks_done runnable) emp)
+         as all_tasks_done runnable;
 
+    (* We have permission on the queues + all_tasks_done. Obtain pool_done
+    temporarilly to redeem. *)
+    BAR.share2' p.g_runnable;
+    fold (pool_done p);
+    redeem_pledge _ _ _;
+    (*!*) assert q;
     unfold (pool_done p);
+    BAR.gather2' p.g_runnable;
+
     fold (ite true q (pledge [] (pool_done p) q));
-    with ts'. assert (BAR.pts_to_full p.g_runnable ts');
-    assume_ (pure (ts' == runnable)); // hmmmmmm
     fold (lock_inv p.runnable p.g_runnable);
     release lk;
     fold (pool_alive #f p);
-    drop_ (pool_done_fa p runnable);
+
+    drop_ (all_tasks_done runnable);
+
     true
   } else {
     rewrite each done as false;
-    rewrite (ite false (pool_done p) (BAR.pts_to_full p.g_runnable runnable))
-         as (BAR.pts_to_full p.g_runnable runnable);
+    rewrite (ite false (all_tasks_done runnable) emp)
+         as emp;
     fold (lock_inv p.runnable p.g_runnable);
     release lk;
     fold (pool_alive #f p);
