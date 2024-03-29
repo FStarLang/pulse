@@ -916,6 +916,9 @@ instance dup_snapshot
   (r:BAR.ref t pre anc)
   (v : t)
 : duplicable (BAR.snapshot r v) = {
+  // TODO: implement in BAR module, or tweak
+  // take_snapshot to provide a snapshot of a possibly
+  // "older" value. In that case this is easy to implement.
   dup_f = admit();
 }
 
@@ -1230,6 +1233,66 @@ fn rec worker (#code:vcode) (#f:perm) (p : pool code)
 }
 ```
 
+let ite (b:bool) (p q : vprop) : vprop =
+  if b then p else q
+
+```pulse
+fn check_if_all_done
+  (#code:vcode)
+  (p:pool code) (#f:perm)
+  (ts : list (task_t code))
+  requires BAR.pts_to_full p.g_runnable ts
+  returns  b : bool
+  ensures  ite b (pool_done p) (BAR.pts_to_full p.g_runnable ts)
+{
+  admit();
+}
+```
+
+```pulse
+fn try_await_pool
+  (#code:vcode)
+  (p:pool code) (#f:perm) (q : vprop)
+  requires pool_alive #f p ** pledge [] (pool_done p) q
+  returns  b : bool
+  ensures  pool_alive #f p ** ite b q (pledge [] (pool_done p) q)
+{
+  unfold (pool_alive #f p);
+  let lk = p.lk;
+  acquire lk;
+  unfold (lock_inv p.runnable p.g_runnable);
+
+  let runnable = Big.op_Bang p.runnable;
+  let done = check_if_all_done #code p #f runnable;
+  if done {
+    rewrite each done as true;
+    rewrite (ite true (pool_done p) (BAR.pts_to_full p.g_runnable runnable))
+         as pool_done p;
+    redeem_pledge _ _ _;
+
+    unfold (pool_done p);
+    fold (ite true q (pledge [] (pool_done p) q));
+    with ts'. assert (BAR.pts_to_full p.g_runnable ts');
+    assume_ (pure (ts' == runnable)); // hmmmmmm
+    fold (lock_inv p.runnable p.g_runnable);
+    release lk;
+    fold (pool_alive #f p);
+    drop_ (pool_done_fa p runnable);
+    true
+  } else {
+    rewrite each done as false;
+    rewrite (ite false (pool_done p) (BAR.pts_to_full p.g_runnable runnable))
+         as (BAR.pts_to_full p.g_runnable runnable);
+    fold (lock_inv p.runnable p.g_runnable);
+    release lk;
+    fold (pool_alive #f p);
+
+    fold (ite false q (pledge [] (pool_done p) q));
+    false
+  }
+}
+```
+
 ```pulse
 fn await_pool
   (#code:vcode)
@@ -1237,7 +1300,25 @@ fn await_pool
   requires pool_alive #f p ** pledge [] (pool_done p) q
   ensures  pool_alive #f p ** q
 {
-  admit()
+  let mut done = false;
+  fold (ite false q (pledge [] (pool_done p) q));
+  while (let v = !done; not v)
+    invariant b.
+      exists* v_done.
+        pool_alive #f p **
+        pts_to done v_done **
+        ite v_done q (pledge [] (pool_done p) q) **
+        pure (b == not v_done)
+  {
+    with v_done. assert (pts_to done v_done);
+    rewrite each v_done as false;
+    unfold (ite false q (pledge [] (pool_done p) q));
+    let b = try_await_pool #code p #f q;
+    done := b;
+  };
+  with v_done. assert (pts_to done v_done);
+  rewrite each v_done as true;
+  unfold (ite true q (pledge [] (pool_done p) q));
 }
 ```
 
