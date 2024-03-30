@@ -762,98 +762,12 @@ let handle_done (h:handle) : vprop =
 let task_done (#code:vcode) (t : task_t code)  : vprop =
   handle_done t.h
 
-```pulse
-ghost
-fn disown_aux
-  (#code:vcode) (#p:pool code)
-  (#post : erased code.t)
-  (h : handle)
-  (_:unit)
-  requires invlist_v invlist_empty ** ((lock_inv p.runnable p.g_runnable ** handle_done h) ** joinable p post h)
-  ensures  invlist_v invlist_empty ** ((lock_inv p.runnable p.g_runnable ** handle_done h) ** code.up post)
-{
-  unfold (handle_done h);
-  unfold (lock_inv p.runnable p.g_runnable);
-  unfold (joinable p post h);
-  unfold (handle_spotted p post h);
-
-  with v_runnable. assert (Big.pts_to p.runnable v_runnable);
-  with t. assert (task_spotted p t);
-
-  recall_task_spotted #code p t #v_runnable;
-  extract_state_pred p t #v_runnable;
-
-  unfold (state_pred t.pre t.post t.h);
-
-  with st. assert (BAR.pts_to t.h.g_state st);
-  let st = reveal st;
-
-  match st {
-    Done -> {
-      rewrite (state_res t.pre t.post t.h.g_state Done)
-           as code.up post;
-
-      BAR.lift_anchor t.h.g_state Ready;
-      BAR.write_full t.h.g_state Claimed;
-      BAR.drop_anchor t.h.g_state;
-
-      fold (state_res t.pre t.post t.h.g_state Claimed);
-      
-      rewrite (Big.pts_to t.h.state Done)
-           as (Big.pts_to t.h.state (unclaimed Claimed));
-      
-      intro_state_pred t.pre t.post t.h Claimed;
-
-      fold (handle_done h);
-      drop_ (task_spotted p t);
-      
-      elim_trade_ghost _ _;
-      
-      fold (lock_inv p.runnable p.g_runnable);
-      
-      ();
-    }
-    Claimed -> {
-      assert (BAR.anchored h.g_state Ready);
-      BAR.recall_anchor t.h.g_state Ready;
-      unreachable();
-    }
-    Ready -> {
-      rewrite (BAR.pts_to t.h.g_state Ready)
-           as BAR.pts_to h.g_state Ready;
-      BAR.recall_snapshot h.g_state;
-      unreachable();
-    }
-    Running -> { 
-      rewrite (BAR.pts_to t.h.g_state Running)
-           as BAR.pts_to h.g_state Running;
-      BAR.recall_snapshot h.g_state;
-      unreachable();
-    }
-  }
-}
-```
-
-```pulse
-fn disown (#code:vcode) (#p:pool code)
-      (#post : erased code.t)
-      (h : handle)
-  requires joinable p post h
-  ensures  pledge [] (lock_inv p.runnable p.g_runnable ** handle_done h) (code.up post)
-{
-  make_pledge [] (lock_inv p.runnable p.g_runnable ** handle_done h) (code.up post) (joinable p post h)
-      (disown_aux #code #p #post h)
-}
-```
-
 let rec all_tasks_done (#code:vcode) (ts : list (task_t code)) =
   match ts with
   | [] -> emp
   | t::ts' ->
-    exists* (st : task_state).
-      pure (st == Done \/ st == Claimed) **
-      BAR.snapshot t.h.g_state st **
-      all_tasks_done ts'
+    task_done t **
+    all_tasks_done ts'
 
 let vprop_equiv_refl (v1 v2 : vprop) (_ : squash (v1 == v2)) 
   : vprop_equiv v1 v2 = vprop_equiv_refl _
@@ -862,6 +776,7 @@ let helper_tac () : Tac unit =
   apply (`vprop_equiv_refl);
   trefl()
 
+// FIXME: refactor this to provide task_done instead
 ```pulse
 ghost
 fn unfold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t code))
@@ -874,9 +789,9 @@ fn unfold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t
   // This should not be so hard.
   rewrite_by
     (all_tasks_done (t :: ts))
-    (exists* (st : task_state).
+    ((exists* (st : task_state).
       pure (st == Done \/ st == Claimed) **
-      BAR.snapshot t.h.g_state st **
+      BAR.snapshot t.h.g_state st) **
       all_tasks_done ts)
     helper_tac
     ();
@@ -896,18 +811,15 @@ fn fold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t c
 {
   // This should not be so hard.
   rewrite_by
-    (exists* (st : task_state).
+    ((exists* (st : task_state).
       pure (st == Done \/ st == Claimed) **
-      BAR.snapshot t.h.g_state st **
+      BAR.snapshot t.h.g_state st) **
       all_tasks_done ts)
     (all_tasks_done (t :: ts))
     helper_tac
     ();
 }
 ```
-
-let pool_done (#code:vcode) (p : pool code) : vprop =
-  exists* ts. BAR.pts_to_full p.g_runnable #p12 ts ** all_tasks_done ts
 
 instance dup_snapshot
   (#t:Type u#2)
@@ -921,6 +833,141 @@ instance dup_snapshot
   // "older" value. In that case this is easy to implement.
   dup_f = admit();
 }
+
+```pulse
+ghost
+fn rec all_tasks_done_inst (#code:vcode) (t : task_t code) (ts : list (task_t code))
+  requires all_tasks_done ts ** pure (List.memP t ts)
+  ensures  all_tasks_done ts ** task_done t
+  decreases ts
+{
+  match ts {
+    Nil -> {
+      unreachable();
+    }
+    Cons t' ts' -> {
+      let b = SEM.strong_excluded_middle (t == t');
+      if b {
+        rewrite each t' as t;
+        let st = unfold_all_tasks_done_cons #code t ts';
+        dup (BAR.snapshot t.h.g_state st) ();
+        fold (handle_done t.h);
+        fold (task_done t);
+        fold_all_tasks_done_cons #code t ts' st;
+      } else {
+        let st = unfold_all_tasks_done_cons #code t' ts';
+        all_tasks_done_inst #code t ts';
+        fold_all_tasks_done_cons #code t' ts' st;
+      }
+    }
+  }
+}
+```
+
+let pool_done (#code:vcode) (p : pool code) : vprop =
+  exists* ts. BAR.pts_to_full p.g_runnable #p12 ts ** all_state_pred ts ** all_tasks_done ts
+
+```pulse
+ghost
+fn disown_aux
+  (#code:vcode) (#p:pool code)
+  (#post : erased code.t)
+  (h : handle)
+  requires pool_done p ** joinable p post h
+  ensures  pool_done p ** code.up post
+{
+  unfold (pool_done p);
+  unfold (joinable p post h);
+  unfold (handle_spotted p post h);
+
+  with v_runnable. assert (BAR.pts_to_full p.g_runnable #p12 v_runnable);
+  with t. assert (task_spotted p t);
+
+  recall_task_spotted #code p t #v_runnable;
+  extract_state_pred p t #v_runnable;
+
+  unfold (state_pred t.pre t.post t.h);
+
+  with st. assert (BAR.pts_to t.h.g_state st);
+  let st = reveal st;
+
+  all_tasks_done_inst t v_runnable;
+
+  match st {
+    Done -> {
+      rewrite (state_res t.pre t.post t.h.g_state Done)
+           as code.up post;
+
+      BAR.lift_anchor t.h.g_state Ready;
+      BAR.write_full t.h.g_state Claimed;
+      BAR.drop_anchor t.h.g_state;
+
+      fold (state_res t.pre t.post t.h.g_state Claimed);
+      
+      rewrite (Big.pts_to t.h.state Done)
+           as (Big.pts_to t.h.state (unclaimed Claimed));
+      
+      intro_state_pred t.pre t.post t.h Claimed;
+
+      drop_ (task_spotted p t);
+      
+      rewrite emp as invlist_v invlist_empty;
+      elim_trade_ghost _ _;
+      rewrite invlist_v invlist_empty as emp;
+      
+      drop_ (task_done t);
+      
+      fold (pool_done p);
+    }
+    Claimed -> {
+      assert (BAR.anchored h.g_state Ready);
+      BAR.recall_anchor t.h.g_state Ready;
+      unreachable();
+    }
+    Ready -> {
+      unfold (task_done t);
+      unfold (handle_done t.h);
+      with st. assert (BAR.snapshot t.h.g_state st);
+      BAR.recall_snapshot t.h.g_state;
+      unreachable();
+    }
+    Running -> { 
+      unfold (task_done t);
+      unfold (handle_done t.h);
+      with st. assert (BAR.snapshot t.h.g_state st);
+      BAR.recall_snapshot t.h.g_state;
+      unreachable();
+    }
+  }
+}
+```
+
+```pulse
+ghost
+fn __disown_aux
+  (#code:vcode) (#p:pool code)
+  (#post : erased code.t)
+  (h : handle)
+  (_:unit)
+  requires invlist_v invlist_empty ** (pool_done p ** joinable p post h)
+  ensures  invlist_v invlist_empty ** (pool_done p ** code.up post)
+{
+  disown_aux #code #p #post h;
+}
+```
+
+```pulse
+fn disown (#code:vcode) (#p:pool code)
+      (#post : erased code.t)
+      (h : handle)
+  requires joinable p post h
+  ensures  pledge [] (pool_done p) (code.up post)
+{
+  make_pledge [] (pool_done p) (code.up post) (joinable p post h)
+      (__disown_aux #code #p #post h)
+}
+```
+
 
 ```pulse
 ghost
@@ -945,8 +992,6 @@ fn rec __pool_done_task_done_aux (#code:vcode)
         fold (task_done t);
         
         fold_all_tasks_done_cons #code t ts' st;
-        
-        ();
       } else {
         (* Must be in the tail *)
         assert (pure (List.memP t ts'));
@@ -1396,13 +1441,6 @@ fn rec deallocate_pool
          as all_tasks_done runnable;
     BAR.share2' p.g_runnable;
     fold (pool_done p);
-
-    drop_ (all_state_pred runnable);
-    // huh? this is clearly wrong, but it is working
-    // since pool_done is NOT enough to redeem the pledges,
-    // which also require the lock invariant. I think
-    // it should suffice to put all_state_pred into pool_done
-    // and shuffle some resources.
 
     (* Drop the other ghost half. *)
     drop_ (BAR.pts_to_full p.g_runnable #p12 runnable);
