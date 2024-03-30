@@ -1346,7 +1346,7 @@ fn __await_pool
 ```
 
 ```pulse
-fn rec __deallocate_pool
+fn rec __teardown_pool
   (#code:vcode)
   (p:pool code) (#f:perm)
   requires pool_alive #f p
@@ -1378,7 +1378,7 @@ fn rec __deallocate_pool
     fold (lock_inv p.runnable p.g_runnable);
     release lk;
     fold (pool_alive #f p);
-    __deallocate_pool p;
+    __teardown_pool p;
   }
 }
 ```
@@ -1387,5 +1387,5 @@ let disown = __disown
 let spawn_ = __spawn_
 let await = __await
 let await_pool = __await_pool
-let deallocate_pool = __deallocate_pool
+let teardown_pool = __teardown_pool
 let setup = magic()

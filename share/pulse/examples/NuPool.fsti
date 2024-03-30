@@ -66,7 +66,7 @@ val await_pool
   : stt unit (pool_alive #f p ** pledge [] (pool_done p) q)
              (fun _ -> pool_alive #f p ** q)
 
-val deallocate_pool
+val teardown_pool
   (#code:vcode)
   (p:pool code)
   (#f:perm)
