@@ -1,45 +1,24 @@
 module NuPool
 
- // TODO
- //
- // 1- can we remove permission to the pool in await / try_await?
- // Ideally we do not lock the pool or even care much about it.
-
 open Pulse.Lib.Pervasives
 open Pulse.Lib.SpinLock
 open FStar.Tactics
 open FStar.Preorder
 open Pulse.Lib.Par.Pledge
 open Pulse.Lib.Trade
-module SmallTrade = Pulse.Lib.SmallTrade
-
 open Pulse.Lib.InvList
-
-module FRAP = Pulse.Lib.FractionalAnchoredPreorder
-module AR = Pulse.Lib.AnchoredReference
-module BAR = Pulse.Lib.BigAnchoredReference
-open Pulse.Lib.CoreRef
-
 open Pulse.Class.Duplicable
-module R = Pulse.Lib.RSpinLock
-module Big = Pulse.Lib.BigReference
-module BigGhost = Pulse.Lib.BigGhostReference
-module Ghost = Pulse.Lib.GhostReference
 
-// #set-options "--debug NuPool --debug_level SMTQuery --log_failing_queries"
-// #set-options "--print_implicits"
-// #set-options "--print_universes"
-// #set-options "--split_queries always"
+module FRAP  = Pulse.Lib.FractionalAnchoredPreorder
+module BAR   = Pulse.Lib.BigAnchoredReference
+module Big   = Pulse.Lib.BigReference
+module Ghost = Pulse.Lib.GhostReference
 
 unfold let p12 : perm = half_perm full_perm
 
-noeq
-type vcode : Type u#3 = {
-    t : Type u#2;
-    up : t -> vprop;
-    emp : (emp:t{up emp == Pulse.Lib.Core.emp});
-}
-
+(* There's no real need for this to be in Type u#2
+instead of Type0, but it makes it so that we can just use
+the BAR module everywhere, instead of AR and BAR. *)
 noeq
 type task_state : Type u#2 =
   | Ready    : task_state
@@ -393,62 +372,6 @@ let joinable
   BAR.anchored h.g_state Ready **
   handle_spotted p post h
 
-// ```pulse
-// ghost
-// fn setup_task_eliminator0
-//   (#code:vcode)
-//   (#post:erased code.t)
-//   (r : BAR.ref (task_state post) p_st anchor_rel)
-//   (_:unit)
-//   (* invlist_v [] needed to make the trade introduction below work... *)
-//   requires Pulse.Lib.InvList.invlist_v [] **
-//            BAR.anchored r Ready **
-//            (exists* (s : task_state post). BAR.pts_to r s ** state_res' post s)
-//   ensures  Pulse.Lib.InvList.invlist_v [] **
-//            code.up post
-// {
-//   with s. assert (BAR.pts_to r s);
-//   let ss = reveal s;
-//   (* Important! We match on the reveal of the existentially
-//   quantified s, not on the result of reading the reference, which
-//   could be "ahead". *)
-//   match ss {
-//     Ready -> {
-//       rewrite (state_res' post s) as pure False;
-//       unreachable ();
-//     }
-//     Running -> {
-//       rewrite (state_res' post s) as pure False;
-//       unreachable ();
-//     }
-//     Done -> { 
-//       rewrite (state_res' post s) as code.up post;
-//       drop_ (BAR.anchored r Ready);
-//       drop_ (BAR.pts_to r Done);
-//       ()
-//     }
-//     Claimed -> {
-//       assert (BAR.pts_to r Claimed);
-//       assert (BAR.anchored r Ready);
-//       BAR.recall_anchor r Ready;
-//       unreachable ();
-//     }
-//   }
-// }
-// ```
-
-// ```pulse
-// ghost
-// fn setup_task_eliminator (#code:vcode) (#post:erased code.t) (r : BAR.ref (task_state post) p_st anchor_rel)
-//   requires BAR.anchored r Ready
-//   ensures  SmallTrade.trade (exists* (s : task_state post). BAR.pts_to r s ** state_res' post s) (code.up post)
-// {
-//   SmallTrade.intro_trade #Pulse.Lib.InvList.invlist_empty (exists* (s : task_state post).
-//      BAR.pts_to r s ** state_res' post s
-//    ) (code.up post) (BAR.anchored r Ready) (setup_task_eliminator0 #code #post r);
-// }
-// ```
-
 ```pulse
 ghost
 fn push_handle (#a:Type) (x:a) (r : BAR.ref (list a) list_preorder list_anchor) (#xs:erased (list a))
@@ -517,7 +440,7 @@ fn elim_state_pred
 ```
 
 ```pulse
-fn spawn' (code:vcode) (p:pool code)
+fn __spawn (#code:vcode) (p:pool code)
     (#pf:perm)
     (#pre : erased code.t)
     (#post : erased code.t)
@@ -589,10 +512,13 @@ fn spawn' (code:vcode) (p:pool code)
   fold (lock_inv p.runnable p.g_runnable);
 
   release lk;
+  
+  rewrite each task.post as post;
 
   task.h
 }
 ```
+let spawn #code = __spawn #code
 
 ```pulse
 ghost
@@ -618,23 +544,6 @@ fn claim_done_task
 }
 ```
 
-// assume
-// val ar_get_addr : #a:Type0 -> #p:preorder a -> #anc:FRAP.anchor_rel p -> AR.ref a p anc -> core_ref
-
-// assume
-// val same_ref_anchor (#a #b : Type0)
-//   (#p1 : preorder a) (#p2 : preorder b)
-//   (#a1 : FRAP.anchor_rel p1) (#a2 : FRAP.anchor_rel p2)
-//   (r1 : AR.ref a p1 a1) (r2 : AR.ref b p2 a2)
-//   (v1 : a) (v2 : b)
-//   (_ : squash (ar_get_addr r1 == ar_get_addr r2))
-// : stt_ghost unit
-//       (AR.pts_to r1 v1 ** AR.anchored r2 v2)
-//       (fun _ -> AR.pts_to r1 v1 ** AR.anchored r2 v2 ** pure (a == b))
-
-(* Trying to await for a spawned task. Note: no preconditions about the pool
-here. The task contains its own lock, and we can modify it without synchronizing
-with the pool. *)
 ```pulse
 fn try_await
          (#code:vcode) (#p:pool code)
@@ -732,10 +641,10 @@ fn try_await
 
 ```pulse
 // Busy waiting version of await
-fn await (#code:vcode) (#p:pool code)
+fn __await (#code:vcode) (#p:pool code)
          (#post : erased code.t)
          (h : handle)
-         (#f:perm) // TODO: remove permission on pool. If h is joinable, pool must be alive
+         (#f:perm)
   requires pool_alive #f p ** joinable p post h
   ensures  pool_alive #f p ** code.up post
 {
@@ -890,7 +799,7 @@ fn disown_aux
 
   with st. assert (BAR.pts_to t.h.g_state st);
   let st = reveal st;
-
+  
   all_tasks_done_inst t v_runnable;
 
   match st {
@@ -957,7 +866,8 @@ fn __disown_aux
 ```
 
 ```pulse
-fn disown (#code:vcode) (#p:pool code)
+ghost
+fn __disown (#code:vcode) (#p:pool code)
       (#post : erased code.t)
       (h : handle)
   requires joinable p post h
@@ -968,6 +878,19 @@ fn disown (#code:vcode) (#p:pool code)
 }
 ```
 
+```pulse
+fn __spawn_ (#code:vcode) (p:pool code)
+    (#pf:perm)
+    (#pre : erased code.t)
+    (#post : erased code.t)
+    (f : unit -> stt unit (code.up pre) (fun _ -> (code.up post)))
+    requires pool_alive #pf p ** (code.up pre)
+    ensures  pool_alive #pf p ** pledge [] (pool_done p) (code.up post)
+{
+  let h = spawn p f;
+  __disown #code h // FIXME: crash without the #code annotation
+}
+```
 
 ```pulse
 ghost
@@ -1394,7 +1317,7 @@ fn try_await_pool
 ```
 
 ```pulse
-fn await_pool
+fn __await_pool
   (#code:vcode)
   (p:pool code) (#f:perm) (q : vprop)
   requires pool_alive #f p ** pledge [] (pool_done p) q
@@ -1423,7 +1346,7 @@ fn await_pool
 ```
 
 ```pulse
-fn rec deallocate_pool
+fn rec __deallocate_pool
   (#code:vcode)
   (p:pool code) (#f:perm)
   requires pool_alive #f p
@@ -1455,7 +1378,14 @@ fn rec deallocate_pool
     fold (lock_inv p.runnable p.g_runnable);
     release lk;
     fold (pool_alive #f p);
-    deallocate_pool p;
+    __deallocate_pool p;
   }
 }
 ```
+
+let disown = __disown
+let spawn_ = __spawn_
+let await = __await
+let await_pool = __await_pool
+let deallocate_pool = __deallocate_pool
+let setup = magic()

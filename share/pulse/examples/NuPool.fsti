@@ -2,46 +2,75 @@ module NuPool
 
 open Pulse.Lib.Pervasives
 open Pulse.Lib.Par.Pledge
+module T = FStar.Tactics.V2
 
-// val pool : Type u#0
-// val pool_alive : pool -> vprop
-// val pool_done : pool -> vprop
+noeq
+type vcode : Type u#3 = {
+    t : Type u#2;
+    up : t -> vprop;
+}
 
-// val handle : p:pool -> post:vprop -> Type u#0
-// val joinable (#p:pool) (#post:vprop) (h : handle p post) : vprop
+val handle : Type u#0
 
-// val setup : nat -> stt pool emp (fun p -> pool_alive p)
 
-// val spawn
-//     (p : pool)
-//     (#pre : vprop)
-//     (#post : vprop)
-//     (f : unit -> stt unit pre (fun _ -> post))
-//     : stt (handle p post) (pool_alive p) (fun h -> pool_alive p ** joinable h)
+val pool (code:vcode) : Type u#0
+val pool_alive (#[T.exact (`full_perm)] f : perm) (#code:vcode) (p:pool code) : vprop
 
-// val await
-//     (#p : pool)
-//     (#post : vprop)
-//     (h : handle p post)
-//     : stt unit (pool_alive p ** joinable h) (fun _ -> pool_alive p ** post)
+val joinable (#code:vcode) (p:pool code) (post:erased code.t) (h : handle) : vprop
 
-// val disown
-//     (#p : pool)
-//     (#post : vprop)
-//     (h : handle p post)
-//     : stt unit (joinable h) (fun _ -> pledge [] (pool_done p) post)
+val spawn
+  (#code:vcode)
+  (p : pool code)
+  (#pf : perm)
+  (#pre : erased code.t)
+  (#post : erased code.t)
+  (f : unit -> stt unit (code.up pre) (fun _ -> code.up post))
+  : stt handle (pool_alive #pf p ** code.up pre)
+               (fun h -> pool_alive #pf p ** joinable p post h)
 
-// val await_pool'
-//     (#f:perm)
-//     (p : pool)
-//     : stt unit (pool_alive #f p ** pledge [] (pool_done p) (pool_alive #(1-f) p))
-//                (fun _ -> pool_done p)
+val pool_done (#code:vcode) (p:pool code) : vprop
 
-// val await_pool
-//     (p : pool)
-//     (#f : perm)
-//     : stt unit (pool_alive #f p ** pledge [] (pool_done p) q) (fun _ -> pool_alive #f p ** q)
+val disown
+  (#code:vcode)
+  (#p : pool code)
+  (#post : erased code.t)
+  (h : handle)
+  : stt_ghost unit (joinable p post h)
+                   (fun _ -> pledge [] (pool_done p) (code.up post))
 
-// val deallocate_pool
-//     (p : pool)
-//     : stt unit (pool_done p) (fun _ -> emp)
+(* spawn + disown *)
+val spawn_
+  (#code:vcode)
+  (p : pool code)
+  (#pf : perm)
+  (#pre : erased code.t)
+  (#post : erased code.t)
+  (f : unit -> stt unit (code.up pre) (fun _ -> code.up post))
+  : stt unit (pool_alive #pf p ** code.up pre)
+             (fun _ -> pool_alive #pf p ** pledge [] (pool_done p) (code.up post))
+
+val await
+  (#code:vcode)
+  (#p : pool code)
+  (#post : erased code.t)
+  (h : handle)
+  (#f : perm)
+  : stt unit (pool_alive #f p ** joinable p post h)
+             (fun _ -> pool_alive #f p ** code.up post)
+
+val await_pool
+  (#code:vcode)
+  (p:pool code)
+  (#f:perm)
+  (q : vprop)
+  : stt unit (pool_alive #f p ** pledge [] (pool_done p) q)
+             (fun _ -> pool_alive #f p ** q)
+
+val deallocate_pool
+  (#code:vcode)
+  (p:pool code)
+  (#f:perm)
+  : stt unit (pool_alive #f p)
+             (fun _ -> pool_done p)
+
+val setup : (#code:vcode) -> nat -> stt (pool code) emp (fun p -> pool_alive p)
