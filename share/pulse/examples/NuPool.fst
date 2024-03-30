@@ -180,7 +180,7 @@ assume val lock_alive
   : (v:vprop{is_small v})
 
 let pool_alive (#[exact (`full_perm)] f : perm) (#code:vcode) (p:pool code) : vprop =
-  lock_alive #_ #f p.lk
+  lock_alive #_ #(half_perm f) p.lk
 
 let state_res' #code (post : erased code.t) ([@@@equate_by_smt] st : task_state) =
   match st with
@@ -1368,9 +1368,9 @@ fn rec __teardown_pool
     (* Drop the other ghost half. *)
     drop_ (BAR.pts_to_full p.g_runnable #p12 runnable);
 
-    (* TODO: actually deallocate. *)
+    (* TODO: actually teardown. *)
     drop_ (Big.pts_to p.runnable runnable);
-    drop_ (lock_alive #_ #f p.lk);
+    drop_ (lock_alive #_ #(half_perm f) p.lk);
   } else {
     rewrite ite b (all_tasks_done runnable) emp
          as emp;
@@ -1383,9 +1383,96 @@ fn rec __teardown_pool
 }
 ```
 
+assume
+val share_lock
+  (#p:vprop)
+  (#[exact (`full_perm)] f : perm)
+  (l : lock p)
+  : stt_ghost unit (lock_alive #p #f l)
+                   (fun _ -> lock_alive #p #(half_perm f) l ** lock_alive #p #(half_perm f) l)
+
+```pulse
+ghost
+fn share
+  (#code:vcode)
+  (p : pool code)
+  (#f:perm)
+  requires pool_alive #f p
+  ensures  pool_alive #(half_perm f) p ** pool_alive #(half_perm f) p
+{
+  unfold (pool_alive #f p);
+  share_lock #_ #(half_perm f) p.lk;
+  fold (pool_alive #(half_perm f) p);
+  fold (pool_alive #(half_perm f) p);
+}
+```
+
+(* Very basic model of a thread fork *)
+assume
+val fork
+  (#p #q : vprop)
+  (f : unit -> stt unit p (fun _ -> q))
+  : stt unit p (fun _ -> emp)
+
+```pulse
+fn spawn_worker
+  (#code:vcode)
+  (p:pool code)
+  (#f:perm)
+  requires pool_alive #f p
+  ensures  emp
+{
+  fork (fun () -> worker #code #f p)
+}
+```
+
+```pulse
+fn rec spawn_workers
+  (#code:vcode)
+  (p:pool code) (#f:perm)
+  (n:pos)
+  requires pool_alive #f p
+  ensures  emp
+{
+  if (n = 1) {
+    spawn_worker p;
+  } else {
+    share #code p #f;
+    spawn_worker p;
+    spawn_workers p #(half_perm f) (n - 1);
+  }
+}
+```
+
+```pulse
+fn __setup_pool
+  (#code:vcode)
+  (n : pos)
+  requires emp
+  returns p : pool code
+  ensures pool_alive p
+{
+  let runnable = Big.alloc ([] <: list (task_t code));
+  assert (pure (list_preorder #(task_t code) [] [] /\ True));
+  let g_runnable = BAR.alloc #(list (task_t code)) [] #list_preorder #list_anchor;
+  rewrite emp as (all_state_pred #code []);
+  fold (lock_inv runnable g_runnable);
+  let lk = new_lock (lock_inv runnable g_runnable);
+  let p = {lk; runnable; g_runnable};
+  assume_ (lock_alive p.lk); // To be obtained from new lock module, plus a share call
+  share_lock #_ #full_perm p.lk;
+  fold (pool_alive p);
+  fold (pool_alive p);
+
+  spawn_workers #code p #full_perm n;
+
+  p
+}
+```
+
 let disown = __disown
 let spawn_ = __spawn_
 let await = __await
 let await_pool = __await_pool
 let teardown_pool = __teardown_pool
-let setup = magic()
+let setup_pool = __setup_pool

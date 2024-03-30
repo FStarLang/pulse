@@ -73,4 +73,8 @@ val teardown_pool
   : stt unit (pool_alive #f p)
              (fun _ -> pool_done p)
 
-val setup : (#code:vcode) -> nat -> stt (pool code) emp (fun p -> pool_alive p)
+val setup_pool
+  (#code:vcode)
+  (n : pos)
+  : stt (pool code) emp
+                    (fun p -> pool_alive p)
