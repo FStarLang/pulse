@@ -13,6 +13,9 @@ type vcode : Type u#3 = {
 val handle : Type u#0
 
 val pool (code:vcode) : Type u#0
+
+val pool_invlist (#code:vcode) (p : pool code) : Pulse.Lib.InvList.invlist
+
 val pool_alive (#[T.exact (`full_perm)] f : perm) (#code:vcode) (p:pool code) : vprop
 
 val big_joinable (#code:vcode) (p:pool code) (post:erased code.t) (h : handle) : vprop
@@ -58,7 +61,7 @@ val disown
   (#post : erased code.t)
   (h : handle)
   : stt_ghost unit (joinable p post h)
-                   (fun _ -> pledge [] (pool_done p) (code.up post)) // TODO: SmallPledge
+                   (fun _ -> pledge (pool_invlist p) (pool_done p) (code.up post)) // TODO: SmallPledge
 
 (* spawn + disown *)
 val big_spawn_
@@ -79,7 +82,7 @@ val spawn_
   (#post : erased code.t)
   (f : unit -> stt unit (code.up pre) (fun _ -> code.up post))
   : stt unit (pool_alive #pf p ** code.up pre)
-             (fun _ -> pool_alive #pf p ** pledge [] (pool_done p) (code.up post)) // TODO: SmallPledge
+             (fun _ -> pool_alive #pf p ** pledge (pool_invlist p) (pool_done p) (code.up post)) // TODO: SmallPledge
 
 val big_try_await
   (#code:vcode)
@@ -122,7 +125,7 @@ val await_pool
   (p:pool code)
   (#f:perm)
   (q : vprop)
-  : stt unit (pool_alive #f p ** pledge [] (pool_done p) q)
+  : stt unit (pool_alive #f p ** pledge (pool_invlist p) (pool_done p) q)
              (fun _ -> pool_alive #f p ** q)
 
 val teardown_pool

@@ -210,6 +210,10 @@ type pool_st (code:vcode) : Type u#0 = {
 }
 type pool (code:vcode) = pool_st code
 
+let pool_invlist (#code:vcode) (p:pool code)
+  : invlist
+  = add_one (| _, p.i |) invlist_empty
+
 (* Assuming a vprop for lock ownership. *)
 assume val lock_alive
   (#p:vprop)
@@ -269,9 +273,21 @@ let joinable
   handle_spotted p post h
   
 (* Small to large *)
-// BIG FIXME: unobservable! or add inv to pre+post
 ```pulse
 ghost
+fn ghost_spotted_s2l (#code:vcode)
+  (p : pool code)
+  (post : erased code.t)
+  (h : handle)
+  requires small_handle_list_inv p.g_runnable p.small_handle_list ** handle_spotted p post h
+  ensures  small_handle_list_inv p.g_runnable p.small_handle_list ** big_handle_spotted p post h
+{
+  admit()
+}
+```
+
+```pulse
+unobservable
 fn spotted_s2l (#code:vcode)
   (p : pool code)
   (post : erased code.t)
@@ -280,16 +296,32 @@ fn spotted_s2l (#code:vcode)
   ensures  big_handle_spotted p post h
   opens add_inv emp_inames p.i
 {
-  admit()
+  with_invariants p.i {
+    ghost_spotted_s2l p post h;
+  }
 }
 ```
 
 ```pulse
 ghost
+fn ghost_joinable_s2l (#code:vcode)
+  (p : pool code) (post : erased code.t) (h : handle)
+  requires small_handle_list_inv p.g_runnable p.small_handle_list ** joinable p post h
+  ensures  small_handle_list_inv p.g_runnable p.small_handle_list ** big_joinable p post h
+{
+  unfold (joinable #code p post h);
+  ghost_spotted_s2l p post h;
+  fold (big_joinable #code p post h);
+}
+```
+
+```pulse
+unobservable
 fn joinable_s2l (#code:vcode)
   (p : pool code) (post : erased code.t) (h : handle)
   requires joinable p post h
   ensures  big_joinable p post h
+  opens add_inv emp_inames p.i
 {
   unfold (joinable #code p post h);
   spotted_s2l p post h;
@@ -297,9 +329,22 @@ fn joinable_s2l (#code:vcode)
 }
 ```
 
-(* Large to small *)
+
 ```pulse
 ghost
+fn ghost_spotted_l2s (#code:vcode)
+  (p : pool code)
+  (post : erased code.t)
+  (h : handle)
+  requires small_handle_list_inv p.g_runnable p.small_handle_list ** big_handle_spotted p post h
+  ensures small_handle_list_inv p.g_runnable p.small_handle_list ** handle_spotted p post h
+{
+  admit()
+}
+```
+
+```pulse
+unobservable
 fn spotted_l2s (#code:vcode)
   (p : pool code)
   (post : erased code.t)
@@ -308,22 +353,40 @@ fn spotted_l2s (#code:vcode)
   ensures  handle_spotted p post h
   opens add_inv emp_inames p.i
 {
-  admit()
+  with_invariants p.i {
+    ghost_spotted_l2s p post h;
+  }
 }
 ```
 
 ```pulse
 ghost
+fn ghost_joinable_l2s (#code:vcode)
+  (p : pool code) (post : erased code.t) (h : handle)
+  requires small_handle_list_inv p.g_runnable p.small_handle_list ** big_joinable p post h
+  ensures  small_handle_list_inv p.g_runnable p.small_handle_list ** joinable p post h
+{
+  unfold (big_joinable #code p post h);
+  ghost_spotted_l2s p post h;
+  fold (joinable #code p post h);
+}
+```
+
+```pulse
+unobservable
 fn joinable_l2s (#code:vcode)
   (p : pool code) (post : erased code.t) (h : handle)
   requires big_joinable p post h
   ensures  joinable p post h
+  opens add_inv emp_inames p.i
 {
   unfold (big_joinable #code p post h);
   spotted_l2s p post h;
   fold (joinable #code p post h);
 }
 ```
+
+
 
 ```pulse
 ghost
@@ -1092,11 +1155,17 @@ fn __disown_aux
   (#post : erased code.t)
   (h : handle)
   (_:unit)
-  requires invlist_v invlist_empty ** (pool_done p ** joinable p post h)
-  ensures  invlist_v invlist_empty ** (pool_done p ** code.up post)
+  requires invlist_v (pool_invlist p) ** (pool_done p ** joinable p post h)
+  ensures  invlist_v (pool_invlist p) ** (pool_done p ** code.up post)
 {
-  joinable_s2l p post h;
+  // Need the emp!!!
+  rewrite invlist_v (pool_invlist p)
+       as (small_handle_list_inv p.g_runnable p.small_handle_list ** emp);
+
+  ghost_joinable_s2l p post h;
   disown_aux #code #p #post h;
+  rewrite (small_handle_list_inv p.g_runnable p.small_handle_list ** emp)
+       as invlist_v (pool_invlist p);
 }
 ```
 
@@ -1106,9 +1175,9 @@ fn __disown (#code:vcode) (#p:pool code)
       (#post : erased code.t)
       (h : handle)
   requires joinable p post h
-  ensures  pledge [] (pool_done p) (code.up post) // could be small pledge
+  ensures  pledge (pool_invlist p) (pool_done p) (code.up post) // could be small pledge
 {
-  make_pledge [] (pool_done p) (code.up post) (joinable p post h)
+  make_pledge _ (pool_done p) (code.up post) (joinable p post h)
       (__disown_aux #code #p #post h)
 }
 ```
@@ -1134,7 +1203,7 @@ fn __spawn_ (#code:vcode) (p:pool code)
     (#post : erased code.t)
     (f : unit -> stt unit (code.up pre) (fun _ -> (code.up post)))
     requires pool_alive #pf p ** (code.up pre)
-    ensures  pool_alive #pf p ** pledge [] (pool_done p) (code.up post)
+    ensures  pool_alive #pf p ** pledge (pool_invlist p) (pool_done p) (code.up post)
 {
   let h = __spawn p f;
   __disown #code h // FIXME: crash without the #code annotation
@@ -1542,9 +1611,9 @@ fn rec check_if_all_done
 fn try_await_pool
   (#code:vcode)
   (p:pool code) (#f:perm) (q : vprop)
-  requires pool_alive #f p ** pledge [] (pool_done p) q
+  requires pool_alive #f p ** pledge (pool_invlist p) (pool_done p) q
   returns  b : bool
-  ensures  pool_alive #f p ** ite b q (pledge [] (pool_done p) q)
+  ensures  pool_alive #f p ** ite b q (pledge (pool_invlist p) (pool_done p) q)
 {
   unfold (pool_alive #f p);
   let lk = p.lk;
@@ -1583,7 +1652,7 @@ fn try_await_pool
     release lk;
     fold (pool_alive #f p);
 
-    fold (ite false q (pledge [] (pool_done p) q));
+    fold (ite false q (pledge (pool_invlist p) (pool_done p) q));
     false
   }
 }
@@ -1593,28 +1662,28 @@ fn try_await_pool
 fn __await_pool
   (#code:vcode)
   (p:pool code) (#f:perm) (q : vprop)
-  requires pool_alive #f p ** pledge [] (pool_done p) q
+  requires pool_alive #f p ** pledge (pool_invlist p) (pool_done p) q
   ensures  pool_alive #f p ** q
 {
   let mut done = false;
-  fold (ite false q (pledge [] (pool_done p) q));
+  fold (ite false q (pledge (pool_invlist p) (pool_done p) q));
   while (let v = !done; not v)
     invariant b.
       exists* v_done.
         pool_alive #f p **
         pts_to done v_done **
-        ite v_done q (pledge [] (pool_done p) q) **
+        ite v_done q (pledge (pool_invlist p) (pool_done p) q) **
         pure (b == not v_done)
   {
     with v_done. assert (pts_to done v_done);
     rewrite each v_done as false;
-    unfold (ite false q (pledge [] (pool_done p) q));
+    unfold (ite false q (pledge (pool_invlist p) (pool_done p) q));
     let b = try_await_pool #code p #f q;
     done := b;
   };
   with v_done. assert (pts_to done v_done);
   rewrite each v_done as true;
-  unfold (ite true q (pledge [] (pool_done p) q));
+  unfold (ite true q (pledge (pool_invlist p) (pool_done p) q));
 }
 ```
 
@@ -1752,7 +1821,28 @@ fn __setup_pool
 }
 ```
 
-let joinable_is_small = admit()
+let small_handle_spotted (#code:vcode) (p:pool code) (post:erased code.t) (h : handle)
+  : Lemma (is_small (handle_spotted p post h)) =
+    let aux (small_handle_list : list handle)
+      : Lemma (is_small (AR.snapshot p.small_handle_list small_handle_list ** pure (List.memP h small_handle_list)))
+      =
+      assume (is_small (AR.snapshot p.small_handle_list small_handle_list)); // FIXME
+      pure_is_small (List.memP h small_handle_list);
+      small_star (AR.snapshot p.small_handle_list small_handle_list) (pure (List.memP h small_handle_list))
+    in
+    Classical.forall_intro aux;
+    small_exists (fun v_small_handle_list -> AR.snapshot p.small_handle_list v_small_handle_list ** pure (List.memP h v_small_handle_list));
+    assert_norm
+      (handle_spotted p post h ==
+            op_exists_Star (fun v_small_handle_list -> AR.snapshot p.small_handle_list v_small_handle_list ** pure (List.memP h v_small_handle_list)));
+    assert (is_small (handle_spotted p post h));
+    ()
+
+let joinable_is_small (#code:vcode) (p:pool code) (post:erased code.t) (h : handle)
+  : Lemma (is_small (joinable p post h)) =
+    assume (is_small (AR.anchored h.g_state Ready)); // FIXME
+    small_handle_spotted p post h;
+    small_star (AR.anchored h.g_state Ready) (handle_spotted p post h)
 
 let big_spawn #code = __big_spawn #code
 let spawn #code = __spawn #code
