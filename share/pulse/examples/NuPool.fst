@@ -11,16 +11,14 @@ open Pulse.Class.Duplicable
 
 module FRAP  = Pulse.Lib.FractionalAnchoredPreorder
 module BAR   = Pulse.Lib.BigAnchoredReference
+module AR    = Pulse.Lib.AnchoredReference
 module Big   = Pulse.Lib.BigReference
 module Ghost = Pulse.Lib.GhostReference
 
 unfold let p12 : perm = half_perm full_perm
 
-(* There's no real need for this to be in Type u#2
-instead of Type0, but it makes it so that we can just use
-the BAR module everywhere, instead of AR and BAR. *)
 noeq
-type task_state : Type u#2 =
+type task_state : Type0 =
   | Ready    : task_state
   | Running  : task_state
   | Done     : task_state
@@ -57,19 +55,19 @@ let anchor_rel_refl (x:task_state) :
 let state_res #code
   ([@@@equate_by_smt]pre : erased code.t)
   ([@@@equate_by_smt]post : erased code.t)
-  (g_state : BAR.ref task_state p_st anchor_rel)
+  (g_state : AR.ref task_state p_st anchor_rel)
   ([@@@equate_by_smt] st : task_state)
 =
   match st with
   | Ready -> code.up pre
   | Running -> emp
   | Done -> code.up post
-  | Claimed -> BAR.anchored g_state Claimed
+  | Claimed -> AR.anchored g_state Claimed
 
 noeq
 type handle : Type u#0 = {
-  state   : Big.ref task_state;
-  g_state : BAR.ref task_state p_st anchor_rel; (* these two refs are kept in sync *)
+  state   : ref task_state;
+  g_state : AR.ref task_state p_st anchor_rel; (* these two refs are kept in sync *)
 }
 
 noeq
@@ -89,12 +87,12 @@ let state_pred
   ([@@@equate_by_smt] h : handle)
 : vprop =
   exists* (v_state : task_state).
-    Big.pts_to
+    pts_to
       h.state
       #(if Running? v_state then half_perm full_perm else full_perm)
       (unclaimed v_state)
       **
-    BAR.pts_to h.g_state v_state **
+    AR.pts_to h.g_state v_state **
     state_res pre post h.g_state v_state
 
 // equate_by_smt due to #22
@@ -159,7 +157,7 @@ let lock_inv (#code:vcode)
   exists*
     (v_runnable : list (task_t code))
   .
-    Big.pts_to runnable v_runnable **
+    Big.pts_to      runnable   v_runnable **
     BAR.pts_to_full g_runnable v_runnable **
     all_state_pred v_runnable
 
@@ -369,7 +367,7 @@ let joinable
   ([@@@equate_by_smt]post:erased code.t)
   ([@@@equate_by_smt]h : handle)
 : vprop =
-  BAR.anchored h.g_state Ready **
+  AR.anchored h.g_state Ready **
   handle_spotted p post h
 
 ```pulse
@@ -391,8 +389,8 @@ fn intro_state_pred
   (h : handle)
   (v_state : task_state {~(Running? v_state)})
   requires
-    Big.pts_to h.state (unclaimed v_state) **
-    BAR.pts_to h.g_state v_state **
+    pts_to h.state (unclaimed v_state) **
+    AR.pts_to h.g_state v_state **
     state_res pre post h.g_state v_state
   ensures state_pred pre post h
 {
@@ -408,13 +406,13 @@ fn intro_state_pred_Running
   (post : erased code.t)
   (h : handle)
   requires
-    Big.pts_to h.state #(half_perm full_perm) Running **
-    BAR.pts_to h.g_state Running **
+    pts_to h.state #(half_perm full_perm) Running **
+    AR.pts_to h.g_state Running **
     state_res pre post h.g_state Running
   ensures state_pred pre post h
 {
-  rewrite (Big.pts_to h.state #(half_perm full_perm) Running)
-       as (Big.pts_to h.state #(half_perm full_perm) (unclaimed Running));
+  rewrite (pts_to h.state #(half_perm full_perm) Running)
+       as (pts_to h.state #(half_perm full_perm) (unclaimed Running));
   fold (state_pred pre post h);
 }
 ```
@@ -429,8 +427,8 @@ fn elim_state_pred
   requires state_pred pre post h
   returns v_state : erased (task_state)
   ensures
-    Big.pts_to h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed v_state) **
-    BAR.pts_to h.g_state v_state **
+    pts_to h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed v_state) **
+    AR.pts_to h.g_state v_state **
     state_res pre post h.g_state v_state
 {
   unfold (state_pred pre post h);
@@ -451,10 +449,10 @@ fn __spawn (#code:vcode) (p:pool code)
 {
   let task_st : task_state = Ready;
   assert (pure (anchor_rel Ready Ready));
-  let r_task_st : Big.ref task_state = Big.alloc task_st;
-  let gr_task_st : BAR.ref task_state p_st anchor_rel = BAR.alloc #task_state task_st #p_st #anchor_rel;
+  let r_task_st : ref task_state = alloc task_st;
+  let gr_task_st : AR.ref task_state p_st anchor_rel = AR.alloc #task_state task_st #p_st #anchor_rel;
 
-  BAR.drop_anchor gr_task_st;
+  AR.drop_anchor gr_task_st;
 
   let handle : handle = {
     state = r_task_st;
@@ -482,7 +480,7 @@ fn __spawn (#code:vcode) (p:pool code)
 
   rewrite each task_st as Ready;
   rewrite each gr_task_st as task.h.g_state;
-  assert (BAR.anchored task.h.g_state Ready);
+  assert (AR.anchored task.h.g_state Ready);
 
   BAR.take_snapshot' p.g_runnable;
   
@@ -494,7 +492,7 @@ fn __spawn (#code:vcode) (p:pool code)
 
   fold (pool_alive #pf p);
   
-  assert (Big.pts_to #task_state r_task_st Ready);
+  assert (pts_to #task_state r_task_st Ready);
 
   rewrite each r_task_st as handle.state;
   rewrite (code.up pre)
@@ -526,17 +524,17 @@ fn claim_done_task
          (#code:vcode) (#p:pool code)
          (#pre : erased code.t) (#post : erased code.t)
          (h : handle)
-  requires state_res pre post h.g_state Done    ** BAR.pts_to h.g_state Done    ** BAR.anchored h.g_state Ready
-  ensures  state_res pre post h.g_state Claimed ** BAR.pts_to h.g_state Claimed ** code.up post
+  requires state_res pre post h.g_state Done    ** AR.pts_to h.g_state Done    ** AR.anchored h.g_state Ready
+  ensures  state_res pre post h.g_state Claimed ** AR.pts_to h.g_state Claimed ** code.up post
 {
   rewrite (state_res pre post h.g_state Done)
        as code.up post;
 
-  BAR.lift_anchor h.g_state Ready;
+  AR.lift_anchor h.g_state Ready;
 
-  BAR.write_full h.g_state Claimed;
+  AR.write_full h.g_state Claimed;
 
-  BAR.drop_anchor h.g_state;
+  AR.drop_anchor h.g_state;
 
   fold (state_res pre post h.g_state Claimed);
 
@@ -571,15 +569,15 @@ fn try_await
 
   let v_state = elim_state_pred t.pre t.post t.h;
 
-  rewrite (Big.pts_to t.h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed (reveal v_state)))
-       as (Big.pts_to h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed (reveal v_state)));
-  let task_st = Big.op_Bang h.state;
+  rewrite (pts_to t.h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed (reveal v_state)))
+       as (pts_to h.state #(if Running? v_state then half_perm full_perm else full_perm) (unclaimed (reveal v_state)));
+  let task_st = !h.state;
   
   match task_st {
     Ready -> {
       (* NOOP *)
-      rewrite (Big.pts_to h.state (reveal v_state))
-           as (Big.pts_to t.h.state (reveal v_state));
+      rewrite (pts_to h.state (reveal v_state))
+           as (pts_to t.h.state (reveal v_state));
       intro_state_pred t.pre t.post t.h Ready;
       elim_trade _ _; // undo extract_state_pred
       fold (lock_inv p.runnable p.g_runnable);
@@ -591,8 +589,8 @@ fn try_await
     }
     Running -> {
       (* NOOP *)
-      rewrite (Big.pts_to h.state #(half_perm full_perm) (reveal v_state))
-           as (Big.pts_to t.h.state #(half_perm full_perm) (reveal v_state));
+      rewrite (pts_to h.state #(half_perm full_perm) (reveal v_state))
+           as (pts_to t.h.state #(half_perm full_perm) (reveal v_state));
       intro_state_pred_Running t.pre t.post t.h;
       elim_trade _ _; // undo extract_state_pred
       fold (lock_inv p.runnable p.g_runnable);
@@ -605,15 +603,15 @@ fn try_await
     Done -> {
       (* First prove that ghost state cannot be Claimed,
       due to the anchor *)
-      rewrite (BAR.pts_to t.h.g_state v_state)
-           as (BAR.pts_to h.g_state v_state);
-      assert (BAR.pts_to h.g_state v_state);
-      assert (BAR.anchored h.g_state Ready);
-      BAR.recall_anchor h.g_state Ready;
+      rewrite (AR.pts_to t.h.g_state v_state)
+           as (AR.pts_to h.g_state v_state);
+      assert (AR.pts_to h.g_state v_state);
+      assert (AR.anchored h.g_state Ready);
+      AR.recall_anchor h.g_state Ready;
       assert (pure (v_state =!= Claimed));
       assert (pure (v_state == Done));
-      rewrite (BAR.pts_to h.g_state v_state)
-           as (BAR.pts_to t.h.g_state v_state);
+      rewrite (AR.pts_to h.g_state v_state)
+           as (AR.pts_to t.h.g_state v_state);
 
       (* Now claim it *)
       claim_done_task #code #p #t.pre #t.post t.h;
@@ -621,8 +619,8 @@ fn try_await
       rewrite (code.up post)
            as (if true then code.up post else joinable p post h);
            
-      rewrite (Big.pts_to h.state Done)
-           as (Big.pts_to t.h.state (unclaimed Claimed));
+      rewrite (pts_to h.state Done)
+           as (pts_to t.h.state (unclaimed Claimed));
       intro_state_pred t.pre t.post t.h Claimed;
       elim_trade _ _; // undo extract_state_pred
       fold (lock_inv p.runnable p.g_runnable);
@@ -666,7 +664,7 @@ fn __await (#code:vcode) (#p:pool code)
 let handle_done (h:handle) : vprop =
   exists* (st : task_state).
     pure (st == Done \/ st == Claimed) **
-    BAR.snapshot h.g_state st
+    AR.snapshot h.g_state st
 
 let task_done (#code:vcode) (t : task_t code)  : vprop =
   handle_done t.h
@@ -692,7 +690,7 @@ fn unfold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t
   requires all_tasks_done (t :: ts)
   returns  st : task_state
   ensures  pure (st == Done \/ st == Claimed) **
-           BAR.snapshot t.h.g_state st **
+           AR.snapshot t.h.g_state st **
            all_tasks_done ts
 {
   // This should not be so hard.
@@ -700,11 +698,11 @@ fn unfold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t
     (all_tasks_done (t :: ts))
     ((exists* (st : task_state).
       pure (st == Done \/ st == Claimed) **
-      BAR.snapshot t.h.g_state st) **
+      AR.snapshot t.h.g_state st) **
       all_tasks_done ts)
     helper_tac
     ();
-  with st. assert BAR.snapshot t.h.g_state st;
+  with st. assert AR.snapshot t.h.g_state st;
   st
 }
 ```
@@ -714,7 +712,7 @@ ghost
 fn fold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t code))
   (st : task_state)
   requires pure (st == Done \/ st == Claimed) **
-           BAR.snapshot t.h.g_state st **
+           AR.snapshot t.h.g_state st **
            all_tasks_done ts
   ensures  all_tasks_done (t :: ts)
 {
@@ -722,7 +720,7 @@ fn fold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t c
   rewrite_by
     ((exists* (st : task_state).
       pure (st == Done \/ st == Claimed) **
-      BAR.snapshot t.h.g_state st) **
+      AR.snapshot t.h.g_state st) **
       all_tasks_done ts)
     (all_tasks_done (t :: ts))
     helper_tac
@@ -730,7 +728,7 @@ fn fold_all_tasks_done_cons (#code:vcode) (t : task_t code) (ts : list (task_t c
 }
 ```
 
-instance dup_snapshot
+instance dup_high_snapshot
   (#t:Type u#2)
   (#pre : preorder t)
   (#anc : FRAP.anchor_rel pre)
@@ -738,6 +736,19 @@ instance dup_snapshot
   (v : t)
 : duplicable (BAR.snapshot r v) = {
   // TODO: implement in BAR module, or tweak
+  // take_snapshot to provide a snapshot of a possibly
+  // "older" value. In that case this is easy to implement.
+  dup_f = admit();
+}
+
+instance dup_snapshot
+  (#t:Type u#0)
+  (#pre : preorder t)
+  (#anc : FRAP.anchor_rel pre)
+  (r : AR.ref t pre anc)
+  (v : t)
+: duplicable (AR.snapshot r v) = {
+  // TODO: implement in AR module, or tweak
   // take_snapshot to provide a snapshot of a possibly
   // "older" value. In that case this is easy to implement.
   dup_f = admit();
@@ -759,7 +770,7 @@ fn rec all_tasks_done_inst (#code:vcode) (t : task_t code) (ts : list (task_t co
       if b {
         rewrite each t' as t;
         let st = unfold_all_tasks_done_cons #code t ts';
-        dup (BAR.snapshot t.h.g_state st) ();
+        dup (AR.snapshot t.h.g_state st) ();
         fold (handle_done t.h);
         fold (task_done t);
         fold_all_tasks_done_cons #code t ts' st;
@@ -797,7 +808,7 @@ fn disown_aux
 
   unfold (state_pred t.pre t.post t.h);
 
-  with st. assert (BAR.pts_to t.h.g_state st);
+  with st. assert (AR.pts_to t.h.g_state st);
   let st = reveal st;
   
   all_tasks_done_inst t v_runnable;
@@ -807,14 +818,14 @@ fn disown_aux
       rewrite (state_res t.pre t.post t.h.g_state Done)
            as code.up post;
 
-      BAR.lift_anchor t.h.g_state Ready;
-      BAR.write_full t.h.g_state Claimed;
-      BAR.drop_anchor t.h.g_state;
+      AR.lift_anchor t.h.g_state Ready;
+      AR.write_full t.h.g_state Claimed;
+      AR.drop_anchor t.h.g_state;
 
       fold (state_res t.pre t.post t.h.g_state Claimed);
       
-      rewrite (Big.pts_to t.h.state Done)
-           as (Big.pts_to t.h.state (unclaimed Claimed));
+      rewrite (pts_to t.h.state Done)
+           as (pts_to t.h.state (unclaimed Claimed));
       
       intro_state_pred t.pre t.post t.h Claimed;
 
@@ -829,22 +840,22 @@ fn disown_aux
       fold (pool_done p);
     }
     Claimed -> {
-      assert (BAR.anchored h.g_state Ready);
-      BAR.recall_anchor t.h.g_state Ready;
+      assert (AR.anchored h.g_state Ready);
+      AR.recall_anchor t.h.g_state Ready;
       unreachable();
     }
     Ready -> {
       unfold (task_done t);
       unfold (handle_done t.h);
-      with st. assert (BAR.snapshot t.h.g_state st);
-      BAR.recall_snapshot t.h.g_state;
+      with st. assert (AR.snapshot t.h.g_state st);
+      AR.recall_snapshot t.h.g_state;
       unreachable();
     }
     Running -> { 
       unfold (task_done t);
       unfold (handle_done t.h);
-      with st. assert (BAR.snapshot t.h.g_state st);
-      BAR.recall_snapshot t.h.g_state;
+      with st. assert (AR.snapshot t.h.g_state st);
+      AR.recall_snapshot t.h.g_state;
       unreachable();
     }
   }
@@ -910,7 +921,7 @@ fn rec __pool_done_task_done_aux (#code:vcode)
       if b {
         rewrite each t' as t;
         let st = unfold_all_tasks_done_cons #code t ts';
-        dup (BAR.snapshot t.h.g_state st) ();
+        dup (AR.snapshot t.h.g_state st) ();
         fold (handle_done t.h);
         fold (task_done t);
         
@@ -972,11 +983,31 @@ fn pool_done_handle_done (#code:vcode) (#p:pool code)
 }
 ```
 
-let vopt (#a:Type) (o : option a) (p : a -> vprop) =
+let vopt (#a:Type) ([@@@equate_by_smt]o : option a) (p : a -> vprop) =
   match o with
   | Some x -> p x
   | None -> emp
-  
+
+```pulse
+ghost
+fn intro_vopt_none (#a:Type u#2) (#p : a -> vprop) ()
+  requires emp
+  ensures vopt None p
+{
+  fold (vopt None p);
+}
+```
+
+```pulse
+ghost
+fn intro_vopt_some (#a:Type u#2) (x : a) (#p : a -> vprop)
+  requires p x
+  ensures vopt (Some x) p
+{
+  fold (vopt (Some x) p);
+}
+```
+
 ```pulse
 ghost
 fn get_vopt (#a:Type u#2) (#x : a) (#p : a -> vprop) ()
@@ -998,7 +1029,8 @@ fn weaken_vopt (#a:Type u#2) (o : option a)
 {
   match o {
     None -> {
-      // Not sure I understand why this just works without unfolding+folding, but good!
+      unfold (vopt None p1);
+      fold (vopt None p2);
       drop_ extra;
       ()
     }
@@ -1018,40 +1050,43 @@ fn rec grab_work'' (#code:vcode) (p:pool code) (v_runnable : list (task_t code))
   returns  topt : option (task_t code)
   ensures  all_state_pred v_runnable
         ** vopt topt (fun t ->
-             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable))
+             code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable))
 {
   match v_runnable {
     Nil -> {
+      // intro_vopt_none;
+      // fails with variable not found...
+
       let topt : option (task_t code) = None #(task_t code);
       (* Funnily enough whatever we put in the vopt predicate
       works here, since it trigger the unifier+SMT for the matcher,
       which works since we have a None. *)
       rewrite emp
           //  as vopt topt (fun t -> emp);
-          as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable));
+          as vopt topt (fun t -> code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable));
       topt
     }
     Cons t ts -> {
       take_one_h11 t ts;
       unfold (state_pred t.pre t.post t.h);
       
-      let st = Big.op_Bang t.h.state;
+      let st = !t.h.state;
       match st {
         Ready -> {
           let topt = Some #(task_t code) t;
           rewrite (emp ** state_res t.pre t.post t.h.g_state Ready)
                as (state_res t.pre t.post t.h.g_state Running ** code.up t.pre);
 
-          Big.op_Colon_Equals t.h.state Running;
-          BAR.write t.h.g_state Running;
+          t.h.state := Running;
+          AR.write t.h.g_state Running;
           
-          Big.share2 t.h.state;
+          share2 t.h.state;
 
           intro_state_pred_Running t.pre t.post t.h;
           add_one_state_pred t ts;
 
-          rewrite code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable)
-               as vopt topt (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable));
+          rewrite code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable)
+               as vopt topt (fun t -> code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable));
           
           topt
         }
@@ -1062,8 +1097,8 @@ fn rec grab_work'' (#code:vcode) (p:pool code) (v_runnable : list (task_t code))
           
           (* Weaken the pure inside the vopt *)
           ghost fn weaken (t : task_t code)
-            requires emp ** (code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t ts))
-            ensures  code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable)
+            requires emp ** (code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t ts))
+            ensures  code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable)
           {
             ()
           };
@@ -1085,7 +1120,7 @@ fn rec grab_work' (#code:vcode) (p:pool code)
   returns  topt : option (task_t code)
   ensures  lock_inv p.runnable p.g_runnable
         ** vopt topt (fun t ->
-             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t)
+             code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t)
 {
   unfold (lock_inv p.runnable p.g_runnable);
   let v_runnable = Big.op_Bang p.runnable;
@@ -1095,8 +1130,8 @@ fn rec grab_work' (#code:vcode) (p:pool code)
 
   (* If Some, the task is spotted *)
   ghost fn spot (t:task_t code)
-    requires BAR.snapshot p.g_runnable v_runnable ** (code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable))
-    ensures  code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t
+    requires BAR.snapshot p.g_runnable v_runnable ** (code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** pure (List.memP t v_runnable))
+    ensures  code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t
   {
     intro_task_spotted #code p t v_runnable;
   };
@@ -1113,7 +1148,7 @@ fn grab_work (#code:vcode) (p:pool code)
   returns  topt : option (task_t code)
   ensures  pool_alive #f p
         ** vopt topt (fun t ->
-             code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t)
+             code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t)
 {
   unfold (pool_alive #f p);
   acquire p.lk;
@@ -1140,7 +1175,7 @@ fn put_back_result (#code:vcode) (p:pool code) (t : task_t code)
   requires pool_alive #f p **
            task_spotted p t **
            code.up t.post **
-           Big.pts_to t.h.state #(half_perm full_perm) Running
+           pts_to t.h.state #(half_perm full_perm) Running
   ensures  pool_alive #f p
 {
   acquire p.lk;
@@ -1149,16 +1184,16 @@ fn put_back_result (#code:vcode) (p:pool code) (t : task_t code)
   extract_state_pred p t;
 
   (* Advance the state and place the post condition back into the pool *)
-  assert (state_pred t.pre t.post t.h ** Big.pts_to t.h.state #(half_perm full_perm) Running);
+  assert (state_pred t.pre t.post t.h ** pts_to t.h.state #(half_perm full_perm) Running);
     unfold (state_pred t.pre t.post t.h);
-    with v_st. assert (BAR.pts_to t.h.g_state v_st);
-    Big.pts_to_injective_eq t.h.state;
+    with v_st. assert (AR.pts_to t.h.g_state v_st);
+    pts_to_injective_eq t.h.state;
     assert (pure (v_st == Running));
-    rewrite (Big.pts_to t.h.state #(if Running? v_st then half_perm full_perm else full_perm) (unclaimed v_st))
-        as (Big.pts_to t.h.state #(half_perm full_perm) v_st);
-    Big.gather2 t.h.state;
-    Big.op_Colon_Equals t.h.state Done; // Only concrete step (except for mutex taking)
-    BAR.write t.h.g_state Done;
+    rewrite (pts_to t.h.state #(if Running? v_st then half_perm full_perm else full_perm) (unclaimed v_st))
+         as (pts_to t.h.state #(half_perm full_perm) v_st);
+    gather2 t.h.state;
+    t.h.state := Done; // Only concrete step (except for mutex taking)
+    AR.write t.h.g_state Done;
 
     rewrite (state_res t.pre t.post t.h.g_state Running) as emp;
     rewrite code.up t.post as (state_res t.pre t.post t.h.g_state Done);
@@ -1191,8 +1226,8 @@ fn rec worker (#code:vcode) (#f:perm) (p : pool code)
       rewrite each topt as Some t;
       get_vopt #(task_t code) #t ();
       (* sigh *)
-      rewrite (fun t -> code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t) t
-           as code.up t.pre ** Big.pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t;
+      rewrite (fun t -> code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t) t
+           as code.up t.pre ** pts_to t.h.state #(half_perm full_perm) Running ** task_spotted p t;
       perf_work t;
       put_back_result p t;
       worker p
@@ -1221,15 +1256,15 @@ fn rec check_if_all_done
     Cons t ts' -> {
       take_one_h11 t ts';
       unfold (state_pred t.pre t.post t.h);
-      let st = Big.op_Bang t.h.state;
+      let st = !t.h.state;
       match st {
         Done -> {
           let bb = check_if_all_done ts';
           if bb {
             rewrite (ite bb (all_tasks_done ts') emp) as (all_tasks_done ts');
-            with g_st. assert (BAR.pts_to t.h.g_state g_st);
+            with g_st. assert (AR.pts_to t.h.g_state g_st);
             assert (pure (g_st == Done \/ g_st == Claimed));
-            BAR.take_snapshot t.h.g_state;
+            AR.take_snapshot t.h.g_state;
             fold_all_tasks_done_cons #code t ts' g_st;
             rewrite (all_tasks_done (t::ts')) as (all_tasks_done ts);
             fold (ite true (all_tasks_done ts) emp);
