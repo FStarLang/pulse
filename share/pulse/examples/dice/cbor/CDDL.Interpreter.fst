@@ -1838,7 +1838,11 @@ let rec spec_array_group_splittable_fold
       );
     assert (Spec.array_group3_concat_unique_weak a1 a3)
 
+#pop-options
+
 // the converse does not hold: consider a* b* a*, then [a] has two decompositions: [a] [] [] and [] [] [a]
+
+#push-options "--z3rlimit 32"
 
 #restart-solver
 let rec spec_array_group_splittable_fold_gen
@@ -1873,6 +1877,10 @@ let rec spec_array_group_splittable_fold_gen
       (array_group_sem e (g1' `List.Tot.append` ((n2, g2') :: g3)))
       (array_group_sem e (g1' `List.Tot.append` (g2 `List.Tot.append` g3)))
     )
+
+#pop-options
+
+#push-options "--z3rlimit 16"
 
 let spec_array_group3_concat_unique_strong'_concat_left
   (#b: _)
