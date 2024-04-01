@@ -114,7 +114,12 @@ val take_snapshot' (#a:Type) (#p:_) (#f:perm) (#anc:anchor_rel p) (r : ref a p a
         (pts_to_full r #f v)
         (fun _ -> pts_to_full r #f v ** snapshot r v)
 
-val recall_snapshot (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#v0 #v:a)
+val recall_snapshot (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#f:perm) (#v0 #v:a)
   : stt_ghost unit
-        (pts_to r v ** snapshot r v0)
-        (fun _ -> pts_to r v ** snapshot r v0 ** pure (p v0 v /\ True))
+        (pts_to r #f v ** snapshot r v0)
+        (fun _ -> pts_to r #f v ** snapshot r v0 ** pure (p v0 v /\ True))
+
+val recall_snapshot' (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#f:perm) (#v0 #v:a)
+  : stt_ghost unit
+        (pts_to_full r #f v ** snapshot r v0)
+        (fun _ -> pts_to_full r #f v ** snapshot r v0 ** pure (p v0 v /\ True))

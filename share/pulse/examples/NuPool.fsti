@@ -19,13 +19,13 @@ val pool_invlist (#code:vcode) (p : pool code) : Pulse.Lib.InvList.invlist
 val pool_alive (#[T.exact (`full_perm)] f : perm) (#code:vcode) (p:pool code) : vprop
 
 val big_joinable (#code:vcode) (p:pool code) (post:erased code.t) (h : handle) : vprop
-val joinable (#code:vcode) (p:pool code) (post:erased code.t) (h : handle) : vprop
+val joinable (#code:vcode) (p:pool code) (h : handle) : vprop
 
 val pool_done (#code:vcode) (p:pool code) : vprop
 
-val joinable_is_small (#code:vcode) (p:pool code) (post:erased code.t) (h : handle) 
-  : Lemma (is_small (joinable p post h))
-          [SMTPat (joinable p post h)]
+val joinable_is_small (#code:vcode) (p:pool code) (h : handle) 
+  : Lemma (is_small (joinable p h))
+          [SMTPat (joinable p h)]
 
 val big_spawn
   (#code:vcode)
@@ -45,7 +45,7 @@ val spawn
   (#post : erased code.t)
   (f : unit -> stt unit (code.up pre) (fun _ -> code.up post))
   : stt handle (pool_alive #pf p ** code.up pre)
-               (fun h -> pool_alive #pf p ** joinable p post h)
+               (fun h -> pool_alive #pf p ** joinable p h)
 
 val big_disown
   (#code:vcode)
@@ -60,7 +60,7 @@ val disown
   (#p : pool code)
   (#post : erased code.t)
   (h : handle)
-  : stt_ghost unit (joinable p post h)
+  : stt_ghost unit (joinable p h)
                    (fun _ -> pledge (pool_invlist p) (pool_done p) (code.up post)) // TODO: SmallPledge
 
 (* spawn + disown *)
@@ -108,8 +108,8 @@ val try_await
   (#post : erased code.t)
   (h : handle)
   (#f : perm)
-  : stt bool (pool_alive #f p ** joinable p post h)
-             (fun ok -> pool_alive #f p ** (if ok then code.up post else joinable p post h))
+  : stt bool (pool_alive #f p ** joinable p h)
+             (fun ok -> pool_alive #f p ** (if ok then code.up post else joinable p h))
 
 val await
   (#code:vcode)
@@ -117,7 +117,7 @@ val await
   (#post : erased code.t)
   (h : handle)
   (#f : perm)
-  : stt unit (pool_alive #f p ** joinable p post h)
+  : stt unit (pool_alive #f p ** joinable p h)
              (fun _ -> pool_alive #f p ** code.up post)
 
 val await_pool

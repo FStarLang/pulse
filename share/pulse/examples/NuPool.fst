@@ -178,12 +178,12 @@ let lock_inv (#code:vcode)
 let rec handles_one_to_one (#code:vcode)
   (v_runnable : list (task_t code))
   (handles : list handle)
-  : vprop
+  : prop
 = match v_runnable, handles with
-  | [], [] -> emp
+  | [], [] -> True
   | t::ts, h::hs ->
-    pure (t.h == h) ** handles_one_to_one ts hs
-  | _ -> pure False
+    t.h == h /\ handles_one_to_one ts hs
+  | _ -> False
 
 let small_handle_list_inv (#code:vcode)
   (g_runnable : BAR.ref (list (task_t code)) list_preorder list_anchor)
@@ -195,7 +195,7 @@ let small_handle_list_inv (#code:vcode)
   .
     BAR.pts_to_full g_runnable #p12 v_runnable **
     AR.pts_to_full small_handle_list handles **
-    handles_one_to_one v_runnable handles
+    pure (handles_one_to_one v_runnable handles)
 
 noeq
 type pool_st (code:vcode) : Type u#0 = {
@@ -257,7 +257,7 @@ let big_joinable
 
 let handle_spotted (#code:vcode)
   (p : pool code)
-  (post : erased code.t)
+  (post : code.t)
   (h : handle)
   : vprop =
     exists* v_small_handle_list.
@@ -271,18 +271,66 @@ let joinable
 : vprop =
   AR.anchored h.g_state Ready **
   handle_spotted p post h
-  
+
+
+let rec handle_mem_task_mem
+  (#code : vcode)
+  (v_runnable : list (task_t code))
+  (handles : list handle)
+  (h : handle)
+  : Lemma (requires handles_one_to_one v_runnable handles)
+          (ensures List.memP h handles <==> (exists (t:task_t code). t.h == h /\ List.memP t v_runnable))
+  =
+  match v_runnable, handles with
+  | [], [] -> ()
+  | t::ts, h'::hs ->
+    handle_mem_task_mem ts hs h
+  | _, _ -> ()
+
+```pulse
+ghost
+fn elim_pure_exists (#a:Type u#2) (p : a -> prop)
+  requires pure (exists (x:a). p x)
+  returns  x : a
+  ensures  pure (p x)
+{
+  admit()
+}
+```
+
 (* Small to large *)
 ```pulse
 ghost
 fn ghost_spotted_s2l (#code:vcode)
   (p : pool code)
-  (post : erased code.t)
   (h : handle)
-  requires small_handle_list_inv p.g_runnable p.small_handle_list ** handle_spotted p post h
+  requires small_handle_list_inv p.g_runnable p.small_handle_list ** handle_spotted p h
+  returns  post : erased code.t
   ensures  small_handle_list_inv p.g_runnable p.small_handle_list ** big_handle_spotted p post h
 {
-  admit()
+  unfold (small_handle_list_inv p.g_runnable p.small_handle_list);
+  with v_runnable. assert (BAR.pts_to_full p.g_runnable #p12 v_runnable);
+  with handles. assert (AR.pts_to_full p.small_handle_list handles);
+ 
+  unfold (handle_spotted p h);
+  with handles0. assert (AR.snapshot p.small_handle_list handles0);
+
+  AR.recall_snapshot' p.small_handle_list;
+
+  assert (pure (List.memP h handles));
+  handle_mem_task_mem v_runnable handles h;
+  assert (pure (exists (t:task_t code). t.h == h /\ List.memP t v_runnable));
+  
+  let t = elim_pure_exists (fun (t:task_t code) -> t.h == h /\ List.memP t v_runnable);
+
+  drop_ (AR.snapshot p.small_handle_list handles0);
+
+  BAR.take_snapshot' p.g_runnable;
+  fold (big_task_spotted p t);
+  fold (big_handle_spotted p t.post h);
+  fold (small_handle_list_inv p.g_runnable p.small_handle_list);
+
+  t.post;
 }
 ```
 
@@ -628,9 +676,9 @@ fn add_task_and_handle
       (pure (task.h == task.h) ** handles_one_to_one v_runnable handles)
       (handles_one_to_one (task :: v_runnable) (task.h :: handles))
       helper_tac
-      ();
+    //   ();
     
-    BAR.share2' p.g_runnable;
+    .share2' p.g_runnable;
     fold (small_handle_list_inv p.g_runnable p.small_handle_list);
   };
 }
