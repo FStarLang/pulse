@@ -64,6 +64,10 @@ let name_mem (s: string) (e: name_env) : GTot bool = e s
 let name (e: name_env) : eqtype = (s: string { name_mem s e })
 
 [@@ bounded_attr; sem_attr]
+let name_intro (s: string) (e: name_env) (sq: squash (name_mem s e)) : Tot (name e) =
+  s
+
+[@@ bounded_attr; sem_attr]
 noeq
 type semenv_elem =
 | SEType of Spec.typ
@@ -766,7 +770,7 @@ and typ_env_sem
 let e_env_empty (i: name empty_name_env) : Tot (ast_env_elem empty_semenv (empty_semenv.se_env i)) = false_elim ()
 
 [@@"opaque_to_smt"; bounded_attr; sem_attr]
-let empty_env : (e: ast_env {
+let empty_ast_env : (e: ast_env {
   e.e_semenv.se_bound == empty_name_env
 }) = {
   e_semenv = empty_semenv;
@@ -2221,11 +2225,148 @@ let rec array_group_splittable
 
 #pop-options
 
-[@@"opaque_to_smt"]
-let spec_array_group_splittable_threshold_empty
+let rec spec_choice_typ_well_formed
+  (env: semenv)
+  (l: list elem_typ)
+: Tot prop
+= typ_bounded env.se_bound (TChoice l) /\
+  begin match l with
+  | [] -> True
+  | [_] -> True
+  | a :: q ->
+    spec_typ_disjoint (typ_sem env (TElem a)) (typ_sem env (TChoice q)) /\
+    spec_choice_typ_well_formed env q
+  end
+
+let rec spec_choice_typ_well_formed_included
+  (env1 env2: semenv)
+  (l: list elem_typ)
+: Lemma
+  (requires
+    semenv_included env1 env2 /\
+    spec_choice_typ_well_formed env1 l
+  )
+  (ensures
+    spec_choice_typ_well_formed env2 l
+  )
+= match l with
+  | [] -> ()
+  | [_] -> ()
+  | a :: q ->
+    spec_choice_typ_well_formed_included env1 env2 q
+
+let rec choice_typ_well_formed
   (e: ast_env)
+  (fuel: nat)
+  (l: list elem_typ)
+: Pure result
+  (requires typ_bounded e.e_semenv.se_bound (TChoice l))
+  (ensures fun b ->
+    b == ResultSuccess ==>  spec_choice_typ_well_formed e.e_semenv l
+  )
+  (decreases l)
+= match l with
+  | [] -> ResultSuccess
+  | [_] -> ResultSuccess
+  | a :: q ->
+    let res1 = typ_disjoint e fuel (TElem a) (TChoice q) in
+    if not (ResultSuccess? res1)
+    then res1
+    else choice_typ_well_formed e fuel q
+
+let spec_ast_env_elem_well_formed
+  (env: semenv)
+  (#s: semenv_elem)
+  (e: ast_env_elem env s)
+: GTot prop
+= match s with
+  | SEType _ ->
+    let e' : typ = e in
+    begin match e' with
+    | TArray l -> spec_array_group_splittable env l
+    | TChoice l -> spec_choice_typ_well_formed env l
+    | _ -> True
+    end
+  | SEArrayGroup _ -> spec_array_group_splittable env e
+  | SEMapGroup _ -> True
+
+let ast_env_elem_well_formed'
+  (e: ast_env)
+  (e_thr: spec_array_group_splittable_threshold e)
+  (fuel: nat)
+  (#s: semenv_elem)
+  (x: ast_env_elem e.e_semenv s)
+: Pure result
+    (requires True)
+    (ensures fun res ->
+      res == ResultSuccess ==> spec_ast_env_elem_well_formed e.e_semenv x
+    )
+= match s with
+  | SEType _ ->
+    let e' : typ = x in
+    begin match e' with
+    | TArray l -> array_group_splittable e e_thr fuel l []
+    | TChoice l -> choice_typ_well_formed e fuel l
+    | _ -> ResultSuccess
+    end
+  | SEArrayGroup _ -> array_group_splittable e e_thr fuel x []
+  | SEMapGroup _ -> ResultSuccess
+
+let spec_ast_env_elem_well_formed_threshold
+  (e: ast_env)
+: Tot Type
+= (i: string) -> Pure bool
+    (requires True)
+    (ensures fun b ->
+      b == true ==> 
+      (i `name_mem` e.e_semenv.se_bound /\
+        spec_ast_env_elem_well_formed e.e_semenv (e.e_env i)
+    ))
+
+[@@ bounded_attr; sem_attr]
+noeq
+type wf_ast_env = {
+  we_env: ast_env;
+  we_env_wf: spec_ast_env_elem_well_formed_threshold we_env;
+  we_env_wf_prop: squash (forall (i: name we_env.e_semenv.se_bound) . we_env_wf i == true);
+}
+
+[@@"opaque_to_smt"]
+let spec_array_group_splittable_threshold_of_ast_elem_well_formed_threshold
+  (e: ast_env)
+  (f: spec_ast_env_elem_well_formed_threshold e)
 : Tot (spec_array_group_splittable_threshold e)
+= (fun i ->
+    if f i
+    then SEArrayGroup? (e.e_semenv.se_env i)
+    else false
+  )
+
+let ast_env_elem_well_formed
+  (e: ast_env)
+  (e_thr: spec_ast_env_elem_well_formed_threshold e)
+  (fuel: nat)
+  (#s: semenv_elem)
+  (x: ast_env_elem e.e_semenv s)
+: Pure result
+    (requires True)
+    (ensures fun res ->
+      res == ResultSuccess ==> spec_ast_env_elem_well_formed e.e_semenv x
+    )
+= ast_env_elem_well_formed' e (spec_array_group_splittable_threshold_of_ast_elem_well_formed_threshold e e_thr) fuel x
+
+[@@"opaque_to_smt"]
+let spec_ast_env_elem_well_formed_threshold_empty
+  (e: ast_env)
+: Tot (spec_ast_env_elem_well_formed_threshold e)
 = (fun _ -> false)
+
+[@@ bounded_attr; sem_attr]
+let empty_wf_ast_env = {
+  we_env = empty_ast_env;
+  we_env_wf = spec_ast_env_elem_well_formed_threshold_empty _;
+  we_env_wf_prop = ();
+}
 
 let spec_array_group_splittable_nil
   (e: semenv)
@@ -2234,60 +2375,185 @@ let spec_array_group_splittable_nil
   [SMTPat (spec_array_group_splittable e [])]
 = assert_norm (spec_array_group_splittable e []) // would need 1 fuel
 
-let spec_array_group_splittable_fuel
+let spec_ast_env_elem_well_formed_threshold_fuel
   (#e: ast_env)
-  (e_thr: spec_array_group_splittable_threshold e)
-  (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
+  (e_thr: spec_ast_env_elem_well_formed_threshold e)
+  (new_name: name e.e_semenv.se_bound)
 : Tot Type0
 = (fuel: nat {
-    array_group_splittable e e_thr fuel (e.e_env new_name) [] == ResultSuccess
+    ast_env_elem_well_formed e e_thr fuel (e.e_env new_name) == ResultSuccess
   })
 
-let spec_array_group_splittable_fuel_intro
+let spec_ast_env_elem_well_formed_threshold_fuel_intro
   (fuel: nat)
   (e: ast_env)
-  (e_thr: spec_array_group_splittable_threshold e)
-  (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
-  (prf: squash (array_group_splittable e e_thr fuel (e.e_env new_name) [] == ResultSuccess))
-: Tot (spec_array_group_splittable_fuel e_thr new_name)
+  (e_thr: spec_ast_env_elem_well_formed_threshold e)
+  (new_name: name e.e_semenv.se_bound)
+  (prf: squash (ast_env_elem_well_formed e e_thr fuel (e.e_env new_name) == ResultSuccess))
+: Tot (spec_ast_env_elem_well_formed_threshold_fuel e_thr new_name)
 = fuel
 
-[@@"opaque_to_smt"]
-let spec_array_group_splittable_threshold_extend
+let spec_ast_env_elem_well_formed_threshold_extend
   (#e: ast_env)
-  (e_thr: spec_array_group_splittable_threshold e)
-  (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
-  (fuel: spec_array_group_splittable_fuel e_thr new_name)
-: Tot (spec_array_group_splittable_threshold e)
+  (e_thr: spec_ast_env_elem_well_formed_threshold e)
+  (new_name: name e.e_semenv.se_bound)
+  (fuel: spec_ast_env_elem_well_formed_threshold_fuel e_thr new_name)
+: Tot (spec_ast_env_elem_well_formed_threshold e)
 = (fun i -> if i = new_name then true else e_thr i)
 
-[@@"opaque_to_smt"]
-let spec_array_group_splittable_threshold_extend_env
+let spec_ast_env_elem_well_formed_included
+  (e1 e2: semenv)
+  (#s: semenv_elem)
+  (x: ast_env_elem e1 s)
+: Lemma
+  (requires
+    semenv_included e1 e2 /\
+    spec_ast_env_elem_well_formed e1 x
+  )
+  (ensures
+    spec_ast_env_elem_well_formed e2 x
+  )
+= match s with
+  | SEType _ ->
+    let e' : typ = x in
+    begin match e' with
+    | TArray l -> spec_array_group_splittable_included e1 e2 l
+    | TChoice l -> spec_choice_typ_well_formed_included e1 e2 l
+    | _ -> ()
+    end
+  | SEArrayGroup _ -> spec_array_group_splittable_included e1 e2 x
+  | SEMapGroup _ -> ()
+
+let spec_ast_env_elem_well_formed_threshold_extend_env
   (#e1: ast_env)
-  (e_thr: spec_array_group_splittable_threshold e1)
+  (e_thr: spec_ast_env_elem_well_formed_threshold e1)
   (e2: ast_env { ast_env_included e1 e2 })
-: Tot (spec_array_group_splittable_threshold e2)
+: Tot (spec_ast_env_elem_well_formed_threshold e2)
 = (fun i ->
      if e_thr i
      then begin
-       spec_array_group_splittable_included e1.e_semenv e2.e_semenv (e1.e_env i);
+       spec_ast_env_elem_well_formed_included e1.e_semenv e2.e_semenv (e1.e_env i);
        true
      end
      else false
   )
 
-let solve_env_extend_array_group () : FStar.Tactics.Tac unit =
-  FStar.Tactics.norm [delta_attr [`%bounded_attr]; iota; zeta; primops];
+let wf_ast_env_included
+  (e1 e2: wf_ast_env)
+: Tot prop
+= ast_env_included e1.we_env e2.we_env
+
+[@@"opaque_to_smt"; bounded_attr; sem_attr]
+let wf_ast_env_extend_gen
+  (e: wf_ast_env)
+  (new_name: string { (~ (new_name `name_mem` e.we_env.e_semenv.se_bound)) } )
+  (s: semenv_elem)
+  (x: ast_env_elem e.we_env.e_semenv s)
+  (fuel: spec_ast_env_elem_well_formed_threshold_fuel
+    (spec_ast_env_elem_well_formed_threshold_extend_env
+      e.we_env_wf
+      (ast_env_extend_gen e.we_env new_name s x))
+    new_name
+  )
+: Pure wf_ast_env
+    (requires True)
+    (ensures fun e' ->
+      e'.we_env.e_semenv.se_bound == e.we_env.e_semenv.se_bound `extend_name_env` new_name /\
+      wf_ast_env_included e e' /\
+      e'.we_env.e_semenv.se_env new_name == s /\
+      e'.we_env.e_env new_name == x
+    )
+= let ae' = ast_env_extend_gen e.we_env new_name s x in
+  {
+    we_env = ae';
+    we_env_wf = spec_ast_env_elem_well_formed_threshold_extend
+      (spec_ast_env_elem_well_formed_threshold_extend_env e.we_env_wf ae')
+      new_name
+      fuel;
+    we_env_wf_prop = ();
+  }
+
+[@@ bounded_attr; sem_attr]
+let wf_ast_env_extend_typ
+  (e: wf_ast_env)
+  (new_name: string)
+  (new_name_fresh: squash (~ (new_name `name_mem` e.we_env.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  (a: typ)
+  (sq: squash (
+    typ_bounded e.we_env.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  ))
+  (fuel: spec_ast_env_elem_well_formed_threshold_fuel
+    (spec_ast_env_elem_well_formed_threshold_extend_env
+      e.we_env_wf
+      (ast_env_extend_typ e.we_env new_name new_name_fresh a sq))
+    (name_intro new_name (ast_env_extend_typ e.we_env new_name new_name_fresh a sq).e_semenv.se_bound new_name_fresh)
+  )
+: Tot (e': wf_ast_env {
+      e'.we_env.e_semenv.se_bound == e.we_env.e_semenv.se_bound `extend_name_env` new_name /\
+      wf_ast_env_included e e' /\
+      e'.we_env.e_semenv.se_env new_name == SEType (typ_sem e.we_env.e_semenv a)   /\
+      e'.we_env.e_env new_name == a
+  })
+= wf_ast_env_extend_gen e new_name (SEType (typ_sem e.we_env.e_semenv a)) a fuel
+
+[@@ bounded_attr; sem_attr]
+let wf_ast_env_extend_array_group
+  (e: wf_ast_env)
+  (new_name: string) // ideally by SMT
+  (new_name_fresh: squash (~ (new_name `name_mem` e.we_env.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  (a: array_group)
+  (sq: squash (
+    array_group_bounded e.we_env.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  ))
+  (fuel: spec_ast_env_elem_well_formed_threshold_fuel
+    (spec_ast_env_elem_well_formed_threshold_extend_env
+      e.we_env_wf
+      (ast_env_extend_array_group e.we_env new_name new_name_fresh a sq))
+    (name_intro new_name (ast_env_extend_array_group e.we_env new_name new_name_fresh a sq).e_semenv.se_bound new_name_fresh)
+  )
+: Tot (e': wf_ast_env {
+      e'.we_env.e_semenv.se_bound == e.we_env.e_semenv.se_bound `extend_name_env` new_name /\
+      wf_ast_env_included e e' /\
+      e'.we_env.e_semenv.se_env new_name == SEArrayGroup (array_group_sem e.we_env.e_semenv a) /\
+      e'.we_env.e_env new_name == a
+  })
+= wf_ast_env_extend_gen e new_name (SEArrayGroup (array_group_sem e.we_env.e_semenv a)) a fuel
+
+[@@ bounded_attr; sem_attr]
+let wf_ast_env_extend_map_group
+  (e: wf_ast_env)
+  (new_name: string) // ideally by SMT
+  (new_name_fresh: squash (~ (new_name `name_mem` e.we_env.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  (a: map_group)
+  (sq: squash (
+    map_group_bounded e.we_env.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
+  ))
+  (fuel: spec_ast_env_elem_well_formed_threshold_fuel
+    (spec_ast_env_elem_well_formed_threshold_extend_env
+      e.we_env_wf
+      (ast_env_extend_map_group e.we_env new_name new_name_fresh a sq))
+    (name_intro new_name (ast_env_extend_map_group e.we_env new_name new_name_fresh a sq).e_semenv.se_bound new_name_fresh)
+  )
+: Tot (e': wf_ast_env {
+      e'.we_env.e_semenv.se_bound == e.we_env.e_semenv.se_bound `extend_name_env` new_name /\
+      wf_ast_env_included e e' /\
+      e'.we_env.e_semenv.se_env new_name == SEMapGroup (map_group_sem e.we_env.e_semenv a) /\
+      e'.we_env.e_env new_name == a
+  })
+= wf_ast_env_extend_gen e new_name (SEMapGroup (map_group_sem e.we_env.e_semenv a)) a fuel
+
+let solve_bounded () : FStar.Tactics.Tac unit =
+  FStar.Tactics.norm [delta_attr [`%bounded_attr]; iota; zeta; primops; nbe];
   FStar.Tactics.smt ()
 
 exception ExceptionOutOfFuel
 
-let solve_spec_array_group_splittable () : FStar.Tactics.Tac unit =
+let solve_spec_ast_env_elem_well_formed () : FStar.Tactics.Tac unit =
   let rec aux (n: nat) : FStar.Tactics.Tac unit =
     FStar.Tactics.try_with
     (fun _ ->
-      FStar.Tactics.print ("solve_spec_array_group_splittable with fuel " ^ string_of_int n ^ "\n");
-      FStar.Tactics.apply (FStar.Tactics.mk_app (`spec_array_group_splittable_fuel_intro) [quote n, FStar.Tactics.Q_Explicit]);
+      FStar.Tactics.print ("solve_spec_ast_env_elem_well_formed with fuel " ^ string_of_int n ^ "\n");
+      FStar.Tactics.apply (FStar.Tactics.mk_app (`spec_ast_env_elem_well_formed_threshold_fuel_intro) [quote n, FStar.Tactics.Q_Explicit]);
       FStar.Tactics.norm [delta; iota; zeta; primops];
       FStar.Tactics.try_with
         (fun _ ->
@@ -2295,7 +2561,7 @@ let solve_spec_array_group_splittable () : FStar.Tactics.Tac unit =
         )
         (fun e -> 
           let g = FStar.Tactics.cur_goal () in
-          FStar.Tactics.print ("solve_spec_array_group_splittable Failure: " ^ FStar.Tactics.term_to_string g ^ "\n");
+          FStar.Tactics.print ("solve_spec_ast_env_elem_well_formed Failure: " ^ FStar.Tactics.term_to_string g ^ "\n");
           let g0 = quote (squash (ResultOutOfFuel == ResultSuccess)) in
           FStar.Tactics.print ("Comparing with " ^ FStar.Tactics.term_to_string g0 ^ "\n");
           let e' =
@@ -2315,5 +2581,5 @@ let solve_spec_array_group_splittable () : FStar.Tactics.Tac unit =
   aux 0
 
 let solve_sem_equiv () : FStar.Tactics.Tac unit =
-  FStar.Tactics.norm [delta_attr [`%sem_attr]; iota; zeta; primops];
+  FStar.Tactics.norm [delta_attr [`%sem_attr]; iota; zeta; primops; nbe];
   FStar.Tactics.smt ()
