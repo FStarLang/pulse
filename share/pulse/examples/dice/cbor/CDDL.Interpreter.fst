@@ -688,13 +688,13 @@ let map_group_sem (_: semenv) (x: map_group) : Pure (Spec.map_group None)
 = x // TODO
 
 [@@ sem_attr]
-let env_elem0 (s: semenv_elem) : Type0 =
+let ast_env_elem0 (s: semenv_elem) : Type0 =
   match s with
   | SEType _ -> typ
   | SEArrayGroup _ -> array_group
   | SEMapGroup _ -> map_group
 
-let env_elem_prop (e_semenv: semenv) (s: semenv_elem) (x: env_elem0 s) : Tot prop =
+let ast_env_elem_prop (e_semenv: semenv) (s: semenv_elem) (x: ast_env_elem0 s) : Tot prop =
   match s with
   | SEType phi ->
     typ_bounded e_semenv.se_bound x /\
@@ -706,30 +706,30 @@ let env_elem_prop (e_semenv: semenv) (s: semenv_elem) (x: env_elem0 s) : Tot pro
     map_group_bounded e_semenv.se_bound x /\
     Spec.map_group_equiv (map_group_sem e_semenv x) phi
 
-let env_elem_prop_included (e1 e2: semenv) (s: semenv_elem) (x: env_elem0 s) : Lemma
+let ast_env_elem_prop_included (e1 e2: semenv) (s: semenv_elem) (x: ast_env_elem0 s) : Lemma
   (requires semenv_included e1 e2 /\
-    env_elem_prop e1 s x
+    ast_env_elem_prop e1 s x
   )
-  (ensures env_elem_prop e2 s x)
+  (ensures ast_env_elem_prop e2 s x)
 = match s with
   | SEType _ -> typ_sem_included e1 e2 x
   | SEArrayGroup _ -> array_group_sem_included e1 e2 x
   | SEMapGroup _ -> () // TODO
 
 [@@ sem_attr]
-let env_elem (e_semenv: semenv) (s: semenv_elem) =
-  (x: env_elem0 s { env_elem_prop e_semenv s x })
+let ast_env_elem (e_semenv: semenv) (s: semenv_elem) =
+  (x: ast_env_elem0 s { ast_env_elem_prop e_semenv s x })
 
 [@@ bounded_attr; sem_attr]
 noeq
-type env = {
+type ast_env = {
   e_semenv: semenv;
-  e_env: (i: name e_semenv.se_bound) -> (env_elem e_semenv (e_semenv.se_env i));
+  e_env: (i: name e_semenv.se_bound) -> (ast_env_elem e_semenv (e_semenv.se_env i));
 }
 
 [@@sem_attr]
 let rec elem_typ_env_sem
-  (e: env)
+  (e: ast_env)
   (fuel: nat)
   (t: elem_typ)
 : Pure Spec.typ
@@ -747,7 +747,7 @@ let rec elem_typ_env_sem
   | _ ->  elem_typ_sem e.e_semenv t
 
 and typ_env_sem
-  (e: env)
+  (e: ast_env)
   (fuel: nat)
   (t: typ)
 : Pure Spec.typ
@@ -763,41 +763,41 @@ and typ_env_sem
   | _ -> typ_sem e.e_semenv t
 
 [@@"opaque_to_smt"] irreducible // because of false_elim
-let e_env_empty (i: name empty_name_env) : Tot (env_elem empty_semenv (empty_semenv.se_env i)) = false_elim ()
+let e_env_empty (i: name empty_name_env) : Tot (ast_env_elem empty_semenv (empty_semenv.se_env i)) = false_elim ()
 
 [@@"opaque_to_smt"; bounded_attr; sem_attr]
-let empty_env : (e: env {
+let empty_env : (e: ast_env {
   e.e_semenv.se_bound == empty_name_env
 }) = {
   e_semenv = empty_semenv;
   e_env = e_env_empty;
 }
 
-let env_included
-  (e1 e2: env)
+let ast_env_included
+  (e1 e2: ast_env)
 : Tot prop
 = semenv_included e1.e_semenv e2.e_semenv /\
   (forall (i: name e1.e_semenv.se_bound) . e2.e_env i == e1.e_env i)
 
-let env_included_trans (s1 s2 s3: env) : Lemma
-  (requires (env_included s1 s2 /\ env_included s2 s3))
-  (ensures (env_included s1 s3))
-  [SMTPat (env_included s1 s3); SMTPat (env_included s1 s2)]
+let ast_env_included_trans (s1 s2 s3: ast_env) : Lemma
+  (requires (ast_env_included s1 s2 /\ ast_env_included s2 s3))
+  (ensures (ast_env_included s1 s3))
+  [SMTPat (ast_env_included s1 s3); SMTPat (ast_env_included s1 s2)]
 = ()
 
 [@@"opaque_to_smt"; bounded_attr; sem_attr]
-let env_extend_gen
-  (e: env)
+let ast_env_extend_gen
+  (e: ast_env)
   (new_name: string)
   (s: semenv_elem)
-  (x: env_elem e.e_semenv s)
-: Pure env
+  (x: ast_env_elem e.e_semenv s)
+: Pure ast_env
     (requires
       (~ (new_name `name_mem` e.e_semenv.se_bound))
     )
     (ensures fun e' ->
       e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
-      env_included e e' /\
+      ast_env_included e e' /\
       e'.e_semenv.se_env new_name == s /\
       e'.e_env new_name == x
     )
@@ -805,66 +805,66 @@ let env_extend_gen
   {
     e_semenv = se';
     e_env = (fun (i: name se'.se_bound) ->
-      let x' : env_elem e.e_semenv (se'.se_env i) =
+      let x' : ast_env_elem e.e_semenv (se'.se_env i) =
         if i = new_name
         then x
         else e.e_env i
       in
-      env_elem_prop_included e.e_semenv se' (se'.se_env i) x';
+      ast_env_elem_prop_included e.e_semenv se' (se'.se_env i) x';
       x'
     );
   }
 
 [@@ bounded_attr; sem_attr]
-let env_extend_typ
-  (e: env)
+let ast_env_extend_typ
+  (e: ast_env)
   (new_name: string)
   (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: typ)
   (sq: squash (
     typ_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   ))
-: Tot (e': env {
+: Tot (e': ast_env {
       e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
-      env_included e e' /\
+      ast_env_included e e' /\
       e'.e_semenv.se_env new_name == SEType (typ_sem e.e_semenv a)   /\
       e'.e_env new_name == a
   })
-= env_extend_gen e new_name (SEType (typ_sem e.e_semenv a)) a
+= ast_env_extend_gen e new_name (SEType (typ_sem e.e_semenv a)) a
 
 [@@ bounded_attr; sem_attr]
-let env_extend_array_group
-  (e: env)
+let ast_env_extend_array_group
+  (e: ast_env)
   (new_name: string) // ideally by SMT
   (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: array_group)
   (sq: squash (
     array_group_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   ))
-: Tot (e': env {
+: Tot (e': ast_env {
       e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
-      env_included e e' /\
+      ast_env_included e e' /\
       e'.e_semenv.se_env new_name == SEArrayGroup (array_group_sem e.e_semenv a) /\
       e'.e_env new_name == a
   })
-= env_extend_gen e new_name (SEArrayGroup (array_group_sem e.e_semenv a)) a
+= ast_env_extend_gen e new_name (SEArrayGroup (array_group_sem e.e_semenv a)) a
 
 [@@ bounded_attr; sem_attr]
-let env_extend_map_group
-  (e: env)
+let ast_env_extend_map_group
+  (e: ast_env)
   (new_name: string) // ideally by SMT
   (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: map_group)
   (sq: squash (
     map_group_bounded e.e_semenv.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   ))
-: Tot (e': env {
+: Tot (e': ast_env {
       e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
-      env_included e e' /\
+      ast_env_included e e' /\
       e'.e_semenv.se_env new_name == SEMapGroup (map_group_sem e.e_semenv a) /\
       e'.e_env new_name == a
   })
-= env_extend_gen e new_name (SEMapGroup (map_group_sem e.e_semenv a)) a
+= ast_env_extend_gen e new_name (SEMapGroup (map_group_sem e.e_semenv a)) a
 
 (* Recursion *)
 
@@ -931,7 +931,7 @@ let array_group3_one_or_more_bounded_ext
 
 #restart-solver
 let rec elem_typ_sem_restrict_typ_spec_correct
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (x0: CBOR.Spec.raw_data_item)
@@ -961,7 +961,7 @@ let rec elem_typ_sem_restrict_typ_spec_correct
   | _ -> ()
 
 and atom_array_group_sem_restrict_typ_spec_correct
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (x0: CBOR.Spec.raw_data_item)
@@ -990,7 +990,7 @@ and atom_array_group_sem_restrict_typ_spec_correct
   | _ -> ()
 
 and elem_array_group_sem_restrict_typ_spec_correct
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (x0: CBOR.Spec.raw_data_item)
@@ -1041,7 +1041,7 @@ and elem_array_group_sem_restrict_typ_spec_correct
       x
 
 let rec sem_typ_choice_restrict_typ_spec_correct
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (x0: CBOR.Spec.raw_data_item)
@@ -1067,7 +1067,7 @@ let rec sem_typ_choice_restrict_typ_spec_correct
     sem_typ_choice_restrict_typ_spec_correct e new_name s x0 q x
 
 let rec array_group_sem_restrict_typ_spec_correct
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (x0: CBOR.Spec.raw_data_item)
@@ -1103,7 +1103,7 @@ let rec array_group_sem_restrict_typ_spec_correct
 
 #restart-solver
 let typ_sem_restrict_typ_spec_correct
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (x0: CBOR.Spec.raw_data_item)
@@ -1150,7 +1150,7 @@ type result =
 #restart-solver
 let rec elem_typ_productive
   (fuel: nat)
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (t: elem_typ { elem_typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
 : Tot result
@@ -1172,7 +1172,7 @@ let rec elem_typ_productive
 
 and typ_productive
   (fuel: nat)
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (t: typ { typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
 : Tot result
@@ -1187,7 +1187,7 @@ and typ_productive
 
 and choice_typ_productive
   (fuel: nat)
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (t: list elem_typ { sem_typ_choice_bounded (extend_name_env e.e_semenv.se_bound new_name) t })
 : Tot result
@@ -1205,7 +1205,7 @@ and choice_typ_productive
 
 let rec elem_typ_productive_correct
   (fuel: nat)
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (t: elem_typ { elem_typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t /\
@@ -1244,7 +1244,7 @@ let rec elem_typ_productive_correct
 
 and typ_productive_correct
   (fuel: nat)
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (t: typ { typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t /\
@@ -1285,7 +1285,7 @@ and typ_productive_correct
 
 and choice_typ_productive_correct
   (fuel: nat)
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (s: CDDL.Spec.typ)
   (t: list elem_typ { sem_typ_choice_bounded (extend_name_env e.e_semenv.se_bound new_name) t /\
@@ -1327,7 +1327,7 @@ let rec rec_typ_sem
 #restart-solver
 let rec_typ_sem_correct
   (fuel: nat)
-  (e: env)
+  (e: ast_env)
   (new_name: string {~ (name_mem new_name e.e_semenv.se_bound) })
   (t: typ { typ_bounded (extend_name_env e.e_semenv.se_bound new_name) t /\
     typ_productive fuel e new_name t == ResultSuccess
@@ -1360,26 +1360,26 @@ let rec_typ_sem_correct
   in
   Classical.forall_intro prf
 
-let env_extend_rec_typ_post
-  (e: env)
+let ast_env_extend_rec_typ_post
+  (e: ast_env)
   (new_name: string)
   (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: typ)
   (sq: squash (
     typ_bounded (extend_name_env e.e_semenv.se_bound new_name) a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   ))
-  (e': env)
+  (e': ast_env)
 : Tot prop
 =
       e'.e_semenv.se_bound == e.e_semenv.se_bound `extend_name_env` new_name /\
-      env_included e e' /\
+      ast_env_included e e' /\
       typ_bounded e'.e_semenv.se_bound a /\
       new_name `name_mem` e'.e_semenv.se_bound == true /\
       SEType? (e'.e_semenv.se_env new_name) /\
       e'.e_env new_name == a
 
-let env_extend_rec_typ_fuel
-  (e: env)
+let ast_env_extend_rec_typ_fuel
+  (e: ast_env)
   (new_name: string { ~ (new_name `name_mem` e.e_semenv.se_bound)})
   (a: typ {
     typ_bounded (extend_name_env e.e_semenv.se_bound new_name) a
@@ -1388,16 +1388,16 @@ let env_extend_rec_typ_fuel
 = (fuel: nat { typ_productive fuel e new_name a == ResultSuccess })
 
 [@@ bounded_attr; sem_attr]
-let env_extend_rec_typ
-  (e: env)
+let ast_env_extend_rec_typ
+  (e: ast_env)
   (new_name: string)
   (new_name_fresh: squash (~ (new_name `name_mem` e.e_semenv.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   (a: typ)
   (sq: squash (
     typ_bounded (extend_name_env e.e_semenv.se_bound new_name) a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
   ))
-  (fuel: env_extend_rec_typ_fuel e new_name a)
-: Tot (e': env { env_extend_rec_typ_post e new_name new_name_fresh a sq e' })
+  (fuel: ast_env_extend_rec_typ_fuel e new_name a)
+: Tot (e': ast_env { ast_env_extend_rec_typ_post e new_name new_name_fresh a sq e' })
 = let s = SEType (rec_typ_sem e.e_semenv new_name a) in
   rec_typ_sem_correct fuel e new_name a;
   let se' = semenv_extend_gen e.e_semenv new_name s in
@@ -1408,7 +1408,7 @@ let env_extend_rec_typ
       then a
       else begin
         let x' = e.e_env i in
-        env_elem_prop_included e.e_semenv se' (se'.se_env i) x';
+        ast_env_elem_prop_included e.e_semenv se' (se'.se_env i) x';
         x'
       end
     );
@@ -1453,7 +1453,7 @@ let spec_array_group3_one_or_more_equiv #b
 
 [@@"opaque_to_smt"]
 let rec typ_equiv
-  (e: env)
+  (e: ast_env)
   (fuel: nat)
   (t1: typ)
   (t2: typ)
@@ -1502,7 +1502,7 @@ let rec typ_equiv
   | _ -> false
 
 and array_group_equiv
-  (e: env)
+  (e: ast_env)
   (fuel: nat)
   (t1: array_group)
   (t2: array_group)
@@ -1573,7 +1573,7 @@ let spec_typ_disjoint (a1 a2: Spec.typ) : Tot prop
 #restart-solver
 [@@"opaque_to_smt"]
 let rec typ_disjoint
-  (e: env)
+  (e: ast_env)
   (fuel: nat)
   (t1: typ)
   (t2: typ)
@@ -1648,7 +1648,7 @@ let rec typ_disjoint
     else ResultFailure "typ_disjoint: TElem equal"
 
 and array_group_disjoint
-  (e: env)
+  (e: ast_env)
   (fuel: nat)
   (close: bool)
   (t1: array_group)
@@ -1948,7 +1948,7 @@ let spec_array_group3_concat_unique_strong_one_or_more_left
   spec_array_group3_concat_unique_strong_concat_left a1 (Spec.array_group3_zero_or_more a1) a2
 
 let spec_array_group_splittable_threshold
-  (e: env)
+  (e: ast_env)
 : Tot Type
 = (i: string) -> Pure bool
     (requires True)
@@ -1966,7 +1966,7 @@ let spec_array_group_splittable_threshold
 #restart-solver
 [@@"opaque_to_smt"]
 let rec array_group_concat_unique_strong
-  (e: env)
+  (e: ast_env)
   (e_thr: spec_array_group_splittable_threshold e)
   (fuel: nat)
   (a1 a2: array_group)
@@ -2113,7 +2113,7 @@ let spec_array_group3_concat_unique_weak_one_or_more_left
 #restart-solver
 [@@"opaque_to_smt"]
 let rec array_group_splittable
-  (e: env)
+  (e: ast_env)
   (e_thr: spec_array_group_splittable_threshold e)
   (fuel: nat)
   (a1 a2: array_group)
@@ -2223,7 +2223,7 @@ let rec array_group_splittable
 
 [@@"opaque_to_smt"]
 let spec_array_group_splittable_threshold_empty
-  (e: env)
+  (e: ast_env)
 : Tot (spec_array_group_splittable_threshold e)
 = (fun _ -> false)
 
@@ -2235,7 +2235,7 @@ let spec_array_group_splittable_nil
 = assert_norm (spec_array_group_splittable e []) // would need 1 fuel
 
 let spec_array_group_splittable_fuel
-  (#e: env)
+  (#e: ast_env)
   (e_thr: spec_array_group_splittable_threshold e)
   (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
 : Tot Type0
@@ -2245,7 +2245,7 @@ let spec_array_group_splittable_fuel
 
 let spec_array_group_splittable_fuel_intro
   (fuel: nat)
-  (e: env)
+  (e: ast_env)
   (e_thr: spec_array_group_splittable_threshold e)
   (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
   (prf: squash (array_group_splittable e e_thr fuel (e.e_env new_name) [] == ResultSuccess))
@@ -2254,7 +2254,7 @@ let spec_array_group_splittable_fuel_intro
 
 [@@"opaque_to_smt"]
 let spec_array_group_splittable_threshold_extend
-  (#e: env)
+  (#e: ast_env)
   (e_thr: spec_array_group_splittable_threshold e)
   (new_name: name e.e_semenv.se_bound { SEArrayGroup? (e.e_semenv.se_env new_name) })
   (fuel: spec_array_group_splittable_fuel e_thr new_name)
@@ -2263,9 +2263,9 @@ let spec_array_group_splittable_threshold_extend
 
 [@@"opaque_to_smt"]
 let spec_array_group_splittable_threshold_extend_env
-  (#e1: env)
+  (#e1: ast_env)
   (e_thr: spec_array_group_splittable_threshold e1)
-  (e2: env { env_included e1 e2 })
+  (e2: ast_env { ast_env_included e1 e2 })
 : Tot (spec_array_group_splittable_threshold e2)
 = (fun i ->
      if e_thr i
