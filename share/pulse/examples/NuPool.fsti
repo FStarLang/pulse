@@ -6,7 +6,7 @@ module T = FStar.Tactics.V2
 open Codeable
 
 val handle : Type u#0
-val pool (code_t:Type u#2) : Type u#0
+val pool ([@@@strictly_positive] code_t:Type u#2) : Type u#0
 val pool_alive (#[T.exact (`full_perm)] f : perm) (code:vcode) (p:pool code.t) : vprop
 
 val joinable (#code_t:Type u#2) (p:pool code_t) (post:erased code_t) (h : handle) : vprop
