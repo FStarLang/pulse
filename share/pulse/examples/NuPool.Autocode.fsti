@@ -59,41 +59,61 @@ instance codeable_joinable
   }
 
 instance codeable_pledge
-  (p : pool)
-  (pre  : vprop) (d1 : codeable (poolcode p.base) pre)
-  (post : vprop) (d2 : codeable (poolcode p.base) post)
-  : codeable (poolcode p.base) (pledge [] pre post) = { 
-    code_of = Pl (encode pre <: (poolcode p.base).t) (encode post <: (poolcode p.base).t);
+  (base:vcode)
+  (pre  : vprop) (d1 : codeable (poolcode base) pre)
+  (post : vprop) (d2 : codeable (poolcode base) post)
+  : codeable (poolcode base) (pledge [] pre post) = { 
+    code_of = Pl (encode pre <: (poolcode base).t) (encode post <: (poolcode base).t);
     pf = ();
   }
 
 let exists_lem 
-  (p : pool)
+  (base:vcode)
   (ty : Type0)
-  (f : ty ^-> poolcode_t p.base.t)
-  : Lemma (ensures poolcode_up p.base (Ex0 ty f) == op_exists_Star #ty (on ty (fun (x:ty) -> poolcode_up p.base (f x))))
+  (f : ty ^-> poolcode_t base.t)
+  : Lemma (ensures poolcode_up base (Ex0 ty f) == op_exists_Star #ty (on ty (fun (x:ty) -> poolcode_up base (f x))))
   = admit()
 
 instance codeable_exists
-  (p : pool)
+  (base:vcode)
   (ty : Type0)
   (f : ty ^-> vprop)
-  (d : (x:ty -> codeable (poolcode p.base) (f x)))
-  : codeable (poolcode p.base) (op_exists_Star #ty f) = { 
+  (d : (x:ty -> codeable (poolcode base) (f x)))
+  : codeable (poolcode base) (op_exists_Star #ty f) = { 
     code_of = Ex0 ty (on ty <| (fun x -> encode (f x) #(d x)));
     pf = (
       // TODO: remove the asserts once this stabilizes
-      exists_lem p ty (on ty (fun x -> encode (f x) #(d x)));
-      assert (poolcode_up p.base (Ex0 ty (on ty (fun x -> encode (f x) #(d x))))
-              == op_exists_Star #ty (on ty (fun x -> poolcode_up p.base (encode (f x) #(d x)))));
+      exists_lem base ty (on ty (fun x -> encode (f x) #(d x)));
+      assert (poolcode_up base (Ex0 ty (on ty (fun x -> encode (f x) #(d x))))
+              == op_exists_Star #ty (on ty (fun x -> poolcode_up base (encode (f x) #(d x)))));
 
-      assert (feq (fun x -> poolcode_up p.base (encode (f x) #(d x))) f);
-      assert (on ty (fun x -> poolcode_up p.base (encode (f x) #(d x))) == on ty f);
+      assert (feq (fun x -> poolcode_up base (encode (f x) #(d x))) f);
+      assert (on ty (fun x -> poolcode_up base (encode (f x) #(d x))) == on ty f);
       assert (on ty f == f);
-      FStar.FunctionalExtensionality.extensionality ty _ (fun x -> poolcode_up p.base (encode (f x) #(d x))) f;
-      assert (on ty (fun x -> poolcode_up p.base (encode (f x) #(d x))) == f);
-      assert (op_exists_Star #ty (on ty (fun x -> poolcode_up p.base (encode (f x) #(d x))))
+      FStar.FunctionalExtensionality.extensionality ty _ (fun x -> poolcode_up base (encode (f x) #(d x))) f;
+      assert (on ty (fun x -> poolcode_up base (encode (f x) #(d x))) == f);
+      assert (op_exists_Star #ty (on ty (fun x -> poolcode_up base (encode (f x) #(d x))))
            == op_exists_Star #ty f);
+      ()
+    );
+  }
+
+instance codeable_exists2
+  (base:vcode)
+  (ty : Type0)
+  (f : ty -> vprop)
+  (d : (x:ty -> codeable (poolcode base) (f x)))
+  : codeable (poolcode base) (op_exists_Star #ty (on ty f)) = { 
+    code_of = Ex0 ty (on ty <| (fun x -> encode (f x) #(d x)));
+    pf = (
+      // TODO: remove the asserts once this stabilizes
+      exists_lem base ty (on ty (fun x -> encode (f x) #(d x)));
+      assert (poolcode_up base (Ex0 ty (on ty (fun x -> encode (f x) #(d x))))
+              == op_exists_Star #ty (on ty (fun x -> poolcode_up base (encode (f x) #(d x)))));
+
+      assert (feq (fun x -> poolcode_up base (encode (f x) #(d x))) f);
+      assert (on ty (fun x -> poolcode_up base (encode (f x) #(d x))) == on ty f);
+      FStar.FunctionalExtensionality.extensionality ty _ (fun x -> poolcode_up base (encode (f x) #(d x))) f;
       ()
     );
   }
