@@ -196,7 +196,6 @@ let lock_inv (#code:vcode)
     BAR.pts_to_full g_runnable v_runnable **
     all_state_pred v_runnable
 
-#push-options "--__no_positivity"
 noeq
 type pool_st ([@@@strictly_positive] code_t:Type u#2) : Type u#0 = {
   runnable   : Big.ref (list (task_t code_t));
@@ -206,7 +205,6 @@ type pool_st ([@@@strictly_positive] code_t:Type u#2) : Type u#0 = {
 }
 
 type pool ([@@@strictly_positive] code_t:Type u#2) : Type0 = pool_st code_t
-#pop-options
 
 let pool_alive (#[exact (`full_perm)] f : perm) (code:vcode) (p:pool code.t) : vprop =
   lock_alive p.lk #(half_perm f) (lock_inv p.runnable p.g_runnable)

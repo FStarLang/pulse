@@ -26,7 +26,10 @@ module U32 = FStar.UInt32
 module T = FStar.Tactics
 
 [@@erasable]
-val ref ([@@@unused]a:Type u#2) (p : preorder a) (anc : anchor_rel p) : Type u#0
+val ref
+  ([@@@unused] a:Type u#2)
+  ([@@@unused] p : preorder a)
+  ([@@@unused] anc : anchor_rel p) : Type u#0
 
 instance val ref_non_informative (a:Type u#2) (p : preorder a) (anc : anchor_rel p)
   : NonInformative.non_informative (ref a p anc)
