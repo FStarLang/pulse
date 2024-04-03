@@ -25,7 +25,6 @@ let t_choice_simpl
 let t_always_false : typ = (fun _ -> false)
 
 // Appendix D
-let any : typ = (fun _ -> true)
 
 let uint : typ = (fun x -> Cbor.Int64? x && Cbor.Int64?.typ x = Cbor.cbor_major_type_uint64)
 let nint : typ = (fun x -> Cbor.Int64? x && Cbor.Int64?.typ x = Cbor.cbor_major_type_neg_int64)
