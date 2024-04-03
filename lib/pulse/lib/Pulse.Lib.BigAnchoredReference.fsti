@@ -79,15 +79,15 @@ val read_full' (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#f:perm) (#v:erased a)
         (pts_to_full r #f v)
         (fun w -> pts_to_full r #f w)
 
-val share2' (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v:erased a)
+val share (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v:erased a)
   : stt_ghost unit
-        (pts_to_full r v)
-        (fun _ -> pts_to_full r #(half_perm full_perm) v ** pts_to_full r #(half_perm full_perm) v)
+        (pts_to r v)
+        (fun _ -> pts_to r #(half_perm full_perm) v ** pts_to r #(half_perm full_perm) v)
 
-val gather2' (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v1 #v2:erased a)
+val gather (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v1 #v2:erased a)
   : stt_ghost unit
-        (pts_to_full r #(half_perm full_perm) v1 ** pts_to_full r #(half_perm full_perm) v2)
-        (fun _ -> pts_to_full r v1 ** pure (v1 == v2))
+        (pts_to r #(half_perm full_perm) v1 ** pts_to r #(half_perm full_perm) v2)
+        (fun _ -> pts_to r v1 ** pure (v1 == v2))
 
 val write (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v:erased a) (w : erased a)
   : stt_ghost unit

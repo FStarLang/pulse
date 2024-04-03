@@ -266,12 +266,12 @@ ghost
 fn recall_task_spotted
   (#code_t:Type u#2) (p : pool code_t) (t : task_t code_t) (#ts : list (task_t code_t))
   (#f:perm)
-  requires BAR.pts_to_full p.g_runnable #f ts ** task_spotted p t
-  ensures  BAR.pts_to_full p.g_runnable #f ts ** task_spotted p t
+  requires BAR.pts_to p.g_runnable #f ts ** task_spotted p t
+  ensures  BAR.pts_to p.g_runnable #f ts ** task_spotted p t
            ** pure (List.memP t ts)
 {
   unfold (task_spotted p t);
-  BAR.recall_snapshot' p.g_runnable;
+  BAR.recall_snapshot p.g_runnable;
   fold (task_spotted p t);
 }
 ```
@@ -292,9 +292,9 @@ ghost
 fn recall_handle_spotted
   (#code_t:Type u#2) (p : pool code_t) (post : erased code_t) (h : handle) (#ts : list (task_t code_t))
   (#f:perm)
-  requires BAR.pts_to_full p.g_runnable #f ts ** handle_spotted p post h
+  requires BAR.pts_to p.g_runnable #f ts ** handle_spotted p post h
   returns  task : erased (task_t code_t)
-  ensures  BAR.pts_to_full p.g_runnable #f ts ** handle_spotted p post h **
+  ensures  BAR.pts_to p.g_runnable #f ts ** handle_spotted p post h **
             pure (task.post == post /\ task.h == h /\ List.memP (reveal task) ts)
 {
   unfold (handle_spotted p post h);
@@ -601,7 +601,9 @@ fn try_await
   unfold (handle_spotted p post h);
 
   with t. assert (task_spotted p t);
+  BAR.drop_anchor p.g_runnable;
   recall_task_spotted p t #v_runnable;
+  BAR.lift_anchor p.g_runnable _;
   
   extract_state_pred p t #v_runnable;
 
@@ -823,7 +825,7 @@ fn rec all_tasks_done_inst (#code:vcode) (t : task_t code.t) (ts : list (task_t 
 ```
 
 let pool_done (code:vcode) (p : pool code.t) : vprop =
-  exists* ts. BAR.pts_to_full p.g_runnable #p12 ts ** all_state_pred ts ** all_tasks_done ts
+  exists* ts. BAR.pts_to p.g_runnable #p12 ts ** all_state_pred ts ** all_tasks_done ts
 
 ```pulse
 ghost
@@ -838,7 +840,7 @@ fn disown_aux
   unfold (joinable p post h);
   unfold (handle_spotted p post h);
 
-  with v_runnable. assert (BAR.pts_to_full p.g_runnable #p12 v_runnable);
+  with v_runnable. assert (BAR.pts_to p.g_runnable #p12 v_runnable);
   with t. assert (task_spotted p t);
 
   recall_task_spotted p t #v_runnable;
@@ -982,8 +984,8 @@ fn __pool_done_handle_done_aux2 (#code:vcode) (#p:pool code.t)
       (#post : erased code.t)
       (h : handle)
       (ts : list (task_t code.t))
-  requires BAR.pts_to_full p.g_runnable #p12 ts ** all_tasks_done ts ** handle_spotted p post h
-  ensures  BAR.pts_to_full p.g_runnable #p12 ts ** all_tasks_done ts ** handle_done h
+  requires BAR.pts_to p.g_runnable #p12 ts ** all_tasks_done ts ** handle_spotted p post h
+  ensures  BAR.pts_to p.g_runnable #p12 ts ** all_tasks_done ts ** handle_done h
 {
   let t = recall_handle_spotted p post h #ts;
   __pool_done_task_done_aux t ts;
@@ -1224,7 +1226,9 @@ fn put_back_result (#code:vcode) (p:pool code.t) (t : task_t code.t)
   unfold (pool_alive #f code p);
   acquire p.lk;
   unfold (lock_inv p.runnable p.g_runnable);
+  BAR.drop_anchor p.g_runnable;
   recall_task_spotted p t;
+  BAR.lift_anchor p.g_runnable _;
   extract_state_pred p t;
 
   (* Advance the state and place the post condition back into the pool *)
@@ -1368,12 +1372,14 @@ fn try_await_pool
 
     (* We have permission on the queues + all_tasks_done. Obtain pool_done
     temporarilly to redeem. *)
-    BAR.share2' p.g_runnable;
+    BAR.drop_anchor p.g_runnable;
+    BAR.share p.g_runnable;
     fold (pool_done code p);
     redeem_pledge _ _ _;
     (*!*) assert q;
     unfold (pool_done code p);
-    BAR.gather2' p.g_runnable;
+    BAR.gather p.g_runnable;
+    BAR.lift_anchor p.g_runnable _;
 
     fold (ite true q (pledge is (pool_done code p) q));
     fold (lock_inv p.runnable p.g_runnable);
@@ -1444,11 +1450,13 @@ fn rec __teardown_pool
   if b {
     rewrite ite b (all_tasks_done runnable) emp
          as all_tasks_done runnable;
-    BAR.share2' p.g_runnable;
+    BAR.drop_anchor p.g_runnable;
+    BAR.share p.g_runnable;
     fold (pool_done code p);
 
-    (* Drop the other ghost half. *)
-    drop_ (BAR.pts_to_full p.g_runnable #p12 runnable);
+    (* Drop the other ghost half + anchor. *)
+    drop_ (BAR.pts_to p.g_runnable #p12 runnable);
+    drop_ (BAR.anchored p.g_runnable _);
 
     (* TODO: actually teardown. *)
     drop_ (Big.pts_to p.runnable runnable);
