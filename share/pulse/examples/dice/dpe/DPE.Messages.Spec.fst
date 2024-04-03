@@ -603,7 +603,7 @@ let sign_input_args_group =
   default_args_group
 )))))
 
-#push-options "--z3rlimit 32"
+#push-options "--z3rlimit 32 --fuel 8"
 let _ : squash (sign_input_args_group `Cddl.map_group_equiv` default_args_group) =
   Cddl.map_group_ignore_restricted_entries_no_one_equiv sign_input_args_group
 #pop-options
@@ -621,7 +621,7 @@ let sign_output_args_group =
   default_args_group
 ))
 
-#push-options "--z3rlimit 32"
+#push-options "--z3rlimit 32 --fuel 8"
 let _ : squash (sign_output_args_group `Cddl.map_group_equiv` default_args_group) =
   Cddl.map_group_ignore_restricted_entries_no_one_equiv sign_output_args_group
 #pop-options
@@ -650,7 +650,7 @@ let seal_input_args_group =
   default_args_group
 )))))
 
-#push-options "--z3rlimit 32"
+#push-options "--z3rlimit 32 --fuel 8"
 let _ : squash (seal_input_args_group `Cddl.map_group_equiv` default_args_group) =
   Cddl.map_group_ignore_restricted_entries_no_one_equiv seal_input_args_group
 #pop-options
@@ -697,7 +697,7 @@ let unseal_input_args_group =
   default_args_group
 )))))
 
-#push-options "--z3rlimit 32"
+#push-options "--z3rlimit 32 --fuel 8"
 let _ : squash (unseal_input_args_group `Cddl.map_group_equiv` default_args_group) =
   Cddl.map_group_ignore_restricted_entries_no_one_equiv unseal_input_args_group
 #pop-options
