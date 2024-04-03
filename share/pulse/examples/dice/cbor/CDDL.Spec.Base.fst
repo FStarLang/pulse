@@ -37,5 +37,8 @@ let typ_equiv
 : Tot prop
 = forall x . t1 x == t2 x
 
+let typ_disjoint (a1 a2: typ) : Tot prop
+= (forall (l: Cbor.raw_data_item) . ~ (a1 l /\ a2 l))
+
 let t_literal (i: Cbor.raw_data_item) : typ =
   (fun x -> FStar.StrongExcludedMiddle.strong_excluded_middle (x == i))

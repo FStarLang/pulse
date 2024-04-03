@@ -1,7 +1,4 @@
 module CDDL.Interpreter
-open Pulse.Lib.Pervasives
-
-open CDDL.Pulse
 module Spec = CDDL.Spec
 module U64 = FStar.UInt64
 
@@ -579,74 +576,6 @@ let rec array_group_bounded_append
   | [] -> ()
   | _ :: q -> array_group_bounded_append bound q t2
 
-let spec_close_array_group
-  (#b: _)
-  (t: Spec.array_group3 b)
-: Tot (Spec.array_group3 b)
-= fun l ->
-    let res = t l in
-    match res with
-    | Some (_, []) -> res
-    | _ -> None
-
-let array_group3_concat_close
-  (#b: _)
-  (a1 a2: Spec.array_group3 b)
-: Lemma
-  (Spec.array_group3_equiv
-    (spec_close_array_group (Spec.array_group3_concat a1 a2))
-    (Spec.array_group3_concat a1 (spec_close_array_group a2))
-  )
-= ()
-
-let spec_array3_close_array_group
-  (#b: _)
-  (a: Spec.array_group3 b)
-: Lemma
-  (Spec.typ_equiv
-    (Spec.t_array3 a)
-    (Spec.t_array3 (spec_close_array_group a))
-  )
-= ()
-
-let spec_maybe_close_array_group
-  (#b: _)
-  (t: Spec.array_group3 b)
-  (close: bool)
-: Tot (Spec.array_group3 b)
-= if close
-  then spec_close_array_group t
-  else t
-
-let array_group3_concat_assoc
-  (#b: _)
-  (a1 a2 a3: Spec.array_group3 b)
-: Lemma
-  (Spec.array_group3_concat a1 (Spec.array_group3_concat a2 a3) `Spec.array_group3_equiv`
-    Spec.array_group3_concat (Spec.array_group3_concat a1 a2) a3)
-  [SMTPatOr [
-    [SMTPat (Spec.array_group3_concat a1 (Spec.array_group3_concat a2 a3))];
-    [SMTPat (Spec.array_group3_concat (Spec.array_group3_concat a1 a2) a3)]
-  ]]
-= let prf
-    (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b})
-  : Lemma
-    (Spec.array_group3_concat a1 (Spec.array_group3_concat a2 a3) l ==
-      Spec.array_group3_concat (Spec.array_group3_concat a1 a2) a3 l)
-  = match a1 l with
-    | None -> ()
-    | Some (l1, lr1) ->
-      begin match a2 lr1 with
-      | None -> ()
-      | Some (l2, lr2) ->
-        begin match a3 lr2 with
-        | None -> ()
-        | Some (l3, lr3) -> List.Tot.append_assoc l1 l2 l3
-        end
-      end
-  in
-  Classical.forall_intro prf
-
 let array_group_sem_alt
   (env: semenv)
   (t: array_group)
@@ -657,6 +586,16 @@ let array_group_sem_alt
 = match t with
   | [] -> Spec.array_group3_empty
   | (_, t) :: q -> Spec.array_group3_concat (elem_array_group_sem env t) (array_group_sem env q)
+
+let array_group_sem_cons
+  (env: semenv)
+  (n: string)
+  (t: elem_array_group)
+  (q: array_group)
+: Lemma
+  (requires array_group_bounded env.se_bound ((n, t) :: q))
+  (ensures array_group_sem env ((n, t) :: q) `Spec.array_group3_equiv` (elem_array_group_sem env t `Spec.array_group3_concat` array_group_sem env q))
+= ()
 
 let rec array_group_sem_append
   (env: semenv)
@@ -1420,37 +1359,6 @@ let ast_env_extend_rec_typ
 
 (* Equivalence, disjointness, splittability *)
 
-let spec_array_group3_zero_or_more_equiv #b
- (a1 a2: Spec.array_group3 b)
-: Lemma
-  (requires Spec.array_group3_equiv a1 a2)
-  (ensures Spec.array_group3_equiv (Spec.array_group3_zero_or_more a1) (Spec.array_group3_zero_or_more a2))
-  [SMTPat (Spec.array_group3_equiv (Spec.array_group3_zero_or_more a1) (Spec.array_group3_zero_or_more a2))]
-= assert (Spec.array_group3_equiv a1 a2);
-  let rec phi
-    (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b })
-  : Lemma
-    (ensures (Spec.array_group3_zero_or_more a1 l == Spec.array_group3_zero_or_more a2 l))
-    (decreases (List.Tot.length l))
-  = assert (a1 l == a2 l);
-    match a1 l with
-    | None -> ()
-    | Some (l1, l2) ->
-      List.Tot.append_length l1 l2;
-      if Nil? l1
-      then ()
-      else phi l2
-  in
-  Classical.forall_intro phi
-
-let spec_array_group3_one_or_more_equiv #b
- (a1 a2: Spec.array_group3 b)
-: Lemma
-  (requires Spec.array_group3_equiv a1 a2)
-  (ensures Spec.array_group3_equiv (Spec.array_group3_one_or_more a1) (Spec.array_group3_one_or_more a2))
-  [SMTPat (Spec.array_group3_equiv (Spec.array_group3_one_or_more a1) (Spec.array_group3_one_or_more a2))]
-= spec_array_group3_zero_or_more_equiv a1 a2
-
 // This is nothing more than delta-equivalence
 
 #push-options "--z3rlimit 16"
@@ -1569,10 +1477,7 @@ and array_group_equiv
 
 #pop-options
 
-let spec_typ_disjoint (a1 a2: Spec.typ) : Tot prop
-= (forall (l: CBOR.Spec.raw_data_item) . ~ (a1 l /\ a2 l))
-
-#push-options "--z3rlimit 32"
+#push-options "--z3rlimit 64 --split_queries always"
 
 #restart-solver
 [@@"opaque_to_smt"]
@@ -1589,7 +1494,7 @@ let rec typ_disjoint
   (ensures (fun b ->
     typ_bounded e.e_semenv.se_bound t1 /\
     typ_bounded e.e_semenv.se_bound t2 /\
-    (b == ResultSuccess ==> spec_typ_disjoint (typ_sem e.e_semenv t1) (typ_sem e.e_semenv t2))
+    (b == ResultSuccess ==> Spec.typ_disjoint (typ_sem e.e_semenv t1) (typ_sem e.e_semenv t2))
   ))
   (decreases fuel)
 = if fuel = 0
@@ -1622,22 +1527,22 @@ let rec typ_disjoint
   | _, TTag _ _
   | TTag _ _, _ -> ResultSuccess
   | TArray i1, TArray i2 ->
-    spec_array3_close_array_group (array_group_sem e.e_semenv i1);
-    spec_array3_close_array_group (array_group_sem e.e_semenv i2);
+    Spec.array3_close_array_group (array_group_sem e.e_semenv i1);
+    Spec.array3_close_array_group (array_group_sem e.e_semenv i2);
     array_group_disjoint e fuel' true i1 i2
   | TElem (TElemArray i1), TElem (TElemArray i2) ->
-    spec_array3_close_array_group (array_group_sem e.e_semenv ["", i1]);
-    spec_array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
+    Spec.array3_close_array_group (array_group_sem e.e_semenv ["", i1]);
+    Spec.array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
     array_group_disjoint e fuel' true ["", i1] ["", i2]
   | TArray i1, TElem (TElemArray i2)
     ->
-    spec_array3_close_array_group (array_group_sem e.e_semenv i1);
-    spec_array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
+    Spec.array3_close_array_group (array_group_sem e.e_semenv i1);
+    Spec.array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
     array_group_disjoint e fuel' true i1 ["", i2]
   | TElem (TElemArray i2), TArray i1
     ->
-    spec_array3_close_array_group (array_group_sem e.e_semenv i1);
-    spec_array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
+    Spec.array3_close_array_group (array_group_sem e.e_semenv i1);
+    Spec.array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
     array_group_disjoint e fuel' true ["", i2] i1
   | TArray _, _
   | _, TArray _ -> ResultSuccess
@@ -1666,8 +1571,8 @@ and array_group_disjoint
     array_group_bounded e.e_semenv.se_bound t1 /\
     array_group_bounded e.e_semenv.se_bound t2 /\
     (b == ResultSuccess ==> Spec.array_group3_disjoint
-      (spec_maybe_close_array_group (array_group_sem e.e_semenv t1) close)
-      (spec_maybe_close_array_group (array_group_sem e.e_semenv t2) close)
+      (Spec.maybe_close_array_group (array_group_sem e.e_semenv t1) close)
+      (Spec.maybe_close_array_group (array_group_sem e.e_semenv t2) close)
   )))
   (decreases fuel)
 = if fuel = 0
@@ -1707,11 +1612,15 @@ and array_group_disjoint
   | _, [] -> if close then ResultSuccess else ResultFailure "array_group_disjoint: cons, nil, not close"
   | [], _ ->
     array_group_disjoint e fuel' close t2 t1
-  | (_, TAAtom (TAElem t1')) :: q1, (_, TAAtom (TAElem t2')) :: q2 ->
+  | (n1, TAAtom (TAElem t1')) :: q1, (n2, TAAtom (TAElem t2')) :: q2 ->
+    array_group_sem_cons e.e_semenv n1 (TAAtom (TAElem t1')) q1;
+    array_group_sem_cons e.e_semenv n2 (TAAtom (TAElem t2')) q2;
     if ResultSuccess? (typ_disjoint e fuel' (TElem t1') (TElem t2'))
     then ResultSuccess
     else if typ_equiv e fuel' (TElem t1') (TElem t2')
-    then array_group_disjoint e fuel' close q1 q2
+    then
+      let res = array_group_disjoint e fuel' close q1 q2 in
+      res
     else ResultFailure "array_group_disjoint: TAElem"
 //  | _ -> false
 
@@ -1751,61 +1660,7 @@ let rec spec_array_group_splittable_included
     array_group_sem_included e1 e2 q;
     spec_array_group_splittable_included e1 e2 q
 
-let spec_array_group3_concat_unique_weak_intro
-  #b (a1 a3: Spec.array_group3 b)
-  (prf1:
-    (l: (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b })) ->
-    Lemma
-    (requires Spec.array_group3_concat a1 a3 l == Some (l, []))
-    (ensures
-      (exists (l1 l2: list CBOR.Spec.raw_data_item) .
-        a1 l == Some (l1, l2) /\
-        a1 l1 == Some (l1, []) /\
-        a3 l2 == Some (l2, [])
-    ))
-//    [SMTPat (Spec.array_group3_concat a1 a3 l)]
-  )
-  (prf2:
-    (l1: (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b })) ->
-    (l2: (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b })) ->
-    Lemma
-    (requires
-        a1 l1 == Some (l1, []) /\ a3 l2 == Some (l2, [])
-    )
-    (ensures       
-      a1 (l1 `List.Tot.append` l2) == Some (l1, l2)
-    )
-//    [SMTPat (a1 (l1 `List.Tot.append` l2))]
-  )
-: Lemma
-  (Spec.array_group3_concat_unique_weak a1 a3)
-= let prf1'
-    (l: (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b }))
-  : Lemma
-    (Spec.array_group3_concat a1 a3 l == Some (l, []) ==>
-      (exists (l1 l2: list CBOR.Spec.raw_data_item) .
-        a1 l == Some (l1, l2) /\
-        a1 l1 == Some (l1, []) /\
-        a3 l2 == Some (l2, [])
-    ))
-  = Classical.move_requires prf1 l
-  in
-  Classical.forall_intro prf1';
-  let prf2'
-    (l1: (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b }))
-    (l2: (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b }))
-  : Lemma
-    ((
-        a1 l1 == Some (l1, []) /\ a3 l2 == Some (l2, [])
-    ) ==>
-    (
-      a1 (l1 `List.Tot.append` l2) == Some (l1, l2)
-    ))
-  = Classical.move_requires (prf2 l1) l2
-  in
-  Classical.forall_intro_2 prf2'
-
-#push-options "--z3rlimit 16"
+#push-options "--z3rlimit 32"
 
 #restart-solver
 let rec spec_array_group_splittable_fold
@@ -1830,7 +1685,7 @@ let rec spec_array_group_splittable_fold
     spec_array_group_splittable_fold e g1' g2;
     let a1 = array_group_sem e g1 in
     let a3 = array_group_sem e g2 in
-    spec_array_group3_concat_unique_weak_intro a1 a3
+    Spec.array_group3_concat_unique_weak_intro a1 a3
       (fun l -> ())
       (fun l1 l2 ->
         let Some (l1l, l1r) = elem_array_group_sem e t1 l1 in
@@ -1880,85 +1735,6 @@ let rec spec_array_group_splittable_fold_gen
 
 #pop-options
 
-#push-options "--z3rlimit 16"
-
-let spec_array_group3_concat_unique_strong'_concat_left
-  (#b: _)
-  (g1 g2 g3: Spec.array_group3 b)
-: Lemma
-  (requires
-    Spec.array_group3_concat_unique_strong' g1 (Spec.array_group3_concat g2 g3) /\
-    Spec.array_group3_concat_unique_strong' g2 g3 /\
-    Spec.array_group3_concat_unique_weak g1 g2
-  )
-  (ensures
-    Spec.array_group3_concat_unique_strong' (Spec.array_group3_concat g1 g2) g3
-  )
-= let a1 = Spec.array_group3_concat g1 g2 in
-  let a3 = g3 in
-  let prf
-    (l1 l2:
-      (l: list CBOR.Spec.raw_data_item { Spec.opt_precedes_list l b })
-    )
-  : Lemma
-    (Some? (a3 l2) ==> (a1 (l1 `List.Tot.append` l2) == Some (l1, l2) <==> a1 l1 == Some (l1, [])))
-  = if Some? (a3 l2)
-    then begin
-      if FStar.StrongExcludedMiddle.strong_excluded_middle (a1 (l1 `List.Tot.append` l2) == Some (l1, l2))
-      then assert (a1 l1 == Some (l1, []))
-      else if FStar.StrongExcludedMiddle.strong_excluded_middle (a1 l1 == Some (l1, []))
-      then begin
-        let Some (lg1, lg2) = g1 l1 in
-        assert (g1 lg1 == Some (lg1, []));
-        assert (g2 lg2 == Some (lg2, []));
-        List.Tot.append_assoc lg1 lg2 l2
-      end
-    end
-  in
-  Classical.forall_intro_2 prf
-
-let spec_array_group3_concat_unique_strong_concat_left
-  (#b: _)
-  (g1 g2 g3: Spec.array_group3 b)
-: Lemma
-  (requires
-    Spec.array_group3_concat_unique_strong g1 (Spec.array_group3_concat g2 g3) /\
-    Spec.array_group3_concat_unique_strong g2 g3 /\
-    Spec.array_group3_concat_unique_weak g1 g2
-  )
-  (ensures
-    Spec.array_group3_concat_unique_strong (Spec.array_group3_concat g1 g2) g3
-  )
-= spec_array_group3_concat_unique_strong'_concat_left g1 g2 g3
-
-#restart-solver
-let spec_array_group3_concat_unique_strong_zero_or_one_left
-  #b (a1 a2: Spec.array_group3 b)
-: Lemma
-  (requires (
-    Spec.array_group3_disjoint a1 a2 /\
-    Spec.array_group3_concat_unique_strong a1 a2
-  ))
-  (ensures (
-    Spec.array_group3_concat_unique_strong (Spec.array_group3_zero_or_one a1) a2
-  ))
-= ()
-
-let spec_array_group3_concat_unique_strong_one_or_more_left
-  #b (a1 a2: Spec.array_group3 b)
-: Lemma
-  (requires (
-    Spec.array_group3_disjoint a1 a2 /\
-    Spec.array_group3_concat_unique_strong a1 a1 /\
-    Spec.array_group3_concat_unique_strong a1 a2
-  ))
-  (ensures (
-    Spec.array_group3_concat_unique_strong (Spec.array_group3_one_or_more a1) a2
-  ))
-= Spec.array_group3_concat_unique_weak_zero_or_more_right a1 a1;
-  Spec.array_group3_concat_unique_strong_zero_or_more_left a1 a2;
-  spec_array_group3_concat_unique_strong_concat_left a1 (Spec.array_group3_zero_or_more a1) a2
-
 let spec_array_group_splittable_threshold
   (e: ast_env)
 : Tot Type
@@ -1971,9 +1747,7 @@ let spec_array_group_splittable_threshold
         spec_array_group_splittable e.e_semenv (e.e_env i)
     ))
 
-#pop-options
-
-#push-options "--z3rlimit 32 --split_queries always"
+#push-options "--z3rlimit 64 --split_queries always --ifuel 4 --fuel 4 --query_stats"
 
 #restart-solver
 [@@"opaque_to_smt"]
@@ -2007,7 +1781,27 @@ let rec array_group_concat_unique_strong
     if not (ResultSuccess? res2)
     then res2
     else begin
-      spec_array_group3_concat_unique_strong_concat_left (elem_array_group_sem e.e_semenv t1l) (array_group_sem e.e_semenv a1') (array_group_sem e.e_semenv a2);
+      assert (Spec.array_group3_concat_unique_strong
+        (array_group_sem e.e_semenv [n1, t1l])
+        (array_group_sem e.e_semenv (a1' `List.Tot.append` a2))
+      );
+      array_group_sem_cons e.e_semenv n1 t1l a1';
+      array_group_sem_append e.e_semenv a1' a2;
+      assert (array_group_sem e.e_semenv [n1, t1l] == elem_array_group_sem e.e_semenv t1l);
+      Spec.array_group3_concat_unique_strong_equiv
+        (array_group_sem e.e_semenv [n1, t1l])
+        (elem_array_group_sem e.e_semenv t1l)
+        (array_group_sem e.e_semenv (a1' `List.Tot.append` a2))
+        (array_group_sem e.e_semenv a1' `Spec.array_group3_concat` array_group_sem e.e_semenv a2);
+      assert (Spec.array_group3_concat_unique_strong
+        (elem_array_group_sem e.e_semenv t1l)
+        (array_group_sem e.e_semenv a1' `Spec.array_group3_concat` array_group_sem e.e_semenv a2)
+      );
+      Spec.array_group3_concat_unique_strong_concat_left (elem_array_group_sem e.e_semenv t1l) (array_group_sem e.e_semenv a1') (array_group_sem e.e_semenv a2);
+      assert (Spec.array_group3_concat_unique_strong
+        (array_group_sem e.e_semenv a1)
+        (array_group_sem e.e_semenv a2)
+      );
       ResultSuccess
     end
   | [_, TAAtom (TAElem _)], _ -> ResultSuccess
@@ -2018,13 +1812,34 @@ let rec array_group_concat_unique_strong
       then ResultFailure "array_group_concat_unique_strong: unfold left, beyond threshold"
       else
         let t1 = e.e_env i in
-        array_group_concat_unique_strong e e_thr fuel' t1 a2
+        let res = array_group_concat_unique_strong e e_thr fuel' t1 a2 in
+        assert (res == ResultSuccess ==> Spec.array_group3_concat_unique_strong
+          (array_group_sem e.e_semenv a1)
+          (array_group_sem e.e_semenv a2)
+        );
+        res
     else ResultSuccess
   | _, (n2, TAAtom (TADef i)) :: a2' ->
+    array_group_sem_cons e.e_semenv n2 (TAAtom (TADef i)) a2';
     if SEArrayGroup? (e.e_semenv.se_env i)
     then
       let t1 = e.e_env i in
-      array_group_concat_unique_strong e e_thr fuel' a1 (t1 `List.Tot.append` a2')
+      array_group_sem_append e.e_semenv t1 a2';
+      Spec.array_group3_concat_equiv
+        (elem_array_group_sem e.e_semenv (TAAtom (TADef i)))
+        (array_group_sem e.e_semenv t1)
+        (array_group_sem e.e_semenv a2')
+        (array_group_sem e.e_semenv a2');
+      let res = array_group_concat_unique_strong e e_thr fuel' a1 (t1 `List.Tot.append` a2') in
+      if ResultSuccess? res
+      then begin
+        assert (Spec.array_group3_concat_unique_strong
+          (array_group_sem e.e_semenv a1)
+          (array_group_sem e.e_semenv a2)
+        );
+        ResultSuccess
+      end
+      else res
     else ResultSuccess
   | [n1, TAZeroOrMore t1], _ ->
     let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
@@ -2053,7 +1868,7 @@ let rec array_group_concat_unique_strong
     if not (ResultSuccess? res3)
     then res3
     else begin
-      spec_array_group3_concat_unique_strong_one_or_more_left
+      Spec.array_group3_concat_unique_strong_one_or_more_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
       ResultSuccess
@@ -2066,7 +1881,7 @@ let rec array_group_concat_unique_strong
     if not (ResultSuccess? res2)
     then res2
     else begin
-      spec_array_group3_concat_unique_strong_zero_or_one_left
+      Spec.array_group3_concat_unique_strong_zero_or_one_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
       ResultSuccess
@@ -2075,52 +1890,7 @@ let rec array_group_concat_unique_strong
 
 #pop-options
 
-#restart-solver
-let spec_array_group3_concat_unique_weak_zero_or_one_left
-  #b (a1 a2: Spec.array_group3 b)
-: Lemma
-  (requires (
-    Spec.array_group3_disjoint a1 a2 /\
-    Spec.array_group3_concat_unique_weak a1 a2
-  ))
-  (ensures (
-    Spec.array_group3_concat_unique_weak (Spec.array_group3_zero_or_one a1) a2
-  ))
-= ()
-
 #push-options "--z3rlimit 32 --split_queries always"
-
-#restart-solver
-let spec_array_group3_concat_unique_weak_one_or_more_left
-  #b (a1 a2: Spec.array_group3 b)
-: Lemma
-  (requires (
-    Spec.array_group3_disjoint a1 a2 /\
-    Spec.array_group3_concat_unique_strong a1 a1 /\
-    Spec.array_group3_concat_unique_weak a1 a2
-  ))
-  (ensures (
-    Spec.array_group3_concat_unique_weak (Spec.array_group3_one_or_more a1) a2
-  ))
-= Spec.array_group3_concat_unique_weak_concat_zero_or_more_right a1 a1 a2;
-  Spec.array_group3_concat_unique_weak_zero_or_more_left a1 a2;
-  spec_array_group3_concat_unique_weak_intro (Spec.array_group3_one_or_more a1) a2
-      (fun l ->
-        let Some (l1, lr) = a1 l in
-        assert (Spec.array_group3_concat (Spec.array_group3_zero_or_more a1) a2 lr == Some (lr, []));
-        let Some (l1s, l2) = Spec.array_group3_zero_or_more a1 lr in
-        assert (Spec.array_group3_zero_or_more a1 l1s == Some (l1s, []));
-        assert (a2 l2 == Some (l2, []));
-        ()
-      )
-      (fun l1 l2 ->
-        assert (Some? (a1 l1));
-        assert (Spec.array_group3_zero_or_more a1 l1 == Some (l1, []));
-        let l = l1 `List.Tot.append` l2 in
-        assert (Spec.array_group3_concat (Spec.array_group3_zero_or_more a1) a2 l == Some (l, []));
-        assert (Some? (a1 l));
-        ()
-      )
 
 #restart-solver
 [@@"opaque_to_smt"]
@@ -2211,7 +1981,7 @@ let rec array_group_splittable
     if not (ResultSuccess? res3)
     then res3
     else begin
-      spec_array_group3_concat_unique_weak_one_or_more_left
+      Spec.array_group3_concat_unique_weak_one_or_more_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
       ResultSuccess
@@ -2224,7 +1994,7 @@ let rec array_group_splittable
     if not (ResultSuccess? res2)
     then res2
     else begin
-      spec_array_group3_concat_unique_weak_zero_or_one_left
+      Spec.array_group3_concat_unique_weak_zero_or_one_left
         (atom_array_group_sem e.e_semenv t1)
         (array_group_sem e.e_semenv a2);
       ResultSuccess
@@ -2242,7 +2012,7 @@ let rec spec_choice_typ_well_formed
   | [] -> True
   | [_] -> True
   | a :: q ->
-    spec_typ_disjoint (typ_sem env (TElem a)) (typ_sem env (TChoice q)) /\
+    Spec.typ_disjoint (typ_sem env (TElem a)) (typ_sem env (TChoice q)) /\
     spec_choice_typ_well_formed env q
   end
 
