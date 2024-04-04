@@ -478,6 +478,54 @@ let map_group_cut (cut: typ) (m: map_group) : map_group =
 let map_group_concat (m1 m2: map_group) : map_group =
   fun l -> gset_collect m2 (m1 l)
 
+let map_group_concat_equiv (m1 m2 m1' m2': map_group) : Lemma
+  (requires m1 `map_group_equiv` m1' /\
+    m2 `map_group_equiv` m2'
+  )
+  (ensures (m1 `map_group_concat` m2) `map_group_equiv` (m1' `map_group_concat` m2'))
+= ()
+
+let map_group_equiv_intro
+  (m1 m2: map_group)
+  (prf12: (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
+    (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
+    Lemma
+    (requires FStar.GSet.mem l' (m1 l))
+    (ensures FStar.GSet.mem l' (m2 l))
+  )
+  (prf21: (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
+    (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
+    Lemma
+    (requires FStar.GSet.mem l' (m2 l))
+    (ensures FStar.GSet.mem l' (m1 l))
+  )
+: Lemma
+  (map_group_equiv m1 m2)
+= Classical.forall_intro_2 (fun l l' -> Classical.move_requires (prf12 l) l');
+  Classical.forall_intro_2 (fun l l' -> Classical.move_requires (prf21 l) l')
+
+#push-options "--z3rlimit 16"
+
+let map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
+  (map_group_concat m1 (map_group_concat m2 m3) `map_group_equiv` map_group_concat (map_group_concat m1 m2) m3)
+= map_group_equiv_intro
+    (map_group_concat m1 (map_group_concat m2 m3))
+    (map_group_concat (map_group_concat m1 m2) m3)
+    (fun l l' ->
+      let l1 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred (map_group_concat m2 m3) (m1 l) l') in
+      let l2 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred m3 (m2 l1) l') in
+      assert (gset_collect_witness_pred m2 (m1 l) l2 l1);
+      assert (gset_collect_witness_pred m3 (map_group_concat m1 m2 l) l' l2)
+    )
+    (fun l l' ->
+      let l12 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred m3 (map_group_concat m1 m2 l) l') in
+      let l1 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred m2 (m1 l) l12) in
+      assert (gset_collect_witness_pred m3 (m2 l1) l' l12);
+      assert (gset_collect_witness_pred (map_group_concat m2 m3) (m1 l) l' l1)
+    )
+
+#pop-options
+
 let map_group_mk_cut (cut: typ) : map_group =
   fun l -> 
     if List.Tot.for_all (notp (Pull.pull (matches_map_group_entry cut any))) l
