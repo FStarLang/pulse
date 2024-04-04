@@ -22,6 +22,7 @@ let bounded_typ_gen (e: option Cbor.raw_data_item) = (e': Cbor.raw_data_item { o
 let typ = bounded_typ_gen None
 
 let any : typ = (fun _ -> true)
+let t_always_false : typ = (fun _ -> false)
 
 [@@noextract_to "krml"]
 let bounded_typ (e: Cbor.raw_data_item) = bounded_typ_gen (Some e)

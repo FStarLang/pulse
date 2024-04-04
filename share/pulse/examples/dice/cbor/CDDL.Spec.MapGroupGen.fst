@@ -501,9 +501,10 @@ let rec map_group_zero_or_more
 
 let map_group_one_or_more (m: map_group) : map_group =
   // cuts must not be applied between iterations
-  map_group_concat any m (map_group_zero_or_more m)
+  map_group_concat t_always_false m (map_group_zero_or_more m)
 
 let t_map (g: map_group) : typ =
   fun x -> match x with
   | Cbor.Map m -> FStar.GSet.mem [] (g m)
   | _ -> false
+

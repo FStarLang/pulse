@@ -22,8 +22,6 @@ let t_choice_simpl
   ((t `t_choice` t) `typ_equiv` t)
 = ()
 
-let t_always_false : typ = (fun _ -> false)
-
 // Appendix D
 
 let uint : typ = (fun x -> Cbor.Int64? x && Cbor.Int64?.typ x = Cbor.cbor_major_type_uint64)
