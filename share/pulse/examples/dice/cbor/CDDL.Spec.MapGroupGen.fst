@@ -439,7 +439,7 @@ let map_group_match_item_map_group_match_item_alt
 let map_group_equiv
   (m1 m2: map_group)
 : Tot prop
-= forall l . m1 l == m2 l
+= forall l . m1 l `FStar.GSet.equal` m2 l
 
 let map_group_match_item_alt_correct
   (key value: typ) (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
@@ -469,11 +469,27 @@ let gset_collect (#t1 #t2: Type) (f: t1 -> GTot (FStar.GSet.set t2)) (s: FStar.G
     gset_collect_witness_pred f s x2 x1
   ))
 
-let mk_cut (cut: typ) : Tot (FStar.GSet.set _) =
-  FStar.GSet.comprehend (List.Tot.for_all (notp (Pull.pull (matches_map_group_entry cut any))))
+let map_group_cut (cut: typ) (m: map_group) : map_group =
+  fun l -> 
+    if List.Tot.for_all (notp (Pull.pull (matches_map_group_entry cut any))) l
+    then m l
+    else FStar.GSet.empty
 
-let map_group_concat (cut: typ) (m1 m2: map_group) : map_group =
-  fun l -> gset_collect m2 (FStar.GSet.intersect (mk_cut cut) (m1 l))
+let map_group_concat (m1 m2: map_group) : map_group =
+  fun l -> gset_collect m2 (m1 l)
+
+let map_group_mk_cut (cut: typ) : map_group =
+  fun l -> 
+    if List.Tot.for_all (notp (Pull.pull (matches_map_group_entry cut any))) l
+    then FStar.GSet.singleton l
+    else FStar.GSet.empty
+
+let map_group_cut_eq
+  (cut: typ)
+  (m: map_group)
+: Lemma
+  (map_group_cut cut m `map_group_equiv` (map_group_mk_cut cut `map_group_concat` m))
+= ()
 
 let bound_map_group
   (l0: list (Cbor.raw_data_item & Cbor.raw_data_item))
@@ -499,8 +515,7 @@ let rec map_group_zero_or_more
   else gset_collect (bound_map_group l (map_group_zero_or_more m)) res1
 
 let map_group_one_or_more (m: map_group) : map_group =
-  // cuts must not be applied between iterations
-  map_group_concat t_always_false m (map_group_zero_or_more m)
+  map_group_concat m (map_group_zero_or_more m)
 
 let map_group_match_item_for
   (k: Cbor.raw_data_item)
