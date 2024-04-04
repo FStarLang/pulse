@@ -218,6 +218,7 @@ let rec list_no_repeats_p_is_sublist_of
   )
   (ensures List.Tot.no_repeats_p l1)
   (decreases l2)
+  [SMTPat (l1 `is_sublist_of` l2)]
 = match l1, l2 with
   | [], _ -> ()
   | a1 :: q1, a2 :: q2 ->
@@ -286,6 +287,23 @@ let rec list_filter_and_extract
       Some (a :: l1, x, l2)
     end
 
+let is_sublist_of_suffix
+  (#t: Type)
+  (l1 l2: list t)
+: Lemma
+  (ensures (l2 `is_sublist_of` (l1 `List.Tot.append` l2)))
+  [SMTPat (l1 `List.Tot.append` l2)]
+= is_sublist_of_append_right_intro [] l1 l2
+
+let is_sublist_of_prefix
+  (#t: Type)
+  (l1 l2: list t)
+: Lemma
+  (ensures (l1 `is_sublist_of` (l1 `List.Tot.append` l2)))
+  [SMTPat (l1 `List.Tot.append` l2)]
+= List.Tot.append_l_nil l1;
+  is_sublist_of_append_left_intro l1 [] l2
+
 let map_group_post
   (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
   (res: FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item)))
@@ -294,8 +312,23 @@ let map_group_post
       forall (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) .
       FStar.GSet.mem l' res ==> l' `is_sublist_of` l
 
+let cbor_map_pred (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) : Tot prop =
+  List.Tot.no_repeats_p (List.Tot.map fst l)
+
+let cbor_map : Type0 = (l: list (Cbor.raw_data_item & Cbor.raw_data_item) { cbor_map_pred l })
+
+let cbor_map_is_sublist_of
+  (l1 l2: list (Cbor.raw_data_item & Cbor.raw_data_item))
+: Lemma
+  (requires
+    l1 `is_sublist_of` l2
+  )
+  (ensures cbor_map_pred l2 ==> cbor_map_pred l1)
+  [SMTPat (l1 `is_sublist_of` l2)]
+= Classical.move_requires (list_map_is_sublist_of fst l1) l2
+
 let map_group : Type0 =
-  (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) -> Ghost (FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item)))
+  (l: cbor_map) -> Ghost (FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item)))
     (requires True)
     (ensures fun res -> map_group_post l res)
 
@@ -344,13 +377,14 @@ let matches_map_group_entry
 
 module Pull = FStar.Ghost.Pull
 
-let map_group_match_item_alt (key value: typ) (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) : GTot (FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item))) =
+let map_group_match_item_alt (key value: typ) (l: cbor_map) : GTot (FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item))) =
   match list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry key value)) l with
   | None -> FStar.GSet.empty
-  | Some (l1, x, l2) -> FStar.GSet.union (FStar.GSet.singleton (l1 `List.Tot.append` l2)) (gset_map (List.Tot.append (l1 `List.Tot.append` [x])) (map_group_match_item key value l2))
+  | Some (l1, x, l2) ->
+    FStar.GSet.union (FStar.GSet.singleton (l1 `List.Tot.append` l2)) (gset_map (List.Tot.append (l1 `List.Tot.append` [x])) (map_group_match_item key value l2))
 
 let map_group_match_item_alt_map_group_match_item
-  (key value: typ) (l l': list (Cbor.raw_data_item & Cbor.raw_data_item))
+  (key value: typ) (l: cbor_map) (l': list (Cbor.raw_data_item & Cbor.raw_data_item))
 : Lemma
   (FStar.GSet.mem l' (map_group_match_item_alt key value l) ==> FStar.GSet.mem l' (map_group_match_item key value l))
 = if FStar.GSet.mem l' (map_group_match_item_alt key value l)
@@ -413,7 +447,7 @@ let rec list_extract_prefix
 
 #restart-solver
 let map_group_match_item_map_group_match_item_alt
-  (key value: typ) (l l': list (Cbor.raw_data_item & Cbor.raw_data_item))
+  (key value: typ) (l: cbor_map) (l': list (Cbor.raw_data_item & Cbor.raw_data_item))
 : Lemma
   (FStar.GSet.mem l' (map_group_match_item key value l) ==> FStar.GSet.mem l' (map_group_match_item_alt key value l))
 = if FStar.GSet.mem l' (map_group_match_item key value l)
@@ -422,9 +456,11 @@ let map_group_match_item_map_group_match_item_alt
     List.Tot.for_all_append (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))) ll' (x' :: lr');
     let Some (ll, x, lr) = list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry key value)) l in
     list_filter_and_extract_length (FStar.Ghost.Pull.pull (matches_map_group_entry key value)) ll (x :: lr) ll' x' lr';
+    assert (List.Tot.length ll <= List.Tot.length ll');
     if List.Tot.length ll = List.Tot.length ll'
     then List.Tot.append_length_inv_head ll (x :: lr) ll' (x' :: lr')
     else begin
+      assert (List.Tot.length ll + 1 <= List.Tot.length ll');
       List.Tot.append_assoc ll [x] lr;
       List.Tot.append_length ll [x];
       let lp = list_extract_prefix (ll `List.Tot.append` [x]) lr ll' (x' :: lr') in
@@ -442,7 +478,7 @@ let map_group_equiv
 = forall l . m1 l `FStar.GSet.equal` m2 l
 
 let map_group_match_item_alt_correct
-  (key value: typ) (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+  (key value: typ) (l: cbor_map)
 : Lemma
   (map_group_match_item_alt key value l == map_group_match_item key value l)
 = Classical.forall_intro (map_group_match_item_map_group_match_item_alt key value l);
@@ -475,8 +511,22 @@ let map_group_cut (cut: typ) (m: map_group) : map_group =
     then m l
     else FStar.GSet.empty
 
+let coerce_gset_cbor_map
+  (s: FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item)))
+: Ghost (FStar.GSet.set cbor_map)
+  (requires (forall l . FStar.GSet.mem l s ==> cbor_map_pred l))
+  (ensures fun s' -> forall (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) . (cbor_map_pred l /\ FStar.GSet.mem l s') <==> FStar.GSet.mem l s)
+= FStar.GSet.comprehend (fun (l: cbor_map) -> FStar.GSet.mem l s)
+
+let apply_map_group (m: map_group) (l: cbor_map) : Ghost (FStar.GSet.set cbor_map)
+  (requires True)
+  (ensures (fun s ->
+    (forall (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) . (cbor_map_pred l' /\ FStar.GSet.mem l' s) <==> FStar.GSet.mem l' (m l))
+  ))
+= coerce_gset_cbor_map (m l)
+
 let map_group_concat (m1 m2: map_group) : map_group =
-  fun l -> gset_collect m2 (m1 l)
+  fun l -> gset_collect m2 (apply_map_group m1 l)
 
 let map_group_concat_equiv (m1 m2 m1' m2': map_group) : Lemma
   (requires m1 `map_group_equiv` m1' /\
@@ -487,13 +537,13 @@ let map_group_concat_equiv (m1 m2 m1' m2': map_group) : Lemma
 
 let map_group_equiv_intro
   (m1 m2: map_group)
-  (prf12: (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
+  (prf12: (l: cbor_map) ->
     (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
     Lemma
     (requires FStar.GSet.mem l' (m1 l))
     (ensures FStar.GSet.mem l' (m2 l))
   )
-  (prf21: (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
+  (prf21: (l: cbor_map) ->
     (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
     Lemma
     (requires FStar.GSet.mem l' (m2 l))
@@ -511,17 +561,17 @@ let map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
 = map_group_equiv_intro
     (map_group_concat m1 (map_group_concat m2 m3))
     (map_group_concat (map_group_concat m1 m2) m3)
-    (fun l l' ->
-      let l1 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred (map_group_concat m2 m3) (m1 l) l') in
-      let l2 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred m3 (m2 l1) l') in
-      assert (gset_collect_witness_pred m2 (m1 l) l2 l1);
-      assert (gset_collect_witness_pred m3 (map_group_concat m1 m2 l) l' l2)
+    (fun (l: cbor_map) (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
+      let l1 : cbor_map = FStar.IndefiniteDescription.indefinite_description_ghost cbor_map (gset_collect_witness_pred (map_group_concat m2 m3) (apply_map_group m1 l) l') in
+      let l2 : cbor_map = FStar.IndefiniteDescription.indefinite_description_ghost cbor_map (gset_collect_witness_pred m3 (apply_map_group m2 l1) l') in
+      assert (gset_collect_witness_pred m2 (apply_map_group m1 l) l2 l1);
+      assert (gset_collect_witness_pred m3 (apply_map_group (map_group_concat m1 m2) l) l' l2)
     )
-    (fun l l' ->
-      let l12 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred m3 (map_group_concat m1 m2 l) l') in
-      let l1 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred m2 (m1 l) l12) in
-      assert (gset_collect_witness_pred m3 (m2 l1) l' l12);
-      assert (gset_collect_witness_pred (map_group_concat m2 m3) (m1 l) l' l1)
+    (fun (l: cbor_map) (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) ->
+      let l12 : cbor_map = FStar.IndefiniteDescription.indefinite_description_ghost cbor_map (gset_collect_witness_pred m3 (apply_map_group (map_group_concat m1 m2) l) l') in
+      let l1 : cbor_map = FStar.IndefiniteDescription.indefinite_description_ghost cbor_map (gset_collect_witness_pred m2 (apply_map_group m1 l) l12) in
+      assert (gset_collect_witness_pred m3 (apply_map_group m2 l1) l' l12);
+      assert (gset_collect_witness_pred (map_group_concat m2 m3) (apply_map_group m1 l) l' l1)
     )
 
 #pop-options
@@ -541,7 +591,7 @@ let map_group_cut_eq
 
 let bound_map_group
   (l0: list (Cbor.raw_data_item & Cbor.raw_data_item))
-  (m: (l: list (Cbor.raw_data_item & Cbor.raw_data_item) { List.Tot.length l < List.Tot.length l0 }) ->
+  (m: (l: cbor_map { List.Tot.length l < List.Tot.length l0 }) ->
   Ghost (FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item)))
     (requires True)
     (ensures fun l' -> map_group_post l l')
@@ -552,12 +602,12 @@ let bound_map_group
 // greedy PEG semantics for `*`
 let rec map_group_zero_or_more
   (m: map_group)
-  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+  (l: cbor_map)
 : Ghost (FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item)))
     (requires True)
     (ensures fun l' -> map_group_post l l')
     (decreases (List.Tot.length l))
-= let res1 = m l in
+= let res1 = apply_map_group m l in
   if FStar.StrongExcludedMiddle.strong_excluded_middle (res1 == FStar.GSet.empty)
   then FStar.GSet.singleton l
   else gset_collect (bound_map_group l (map_group_zero_or_more m)) res1
@@ -622,12 +672,12 @@ let rec list_filter_and_extract_assoc
     list_ghost_assoc_memP k l';
     list_filter_and_extract_matches_map_group_entry_literal_memP_intro k ty l'
 
-let map_group_match_item_for_no_repeats_none
+let map_group_match_item_for_eq_none
   (k: Cbor.raw_data_item)
   (ty: typ)
-  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+  (l: cbor_map)
 : Lemma
-  (requires (List.Tot.no_repeats_p (List.Tot.map fst l) /\
+  (requires (
     (~ (List.Tot.memP k (List.Tot.map fst l)))
   ))
   (ensures (
@@ -637,27 +687,11 @@ let map_group_match_item_for_no_repeats_none
   list_filter_and_extract_assoc k ty l;
   list_ghost_assoc_memP k l
 
-let is_sublist_of_suffix
-  (#t: Type)
-  (l1 l2: list t)
-: Lemma
-  (ensures (l2 `is_sublist_of` (l1 `List.Tot.append` l2)))
-= is_sublist_of_append_right_intro [] l1 l2
-
-let is_sublist_of_prefix
-  (#t: Type)
-  (l1 l2: list t)
-: Lemma
-  (ensures (l1 `is_sublist_of` (l1 `List.Tot.append` l2)))
-= List.Tot.append_l_nil l1;
-  is_sublist_of_append_left_intro l1 [] l2
-
-let map_group_match_item_for_no_repeats
+let map_group_match_item_for_eq
   (k: Cbor.raw_data_item)
   (ty: typ)
-  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+  (l: cbor_map)
 : Lemma
-  (requires (List.Tot.no_repeats_p (List.Tot.map fst l)))
   (ensures (
     map_group_match_item_for k ty l `FStar.GSet.equal` begin match list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty)) l with
     | None -> FStar.GSet.empty
@@ -674,7 +708,7 @@ let map_group_match_item_for_no_repeats
     is_sublist_of_trans lr (k'v' :: lr) l;
     list_map_is_sublist_of fst lr l;
     list_no_repeats_p_is_sublist_of (List.Tot.map fst lr) (List.Tot.map fst l);
-    map_group_match_item_for_no_repeats_none k ty lr
+    map_group_match_item_for_eq_none k ty lr
 
 let t_map (g: map_group) : typ =
   fun x -> match x with
