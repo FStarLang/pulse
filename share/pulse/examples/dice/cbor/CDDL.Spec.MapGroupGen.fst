@@ -210,7 +210,6 @@ let rec list_memP_is_sublist_of
 
 let rec list_no_repeats_p_is_sublist_of
   (#t: Type)
-  (x: t)
   (l1 l2: list t)
 : Lemma
   (requires
@@ -225,9 +224,9 @@ let rec list_no_repeats_p_is_sublist_of
     if FStar.StrongExcludedMiddle.strong_excluded_middle (a1 == a2 /\ is_sublist_of q1 q2)
     then begin
       Classical.move_requires (list_memP_is_sublist_of a2 q1) q2;
-      list_no_repeats_p_is_sublist_of x q1 q2
+      list_no_repeats_p_is_sublist_of q1 q2
     end else
-      list_no_repeats_p_is_sublist_of x l1 q2
+      list_no_repeats_p_is_sublist_of l1 q2
 
 let rec list_map_is_sublist_of
   (#t #t': Type)
@@ -503,8 +502,121 @@ let map_group_one_or_more (m: map_group) : map_group =
   // cuts must not be applied between iterations
   map_group_concat t_always_false m (map_group_zero_or_more m)
 
+let map_group_match_item_for
+  (k: Cbor.raw_data_item)
+  (ty: typ)
+: Tot map_group
+= map_group_match_item (t_literal k) ty
+
+let rec list_ghost_assoc_memP
+  (#key #value: Type)
+  (k: key)
+  (l: list (key & value))
+: Lemma
+  (ensures (Some? (Cbor.list_ghost_assoc k l) <==> List.Tot.memP k (List.Tot.map fst l)))
+  (decreases l)
+= match l with
+  | [] -> ()
+  | _ :: q -> list_ghost_assoc_memP k q
+
+let rec list_filter_and_extract_matches_map_group_entry_literal_memP_intro
+  (k: Cbor.raw_data_item)
+  (ty: typ)
+  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+: Lemma
+  (ensures (Some? (list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty)) l) ==> List.Tot.memP k (List.Tot.map fst l)))
+  (decreases l)
+= if Some? (list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty)) l)
+  then
+    let k'v' :: l' = l in
+    list_filter_and_extract_matches_map_group_entry_literal_memP_intro k ty l'
+
+let rec list_filter_and_extract_assoc
+  (k: Cbor.raw_data_item)
+  (ty: typ)
+  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+: Lemma
+  (requires (List.Tot.no_repeats_p (List.Tot.map fst l)))
+  (ensures (match Cbor.list_ghost_assoc k l, list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty)) l with
+  | None, None -> ~ (List.Tot.memP k (List.Tot.map fst l))
+  | None, Some _ -> False
+  | Some v, None -> ~ (ty v)
+  | Some v, Some (ll, (k', v'), lr) ->
+    k == k' /\
+    v == v' /\
+    ty v /\
+    (~ (List.Tot.memP k (List.Tot.map fst ll))) /\
+    (~ (List.Tot.memP k (List.Tot.map fst lr)))
+  ))
+  (decreases l)
+= 
+  list_ghost_assoc_memP k l;
+  let f = FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty) in
+  match l with
+  | [] -> ()
+  | (k', v') :: l' -> 
+    list_filter_and_extract_assoc k ty l';
+    list_ghost_assoc_memP k l';
+    list_filter_and_extract_matches_map_group_entry_literal_memP_intro k ty l'
+
+let map_group_match_item_for_no_repeats_none
+  (k: Cbor.raw_data_item)
+  (ty: typ)
+  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+: Lemma
+  (requires (List.Tot.no_repeats_p (List.Tot.map fst l) /\
+    (~ (List.Tot.memP k (List.Tot.map fst l)))
+  ))
+  (ensures (
+    map_group_match_item_for k ty l == FStar.GSet.empty
+  ))
+= map_group_match_item_alt_correct (t_literal k) ty l;
+  list_filter_and_extract_assoc k ty l;
+  list_ghost_assoc_memP k l
+
+let is_sublist_of_suffix
+  (#t: Type)
+  (l1 l2: list t)
+: Lemma
+  (ensures (l2 `is_sublist_of` (l1 `List.Tot.append` l2)))
+= is_sublist_of_append_right_intro [] l1 l2
+
+let is_sublist_of_prefix
+  (#t: Type)
+  (l1 l2: list t)
+: Lemma
+  (ensures (l1 `is_sublist_of` (l1 `List.Tot.append` l2)))
+= List.Tot.append_l_nil l1;
+  is_sublist_of_append_left_intro l1 [] l2
+
+let map_group_match_item_for_no_repeats
+  (k: Cbor.raw_data_item)
+  (ty: typ)
+  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+: Lemma
+  (requires (List.Tot.no_repeats_p (List.Tot.map fst l)))
+  (ensures (
+    map_group_match_item_for k ty l `FStar.GSet.equal` begin match list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty)) l with
+    | None -> FStar.GSet.empty
+    | Some (ll, _, lr) -> FStar.GSet.singleton (ll `List.Tot.append` lr)
+    end
+  ))
+= map_group_match_item_alt_correct (t_literal k) ty l;
+  list_filter_and_extract_assoc k ty l;
+  match list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty)) l with
+  | None -> ()
+  | Some (ll, k'v', lr) ->
+    List.Tot.append_length ll lr;
+    is_sublist_of_suffix ll (k'v' :: lr);
+    is_sublist_of_trans lr (k'v' :: lr) l;
+    list_map_is_sublist_of fst lr l;
+    list_no_repeats_p_is_sublist_of (List.Tot.map fst lr) (List.Tot.map fst l);
+    map_group_match_item_for_no_repeats_none k ty lr
+
 let t_map (g: map_group) : typ =
   fun x -> match x with
-  | Cbor.Map m -> FStar.GSet.mem [] (g m)
+  | Cbor.Map m -> 
+    FStar.StrongExcludedMiddle.strong_excluded_middle (List.Tot.no_repeats_p (List.Tot.map fst m)) &&
+    FStar.GSet.mem [] (g m)
   | _ -> false
 
