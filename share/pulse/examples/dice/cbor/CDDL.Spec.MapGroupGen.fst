@@ -1,20 +1,4 @@
 module CDDL.Spec.MapGroupGen
-include CDDL.Spec.Base
-module Cbor = CBOR.Spec
-module U8 = FStar.UInt8
-module U64 = FStar.UInt64
-
-let rec is_sublist_of
-  (#t: Type)
-  (l1 l2: list t)
-: Tot prop
-  (decreases l2)
-= match l1, l2 with
-  | [], _ -> True
-  | _, [] -> False
-  | a1 :: q1, a2 :: q2 ->
-    (a1 == a2 /\ q1 `is_sublist_of` q2) \/
-    l1 `is_sublist_of` q2
 
 let rec is_sublist_of_length
   (#t: Type)
@@ -139,19 +123,6 @@ let rec is_sublist_of_append_left_intro
   | [] -> ()
   | a :: q -> is_sublist_of_append_left_intro q l1 l2
 
-let is_sublist_of_append_intro
-  (#t: Type)
-  (l1 l2: list t)
-  (l1' l2': list t)
-: Lemma
-  (requires (
-    is_sublist_of l1 l1' /\ is_sublist_of l2 l2'
-  ))
-  (ensures (
-    is_sublist_of (l1 `List.Tot.append` l2) (l1' `List.Tot.append` l2')
-  ))
-= assert (is_sublist_of (l1 `List.Tot.append` l2) (l1' `List.Tot.append` l2))
-
 let list_remove_sublist_is_sublist_of
   (#t: Type)
   (l1: list t)
@@ -256,13 +227,6 @@ let rec list_filter_is_sublist_of_intro
   | [] -> ()
   | a :: q -> list_filter_is_sublist_of_intro f q
 
-let notp
-  (#t: Type)
-  (p: (t -> Tot bool))
-  (x: t)
-: Tot bool
-= not (p x)
-
 let rec list_filter_and_extract
   (#t: Type)
   (f: (t -> Tot bool))
@@ -311,11 +275,6 @@ let map_group_post
 =
       forall (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) .
       FStar.GSet.mem l' res ==> l' `is_sublist_of` l
-
-let cbor_map_pred (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) : Tot prop =
-  List.Tot.no_repeats_p (List.Tot.map fst l)
-
-let cbor_map : Type0 = (l: list (Cbor.raw_data_item & Cbor.raw_data_item) { cbor_map_pred l })
 
 let cbor_map_is_sublist_of
   (l1 l2: list (Cbor.raw_data_item & Cbor.raw_data_item))
@@ -380,14 +339,6 @@ let gset_map (#t1 #t2: Type) (f: t1 -> GTot t2) (s: FStar.GSet.set t1) : FStar.G
   FStar.GSet.comprehend (fun x2 -> FStar.StrongExcludedMiddle.strong_excluded_middle (exists x1 .
     gset_map_witness_pred f s x2 x1
   ))
-
-let matches_map_group_entry
-  (key value: typ)
-  (x: (Cbor.raw_data_item & Cbor.raw_data_item))
-: GTot bool
-= key (fst x) && value (snd x)
-
-module Pull = FStar.Ghost.Pull
 
 let map_group_match_item_alt (key value: typ) (l: cbor_map) : GTot (FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item))) =
   match list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry key value)) l with
@@ -505,9 +456,6 @@ let map_group_choice (m1 m2: map_group) : map_group =
     then m2 l
     else res1
 
-let map_group_zero_or_one (m: map_group) : map_group =
-  map_group_choice m map_group_nop
-
 let gset_collect_witness_pred (#t1 #t2: Type) (f: t1 -> GTot (FStar.GSet.set t2)) (s: FStar.GSet.set t1) x2 x1 : GTot prop =
   FStar.GSet.mem x1 s /\ FStar.GSet.mem x2 (f x1)
 
@@ -519,7 +467,7 @@ let gset_collect (#t1 #t2: Type) (f: t1 -> GTot (FStar.GSet.set t2)) (s: FStar.G
 
 let map_group_cut (cut: typ) (m: map_group) : map_group =
   fun l -> 
-    if List.Tot.for_all (notp (Pull.pull (matches_map_group_entry cut any))) l
+    if List.Tot.for_all (notp (FStar.Ghost.Pull.pull (matches_map_group_entry cut any))) l
     then m l
     else FStar.GSet.empty
 
@@ -590,7 +538,7 @@ let map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
 
 let map_group_mk_cut (cut: typ) : map_group =
   fun l -> 
-    if List.Tot.for_all (notp (Pull.pull (matches_map_group_entry cut any))) l
+    if List.Tot.for_all (notp (FStar.Ghost.Pull.pull (matches_map_group_entry cut any))) l
     then FStar.GSet.singleton l
     else FStar.GSet.empty
 
@@ -612,7 +560,7 @@ let bound_map_group
 = fun l -> if List.Tot.length l >= List.Tot.length l0 then FStar.GSet.singleton l else m l
 
 // greedy PEG semantics for `*`
-let rec map_group_zero_or_more
+let rec map_group_zero_or_more'
   (m: map_group)
   (l: cbor_map)
 : Ghost (FStar.GSet.set (list (Cbor.raw_data_item & Cbor.raw_data_item)))
@@ -622,16 +570,9 @@ let rec map_group_zero_or_more
 = let res1 = apply_map_group m l in
   if FStar.StrongExcludedMiddle.strong_excluded_middle (res1 == FStar.GSet.empty)
   then FStar.GSet.singleton l
-  else gset_collect (bound_map_group l (map_group_zero_or_more m)) res1
+  else gset_collect (bound_map_group l (map_group_zero_or_more' m)) res1
 
-let map_group_one_or_more (m: map_group) : map_group =
-  map_group_concat m (map_group_zero_or_more m)
-
-let map_group_match_item_for
-  (k: Cbor.raw_data_item)
-  (ty: typ)
-: Tot map_group
-= map_group_match_item (t_literal k) ty
+let map_group_zero_or_more = map_group_zero_or_more'
 
 let rec list_ghost_assoc_memP
   (#key #value: Type)
@@ -860,18 +801,6 @@ let rec map_group_zero_or_more_match_item_eq
 
 #pop-options
 
-[@@erasable]
-noeq
-type map_group_result =
-| MapGroupFail
-| MapGroupDet of cbor_map
-| MapGroupNonDet
-
-let map_group_result_prop (l: cbor_map) (r: map_group_result) : Tot prop =
-  match r with
-  | MapGroupDet m -> m `is_sublist_of` l
-  | _ -> True
-
 let apply_map_group_det (m: map_group) (l: cbor_map) : Pure map_group_result
   (requires True)
   (ensures fun r -> map_group_result_prop l r)
@@ -992,10 +921,3 @@ let matches_map_group_det (g: map_group) (m: cbor_map) : Lemma
   | MapGroupDet m' -> matches_map_group g m <==> m' == []
   | _ -> True)
 = ()
-
-let t_map (g: map_group) : typ =
-  fun x -> match x with
-  | Cbor.Map m -> 
-    FStar.StrongExcludedMiddle.strong_excluded_middle (List.Tot.no_repeats_p (List.Tot.map fst m)) &&
-    matches_map_group g m
-  | _ -> false
