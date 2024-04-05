@@ -860,10 +860,142 @@ let rec map_group_zero_or_more_match_item_eq
 
 #pop-options
 
+[@@erasable]
+noeq
+type map_group_result =
+| MapGroupFail
+| MapGroupDet of cbor_map
+| MapGroupNonDet
+
+let map_group_result_prop (l: cbor_map) (r: map_group_result) : Tot prop =
+  match r with
+  | MapGroupDet m -> m `is_sublist_of` l
+  | _ -> True
+
+let apply_map_group_det (m: map_group) (l: cbor_map) : Pure map_group_result
+  (requires True)
+  (ensures fun r -> map_group_result_prop l r)
+= let s = m l in
+  if FStar.StrongExcludedMiddle.strong_excluded_middle (s == FStar.GSet.empty)
+  then MapGroupFail
+  else if FStar.StrongExcludedMiddle.strong_excluded_middle (exists x . s == FStar.GSet.singleton x)
+  then MapGroupDet (FStar.IndefiniteDescription.indefinite_description_ghost _ (fun x -> s == FStar.GSet.singleton x))
+  else MapGroupNonDet
+
+let apply_map_group_det_always_false (l: cbor_map) : Lemma
+  (apply_map_group_det map_group_always_false l == MapGroupFail)
+= ()
+
+let apply_map_group_det_end (l: cbor_map) : Lemma
+  (apply_map_group_det map_group_end l == (if Nil? l then MapGroupDet l else MapGroupFail))
+= ()
+
+let apply_map_group_det_nop (l: cbor_map) : Lemma
+  (apply_map_group_det map_group_nop l == MapGroupDet l)
+= ()
+
+let map_group_equiv_apply_map_group_det (m1 m2: map_group) (l: cbor_map) : Lemma
+  (requires map_group_equiv m1 m2)
+  (ensures apply_map_group_det m1 l == apply_map_group_det m2 l)
+= ()
+
+let apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
+  (requires
+    (forall l . ~ (MapGroupNonDet? (apply_map_group_det m1 l))) /\
+    (forall l . apply_map_group_det m1 l == apply_map_group_det m2 l)
+  )
+  (ensures map_group_equiv m1 m2)
+= ()
+
+let gset_collect_empty
+  (m: map_group)
+  (l: FStar.GSet.set cbor_map)
+: Lemma
+  (requires l `FStar.GSet.equal` FStar.GSet.empty)
+  (ensures gset_collect m l `FStar.GSet.equal` FStar.GSet.empty)
+= ()
+
+let gset_collect_singleton
+  (m: map_group)
+  (l: FStar.GSet.set cbor_map)
+  (x: cbor_map)
+: Lemma
+  (requires l `FStar.GSet.equal` FStar.GSet.singleton x)
+  (ensures gset_collect m l `FStar.GSet.equal` m x)
+= ()
+
+let apply_map_group_det_choice (m1 m2: map_group) (l: cbor_map) : Lemma
+  (match apply_map_group_det m1 l with
+  | MapGroupFail -> apply_map_group_det (m1 `map_group_choice` m2) l == apply_map_group_det m2 l
+  | MapGroupDet l1 -> apply_map_group_det (m1 `map_group_choice` m2) l == MapGroupDet l1
+  | _ -> True
+  )
+= ()
+
+let apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map) : Lemma
+  (match apply_map_group_det m1 l with
+  | MapGroupFail -> apply_map_group_det (m1 `map_group_concat` m2) l == MapGroupFail
+  | MapGroupDet l1 -> apply_map_group_det (m1 `map_group_concat` m2) l == apply_map_group_det m2 l1
+  | _ -> True)
+= match apply_map_group_det m1 l with
+  | MapGroupFail -> 
+    gset_collect_empty m2 (apply_map_group m1 l)
+  | MapGroupDet l1 ->
+    gset_collect_singleton m2 (apply_map_group m1 l) l1
+  | _ -> ()
+
+#push-options "--ifuel 8"
+
+#restart-solver
+let apply_map_group_det_match_item_for
+  (k: Cbor.raw_data_item)
+  (ty: typ)
+  (l: cbor_map)
+: Lemma
+  (apply_map_group_det (map_group_match_item_for k ty) l == (match Cbor.list_ghost_assoc k l with
+  | None ->  MapGroupFail
+  | Some x ->
+    if ty x
+    then MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) l)
+    else MapGroupFail
+  ))
+= map_group_match_item_for_eq k ty l;
+  list_filter_and_extract_assoc k ty l;
+  match list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty)) l with
+  | None -> ()
+  | Some (ll, kv, lr) ->
+    Classical.forall_intro (fun x -> List.Tot.memP_map_intro fst x ll);
+    Classical.forall_intro (fun x -> List.Tot.memP_map_intro fst x lr);
+    List.Tot.for_all_mem (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) ll;
+    list_for_all_implies_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) ll;
+    List.Tot.for_all_mem (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) lr;
+    list_for_all_implies_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) lr;
+    list_filter_append (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) ll (kv :: lr)
+
+#pop-options
+
+let apply_map_group_det_zero_or_more_match_item
+  (key value: typ)
+  (l: cbor_map)
+: Lemma
+  (apply_map_group_det (map_group_zero_or_more (map_group_match_item key value)) l ==
+    MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))) l)
+  )
+= map_group_zero_or_more_match_item_eq key value l
+
+let matches_map_group (g: map_group) (m: cbor_map) : GTot bool =
+    FStar.GSet.mem [] (g m)
+
+let matches_map_group_det (g: map_group) (m: cbor_map) : Lemma
+  (match apply_map_group_det g m with
+  | MapGroupFail -> ~ (matches_map_group g m)
+  | MapGroupDet m' -> matches_map_group g m <==> m' == []
+  | _ -> True)
+= ()
+
 let t_map (g: map_group) : typ =
   fun x -> match x with
   | Cbor.Map m -> 
     FStar.StrongExcludedMiddle.strong_excluded_middle (List.Tot.no_repeats_p (List.Tot.map fst m)) &&
-    FStar.GSet.mem [] (g m)
+    matches_map_group g m
   | _ -> false
-
