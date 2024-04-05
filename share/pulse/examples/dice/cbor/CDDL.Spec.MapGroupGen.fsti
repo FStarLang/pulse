@@ -182,12 +182,15 @@ val apply_map_group_det (m: map_group) (l: cbor_map) : Pure map_group_result
 
 val apply_map_group_det_always_false (l: cbor_map) : Lemma
   (apply_map_group_det map_group_always_false l == MapGroupFail)
+  [SMTPat (apply_map_group_det map_group_always_false l)]
 
 val apply_map_group_det_end (l: cbor_map) : Lemma
   (apply_map_group_det map_group_end l == (if Nil? l then MapGroupDet l else MapGroupFail))
+  [SMTPat (apply_map_group_det map_group_end l)]
 
 val apply_map_group_det_nop (l: cbor_map) : Lemma
   (apply_map_group_det map_group_nop l == MapGroupDet l)
+  [SMTPat (apply_map_group_det map_group_nop l)]
 
 val apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
   (requires
@@ -202,12 +205,22 @@ val apply_map_group_det_choice (m1 m2: map_group) (l: cbor_map) : Lemma
   | MapGroupDet l1 -> apply_map_group_det (m1 `map_group_choice` m2) l == MapGroupDet l1
   | _ -> True
   )
+  [SMTPat (apply_map_group_det (map_group_choice m1 m2) l)]
 
 val apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map) : Lemma
   (match apply_map_group_det m1 l with
   | MapGroupFail -> apply_map_group_det (m1 `map_group_concat` m2) l == MapGroupFail
   | MapGroupDet l1 -> apply_map_group_det (m1 `map_group_concat` m2) l == apply_map_group_det m2 l1
   | _ -> True)
+  [SMTPat (apply_map_group_det (map_group_concat m1 m2) l)]
+
+val apply_map_group_det_mk_cut (cut: typ) (l: cbor_map) : Lemma
+  (apply_map_group_det (map_group_mk_cut cut) l == (
+    if List.Tot.for_all (notp (FStar.Ghost.Pull.pull (matches_map_group_entry cut any))) l
+    then MapGroupDet l
+    else MapGroupFail
+  ))
+  [SMTPat (apply_map_group_det (map_group_mk_cut cut) l)]
 
 val apply_map_group_det_match_item_for
   (k: Cbor.raw_data_item)
@@ -221,6 +234,7 @@ val apply_map_group_det_match_item_for
     then MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) l)
     else MapGroupFail
   ))
+  [SMTPat (apply_map_group_det (map_group_match_item_for k ty) l)]
 
 val apply_map_group_det_zero_or_more_match_item
   (key value: typ)
@@ -229,6 +243,45 @@ val apply_map_group_det_zero_or_more_match_item
   (apply_map_group_det (map_group_zero_or_more (map_group_match_item key value)) l ==
     MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))) l)
   )
+  [SMTPat (apply_map_group_det (map_group_zero_or_more (map_group_match_item key value)) l)]
+
+let andp (#t: Type) (p1 p2: t -> bool) (x: t) : bool =
+  p1 x && p2 x
+
+let rec list_filter_filter (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
+  (ensures (List.Tot.filter p2 (List.Tot.filter p1 l) == List.Tot.filter (andp p1 p2) l))
+  (decreases l)
+  [SMTPat (List.Tot.filter p2 (List.Tot.filter p1 l))]
+= match l with
+  | [] -> ()
+  | a :: q -> list_filter_filter p1 p2 q
+
+let rec list_filter_ext (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
+  (requires forall (x: t) . List.Tot.memP x l ==> p1 x == p2 x)
+  (ensures List.Tot.filter p1 l == List.Tot.filter p2 l)
+  (decreases l)
+= match l with
+  | [] -> ()
+  | a :: q -> list_filter_ext p1 p2 q
+
+let list_filter_filter_comm (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
+  (List.Tot.filter p2 (List.Tot.filter p1 l) == List.Tot.filter p1 (List.Tot.filter p2 l))
+  [SMTPat (List.Tot.filter p2 (List.Tot.filter p1 l))]
+= list_filter_filter p1 p2 l;
+  list_filter_filter p2 p1 l;
+  list_filter_ext (andp p1 p2) (andp p2 p1) l
+
+let list_filter_implies_1 (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
+  (requires (forall (x: t) . (List.Tot.memP x l /\ p1 x) ==> p2 x))
+  (ensures List.Tot.filter p2 (List.Tot.filter p1 l) == List.Tot.filter p1 l)
+= list_filter_filter p1 p2 l;
+  list_filter_ext p1 (andp p1 p2) l
+
+let list_filter_implies_2 (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
+  (requires (forall (x: t) . (List.Tot.memP x l /\ p1 x) ==> p2 x))
+  (ensures List.Tot.filter p1 (List.Tot.filter p2 l) == List.Tot.filter p1 l)
+= list_filter_filter_comm p1 p2 l;
+  list_filter_implies_1 p1 p2 l
 
 val matches_map_group (g: map_group) (m: cbor_map) : GTot bool
 

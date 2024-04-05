@@ -929,6 +929,8 @@ let apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map) : Lemma
     gset_collect_singleton m2 (apply_map_group m1 l) l1
   | _ -> ()
 
+let apply_map_group_det_mk_cut cut l = ()
+
 #restart-solver
 let apply_map_group_det_match_item_for
   (k: Cbor.raw_data_item)
