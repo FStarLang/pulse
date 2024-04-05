@@ -26,95 +26,114 @@ module U32 = FStar.UInt32
 module T = FStar.Tactics
 
 [@@erasable]
-val ref ([@@@unused]a:Type u#0) (p : preorder a) (anc : anchor_rel p) : Type u#0
+val ref ([@@@unused]a:Type u#0) (p : preorder a) (anc : anchor_rel p)
+: Type u#0
 
 instance val ref_non_informative (a:Type0) (p : preorder a) (anc : anchor_rel p)
-  : NonInformative.non_informative (ref a p anc)
+: NonInformative.non_informative (ref a p anc)
 
-val pts_to_full
+val owns 
   (#a:Type) (#p:_) (#anc:_)
   (r:ref a p anc)
-  (#[T.exact (`full_perm)] p:perm)
-  (n:a) : vprop
-
-val pts_to
-  (#a:Type) (#p:_) (#anc:_)
-  (r:ref a p anc)
-  (#[T.exact (`full_perm)] p:perm)
-  (n:a) : vprop
-
-val is_small_pts_to
-  (#a:Type) (#p:_) (#anc:_)
-  (r:ref a p anc)
-  (#p:perm)
-  (n:a) :
-  Lemma (is_small (pts_to r #p n))
-        [SMTPat (pts_to r #p n)]
+  (#[T.exact (`full_perm)] f:perm)
+  (n:a)
+  (with_anchor:bool)
+: vprop
 
 val anchored
   (#[@@@equate_by_smt]a:Type)
   (#[@@@equate_by_smt]p:_)
   (#[@@@equate_by_smt]anc:_)
   ([@@@equate_by_smt] r:ref a p anc)
-  ([@@@equate_by_smt] n:a) : (v:vprop{is_small v})
-
-val alloc (#a:Type) (x:a) (#p:_) (#anc:anchor_rel p)
-  : stt_ghost (ref a p anc) (pure (anc x x)) (fun r -> pts_to_full r x)
-
-val read (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#f:perm) (#v:erased a)
-  : stt_ghost (w:a{p v w})
-        (pts_to r #f v)
-        (fun w -> pts_to r #f w)
-
-val read' (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#f:perm) (#v:erased a)
-  : stt_ghost (erased (w:a{p v w}))
-        (pts_to r #f v)
-        (fun w -> pts_to r #f w)
-
-val read_full' (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#f:perm) (#v:erased a)
-  : stt_ghost (erased (w:a{p v w}))
-        (pts_to_full r #f v)
-        (fun w -> pts_to_full r #f w)
-
-val write (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v:erased a) (w : erased a)
-  : stt_ghost unit
-        (pts_to r v ** pure (p v w /\ (forall anchor. anc anchor v ==> anc anchor w)))
-        (fun _ -> pts_to r w)
-
-val write_full (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v:erased a) (w : erased a)
-  : stt_ghost unit
-        (pts_to_full r v ** pure (p v w /\ True))
-        (fun _ -> pts_to_full r w)
-
-val drop_anchor (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#v:a)
-  : stt_ghost unit
-        (pts_to_full r v)
-        (fun _ -> pts_to r v ** anchored r v)
-
-val lift_anchor (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#v:a) (va:a)
-  : stt_ghost unit
-        (pts_to r v ** anchored r va)
-        (fun _ -> pts_to_full r v ** pure (anc va v /\ True))
-
-val recall_anchor (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#v:a) (va:a) (#f:perm)
-  : stt_ghost unit
-        (pts_to r #f v ** anchored r va)
-        (fun _ -> pts_to r #f v ** anchored r va ** pure (anc va v))
+  ([@@@equate_by_smt] n:a) 
+: v:vprop{is_small v}
 
 val snapshot (#a:Type) (#p:_) (#anc:_) (r : ref a p anc) (v:a)
-  : vprop
+: v:vprop{is_small v}
 
-val take_snapshot (#a:Type) (#p:_) (#f:perm) (#anc:anchor_rel p) (r : ref a p anc) (#v:a)
-  : stt_ghost unit
-        (pts_to r #f v)
-        (fun _ -> pts_to r #f v ** snapshot r v)
+let pts_to_full
+  (#a:Type) (#p:_) (#anc:_)
+  (r:ref a p anc)
+  (#[T.exact (`full_perm)] f:perm)
+  (n:a)
+: vprop
+= owns r #f n true
 
-val take_snapshot' (#a:Type) (#p:_) (#f:perm) (#anc:anchor_rel p) (r : ref a p anc) (#v:a)
-  : stt_ghost unit
-        (pts_to_full r #f v)
-        (fun _ -> pts_to_full r #f v ** snapshot r v)
+let pts_to
+  (#a:Type) (#p:_) (#anc:_)
+  (r:ref a p anc)
+  (#[T.exact (`full_perm)] f:perm)
+  (n:a)
+: vprop
+= owns r #f n false
 
-val recall_snapshot (#a:Type) (#p:_) (#anc:anchor_rel p) (r : ref a p anc) (#v0 #v:a)
-  : stt_ghost unit
-        (pts_to r v ** snapshot r v0)
-        (fun _ -> pts_to r v ** snapshot r v0 ** pure (p v0 v /\ True))
+val is_small_pts_to
+  (#a:Type) (#p:_) (#anc:_)
+  (r:ref a p anc)
+  (#p:perm)
+  (n:a)
+  (with_anchor:bool)
+: Lemma (is_small (owns r #p n with_anchor))
+        [SMTPat (owns r #p n with_anchor)]
+
+
+val alloc (#a:Type) (x:a) (#p:_) (#anc:anchor_rel p)
+: stt_ghost (ref a p anc)
+    (pure (anc x x))
+    (fun r -> pts_to_full r x)
+
+val read (#a:Type) (#p:_) (#anc:_) (#b:_) (r:ref a p anc) (#f:perm) (#v:erased a)
+: stt_ghost (w:a{p v w})
+    (owns r #f v b)
+    (fun w -> owns r #f w b)
+
+val read' (#a:Type) (#p:_) (#anc:_) (#b:_) (r:ref a p anc) (#f:perm) (#v:erased a)
+: stt_ghost (erased (w:a{p v w}))
+    (owns r #f v b)
+    (fun w -> owns r #f w b)
+
+val write (#a:Type) (#p:_) (#anc:_) (#b:_) (r:ref a p anc) (#v:erased a) (w : erased a)
+: stt_ghost unit
+    (owns r v b ** pure (p v w /\ (forall anchor. anc anchor v ==> anc anchor w)))
+    (fun _ -> owns r w b)
+
+val write_full (#a:Type) (#p:_) (#anc:_) (r:ref a p anc) (#v:erased a) (w : erased a)
+: stt_ghost unit
+    (pts_to_full r v ** pure (p v w /\ True))
+    (fun _ -> pts_to_full r w)
+
+val drop_anchor (#a:Type) (#p:_) (#anc:_) (#f:_) (r : ref a p anc) (#v:a)
+: stt_ghost unit
+    (owns r #f v true)
+    (fun _ -> owns r #f v false ** anchored r v)
+
+val share (#a:Type) (#p:_) (#anc:_) (#f #g:_) (r : ref a p anc) (#v:a)
+: stt_ghost unit
+    (pts_to r #(sum_perm f g) v)
+    (fun _ -> pts_to r #f v ** pts_to r #g v)
+
+val gather (#a:Type) (#p:_) (#anc:_) (#f #g:_) (r : ref a p anc) (#v #u:a)
+: stt_ghost unit
+    (pts_to r #f v ** pts_to r #g u)
+    (fun _ -> pts_to r #(sum_perm f g) v ** pure (v == u))
+
+val lift_anchor (#a:Type) (#p:_) (#anc:_) (r : ref a p anc) (#v:a) (va:a)
+: stt_ghost unit
+    (pts_to r v ** anchored r va)
+    (fun _ -> pts_to_full r v ** pure (anc va v /\ True))
+
+val recall_anchor (#a:Type) (#p:_) (#anc:_) (r : ref a p anc) (#v:a) (va:a) (#f:perm)
+: stt_ghost unit
+    (pts_to r #f v ** anchored r va)
+    (fun _ -> pts_to r #f v ** anchored r va ** pure (anc va v))
+
+val take_snapshot (#a:Type) (#p:_) (#f:perm) (#b:_) (#anc:anchor_rel p) (r : ref a p anc) (#v:a)
+: stt_ghost unit
+    (owns r #f v b)
+    (fun _ -> owns r #f v b ** snapshot r v)
+
+val recall_snapshot (#a:Type) (#p:_) (#f:perm) (#b:_) (#anc:anchor_rel p)
+      (r : ref a p anc) (#v0 #v:a)
+: stt_ghost unit
+    (owns r #f v b ** snapshot r v0)
+    (fun _ -> owns r #f v b ** snapshot r v0 ** pure (p v0 v /\ True))

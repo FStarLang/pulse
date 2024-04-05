@@ -23,14 +23,120 @@ module FRAP = Pulse.Lib.FractionalAnchoredPreorder
 let ref (a:Type u#1) (p:preorder a) (anc:anchor_rel p) =
   ghost_pcm_ref (FRAP.pcm #a #p #anc)
 
-let pts_to_anchored
-  (#a:Type) (#p:_) (#anc:anchor_rel p)
-  (r:ref a p anc)
-  (#[T.exact (`full_perm)] f:perm)
-  (n:a)
-  = pure (anc n n) ** 
-    (assume (anc n n); // limitation, should be true by the previous resource
-     ghost_pcm_pts_to #_ #_ r (FRAP.Owns ((Some f, Some n), [n])))
+let revealer_ref (a:Type) (p : preorder a) (anc : anchor_rel p) 
+: Pulse.Lib.NonInformative.revealer (ref a p anc)
+= fun (r:erased (ref a p anc)) -> reveal r
+
+let ref_non_informative (a:Type) (p : preorder a) (anc : anchor_rel p)
+: NonInformative.non_informative (ref a p anc)
+= let open Pulse.Lib.NonInformative in
+  { reveal = revealer_ref a p anc }
+
+let perm_of #a (#p:preorder a) (#anc:anchor_rel p) (av:FRAP.avalue anc)
+: option perm 
+= fst (fst av)
+
+let has_value  #a (#p:preorder a) (#anc:anchor_rel p) (av:FRAP.avalue anc)
+: bool
+= Cons? (snd av)
+
+let value_of #a (#p:preorder a) (#anc:anchor_rel p)
+      (av:FRAP.avalue anc { has_value av })
+: a
+= PulseCore.Preorder.curval (snd av)
+
+let owns_pred
+    (#a:Type u#1)
+    (#p:preorder a)
+    (#anc:anchor_rel p)
+    (f:perm)
+    (n:a)
+    (with_anchor:bool)
+    (av:FRAP.avalue anc)
+: prop
+= (with_anchor <==> FRAP.has_anchor (fst av)) /\
+  perm_of av == Some f /\
+  has_value av /\
+  n == value_of av
+
+let owns_pred_without_anchor
+    (#a:Type u#1)
+    (#p:preorder a)
+    (#anc:anchor_rel p)
+    (n:a)
+    (av:FRAP.avalue anc)
+: Lemma
+  (requires owns_pred full_perm n false av)
+  (ensures FRAP.avalue_owns_anchored av)
+= ()
+
+let owns_pred_with_anchor
+    (#a:Type u#1)
+    (#p:preorder a)
+    (#anc:anchor_rel p)
+    (n:a)
+    (av:FRAP.avalue anc)
+: Lemma
+  (requires owns_pred full_perm n true av)
+  (ensures FRAP.avalue_owns av)
+= ()
+
+let split_fraction 
+    (#a:Type u#1)
+    (#p:preorder a)
+    (#anc:anchor_rel p)
+    (f0 f1:perm)
+    (n:a)
+    (av:FRAP.avalue anc {
+      owns_pred (sum_perm f0 f1) n false av
+    })
+: res:(FRAP.avalue anc & FRAP.avalue anc) {
+    owns_pred f0 n false (fst res) /\
+    owns_pred f0 n false (snd res) /\
+    FRAP.avalue_composable (fst res) (snd res) /\
+    FRAP.compose_avalue (fst res) (snd res) == av
+  } 
+= admit()
+
+let split_anchor
+    (#a:Type u#1)
+    (#p:preorder a)
+    (#anc:anchor_rel p)
+    (f:perm)
+    (n:a)
+    (av:FRAP.avalue anc {
+      owns_pred f n true av
+    })
+: res:(FRAP.avalue anc & FRAP.avalue anc) {
+    owns_pred f0 n false (fst res) /\
+    owns_pred f0 n false (snd res) /\
+    FRAP.avalue_composable (fst res) (snd res) /\
+    FRAP.compose_avalue (fst res) (snd res) == av
+  } 
+= admit()
+
+let split_fraction_lemma
+    (#a:Type u#1)
+    (#p:preorder a)
+    (#anc:anchor_rel p)
+    (f0 f1:perm)
+    (n:a)
+    (av:FRAP.avalue anc)
+: Lemma
+  (requires owns_pred (sum_perm f0 f1) n false av)
+  (ensures True)
+= admit()
+
+let owns #a #p #anc
+    (r:ref a p anc)
+    (#[T.exact (`full_perm)] f:perm)
+    (n:a)
+    (with_anchor:bool)
+: vprop
+= exists* v. 
+    ghost_pcm_pts_to r v **
+    pure (Owns? v /\ owns_pred f n with_anchor (Owns?._0 v))
+
 
 let pts_to
   (#a:Type) (#p:_) (#anc:anchor_rel p)
