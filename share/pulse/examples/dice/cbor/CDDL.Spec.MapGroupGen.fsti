@@ -139,10 +139,6 @@ let matches_map_group_entry
 : GTot bool
 = key (fst x) && value (snd x)
 
-val map_group_equiv
-  (m1 m2: map_group)
-: Tot prop
-
 val map_group_choice (m1 m2: map_group) : map_group
 
 let map_group_zero_or_one (m: map_group) : map_group =
@@ -150,14 +146,8 @@ let map_group_zero_or_one (m: map_group) : map_group =
 
 val map_group_concat (m1 m2: map_group) : map_group
 
-val map_group_concat_equiv (m1 m2 m1' m2': map_group) : Lemma
-  (requires m1 `map_group_equiv` m1' /\
-    m2 `map_group_equiv` m2'
-  )
-  (ensures (m1 `map_group_concat` m2) `map_group_equiv` (m1' `map_group_concat` m2'))
-
 val map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
-  (map_group_concat m1 (map_group_concat m2 m3) `map_group_equiv` map_group_concat (map_group_concat m1 m2) m3)
+  (map_group_concat m1 (map_group_concat m2 m3) == map_group_concat (map_group_concat m1 m2) m3)
 
 val map_group_mk_cut (cut: typ) : map_group
 
@@ -199,16 +189,12 @@ val apply_map_group_det_end (l: cbor_map) : Lemma
 val apply_map_group_det_nop (l: cbor_map) : Lemma
   (apply_map_group_det map_group_nop l == MapGroupDet l)
 
-val map_group_equiv_apply_map_group_det (m1 m2: map_group) (l: cbor_map) : Lemma
-  (requires map_group_equiv m1 m2)
-  (ensures apply_map_group_det m1 l == apply_map_group_det m2 l)
-
 val apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
   (requires
     (forall l . ~ (MapGroupNonDet? (apply_map_group_det m1 l))) /\
     (forall l . apply_map_group_det m1 l == apply_map_group_det m2 l)
   )
-  (ensures map_group_equiv m1 m2)
+  (ensures m1 == m2)
 
 val apply_map_group_det_choice (m1 m2: map_group) (l: cbor_map) : Lemma
   (match apply_map_group_det m1 l with
