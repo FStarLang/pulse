@@ -355,11 +355,23 @@ let map_group_match_item_witness_pred_is_sublist_of (key value: typ) (l l': list
 = let (l1, kv, l2) = x in
   list_remove_is_sublist_of l1 kv l2
 
-let map_group_match_item (key value: typ) : map_group =
-  fun l -> FStar.GSet.comprehend (fun l' ->
+let map_group_match_item_comprehend
+  (key value: typ)
+  (l: cbor_map)
+  (l': list (Cbor.raw_data_item & Cbor.raw_data_item))
+: GTot bool
+=
     FStar.StrongExcludedMiddle.strong_excluded_middle (exists x .
       map_group_match_item_witness_pred key value l l' x
-  ))
+    )
+
+let map_group_match_item (key value: typ) : map_group =
+  fun l -> FStar.GSet.comprehend (map_group_match_item_comprehend key value l)
+
+let map_group_match_item_elim (key value: typ) (l: cbor_map) (l': list (Cbor.raw_data_item & Cbor.raw_data_item)) : Ghost _
+  (requires (FStar.GSet.mem l' (map_group_match_item key value l)))
+  (ensures (fun x -> map_group_match_item_witness_pred key value l l' x))
+= FStar.IndefiniteDescription.indefinite_description_ghost _ (map_group_match_item_witness_pred key value l l')
 
 let gset_map_witness_pred (#t1 #t2: Type) (f: t1 -> GTot t2) (s: FStar.GSet.set t1) x2 x1 : GTot prop =
   x2 == f x1 /\ FStar.GSet.mem x1 s
@@ -709,6 +721,144 @@ let map_group_match_item_for_eq
     list_map_is_sublist_of fst lr l;
     list_no_repeats_p_is_sublist_of (List.Tot.map fst lr) (List.Tot.map fst l);
     map_group_match_item_for_eq_none k ty lr
+
+let rec list_for_all_implies_filter
+  (#t: Type)
+  (f: t -> bool)
+  (l: list t)
+: Lemma
+  (requires (List.Tot.for_all f l))
+  (ensures (List.Tot.filter f l == l))
+= match l with
+  | [] -> ()
+  | _ :: q -> list_for_all_implies_filter f q
+
+let gset_equal_intro
+  (#t: Type)
+  (s1 s2: FStar.GSet.set t)
+  (prf12: (x: t) -> Lemma
+    (requires FStar.GSet.mem x s1)
+    (ensures FStar.GSet.mem x s2)
+  )
+  (prf21: (x: t) -> Lemma
+    (requires FStar.GSet.mem x s2)
+    (ensures FStar.GSet.mem x s1)
+  )
+: Lemma
+  (s1 == s2)
+= Classical.forall_intro (Classical.move_requires prf12);
+  Classical.forall_intro (Classical.move_requires prf21);
+  assert (s1 `FStar.GSet.equal` s2)
+
+let rec list_filter_append
+  (#t: Type)
+  (f: t -> bool)
+  (l1 l2: list t)
+: Lemma
+  (ensures List.Tot.filter f (l1 `List.Tot.append` l2) == List.Tot.filter f l1 `List.Tot.append` List.Tot.filter f l2)
+  (decreases l1)
+= match l1 with
+  | [] -> ()
+  | _ :: q -> list_filter_append f q l2
+
+let gset_collect_bound_map_group_length_lt
+  (l: cbor_map)
+  (m: map_group)
+  (s: FStar.GSet.set cbor_map)
+: Lemma
+  (requires (forall (x: cbor_map) . FStar.GSet.mem x s ==> List.Tot.length x < List.Tot.length l))
+  (ensures (
+    gset_collect (bound_map_group l m) s `FStar.GSet.equal` gset_collect m s
+  ))
+= ()
+
+let map_group_match_item_length
+  (key value: typ)
+  (l: cbor_map)
+  (l': list (Cbor.raw_data_item & Cbor.raw_data_item))
+: Lemma
+  (requires FStar.GSet.mem l' (map_group_match_item key value l))
+  (ensures List.Tot.length l' < List.Tot.length l)
+  [SMTPat (FStar.GSet.mem l' (map_group_match_item key value l))]
+= let (l1, kv, l2) = FStar.IndefiniteDescription.indefinite_description_ghost _ (map_group_match_item_witness_pred key value l l') in
+  List.Tot.append_length l1 (kv :: l2);
+  List.Tot.append_length l1 l2
+
+#push-options "--z3rlimit 16"
+
+#restart-solver
+let rec map_group_zero_or_more_match_item_eq
+  (key value: typ)
+  (l: cbor_map)
+: Lemma
+  (ensures map_group_zero_or_more (map_group_match_item key value) l `FStar.GSet.equal`
+    FStar.GSet.singleton (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))) l))
+  (decreases (List.Tot.length l))
+=
+  let m = map_group_match_item key value in
+  let f = FStar.Ghost.Pull.pull (matches_map_group_entry key value) in
+  let gset_collect_map_group_zero_or_more_match_item_eq
+    (s: FStar.GSet.set cbor_map)
+  : Lemma
+    (requires (forall (x: cbor_map) . FStar.GSet.mem x s ==> List.Tot.length x < List.Tot.length l))
+    (ensures gset_collect (map_group_zero_or_more m) s `FStar.GSet.equal`
+      gset_map (List.Tot.filter (notp f)) s
+    )
+  = gset_equal_intro
+      (gset_collect (map_group_zero_or_more m) s)
+      (gset_map (List.Tot.filter (notp f)) s)
+      (fun l' ->
+        let l1 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_collect_witness_pred (map_group_zero_or_more m) s l') in
+        map_group_zero_or_more_match_item_eq key value l1;
+        assert (gset_map_witness_pred (List.Tot.filter (notp f)) s l' l1)
+      )
+      (fun l' ->
+        let l1 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_map_witness_pred (List.Tot.filter (notp f)) s l') in
+        map_group_zero_or_more_match_item_eq key value l1;
+        assert (gset_collect_witness_pred (map_group_zero_or_more m) s l' l1)
+      )
+  in
+  assert_norm (map_group_zero_or_more m l == (let res1 = apply_map_group m l in
+    if FStar.StrongExcludedMiddle.strong_excluded_middle (res1 == FStar.GSet.empty)
+    then FStar.GSet.singleton l
+    else gset_collect (bound_map_group l (map_group_zero_or_more m)) res1
+  ));
+  let res1 = apply_map_group m l in
+  map_group_match_item_alt_correct key value l;
+  match list_filter_and_extract f l with
+  | None ->
+    assert (apply_map_group m l `FStar.GSet.equal` FStar.GSet.empty);
+    list_for_all_implies_filter (notp f) l
+  | Some (l1, kv, l2) ->
+    assert (~ (apply_map_group m l == FStar.GSet.empty));
+    gset_collect_bound_map_group_length_lt l (map_group_zero_or_more m) res1;
+    gset_collect_map_group_zero_or_more_match_item_eq res1;
+    assert (map_group_zero_or_more m l == gset_map (List.Tot.filter (notp f)) res1);
+    gset_equal_intro
+      (FStar.GSet.singleton (List.Tot.filter (notp f) l)) 
+      (gset_map (List.Tot.filter (notp f)) res1)
+      (fun l' ->
+        assert (l' == List.Tot.filter (notp f) l);
+        assert (FStar.GSet.mem (l1 `List.Tot.append` l2) res1);
+        list_filter_append (notp f) l1 l2;
+        list_filter_append (notp f) l1 (kv :: l2);
+        assert (gset_map_witness_pred (List.Tot.filter (notp f)) res1 l' (l1 `List.Tot.append` l2))
+      )
+      (fun l' ->
+        let l1 = FStar.IndefiniteDescription.indefinite_description_ghost _ (gset_map_witness_pred (List.Tot.filter (notp f)) res1 l') in
+        assert (FStar.GSet.mem l1 res1);
+        let (ll, kv, lr) = map_group_match_item_elim key value l l1 in
+        list_filter_append (notp f) ll lr;
+        list_filter_append (notp f) ll (kv :: lr);
+        assert (l == ll `List.Tot.append` (kv :: lr));
+        assert (l1 == ll `List.Tot.append` lr);
+        assert (f kv);
+        assert (l' == List.Tot.filter (notp f) l1);
+        assert (List.Tot.filter (notp f) (kv :: lr) == List.Tot.filter (notp f) lr);
+        assert (l' == List.Tot.filter (notp f) l)
+      )
+
+#pop-options
 
 let t_map (g: map_group) : typ =
   fun x -> match x with
