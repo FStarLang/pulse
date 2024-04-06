@@ -235,8 +235,9 @@ let default_args_group =
 let get_profile_profile_descriptor = 1uL
 
 let get_profile_output_args_group =
-  CddlMap.map_group_zero_or_one (Cbor.Int64 Cbor.cbor_major_type_uint64 get_profile_profile_descriptor `CddlMap.map_group_match_item_for` profile_descriptor) `CddlMap.map_group_concat`
+  CddlMap.map_group_zero_or_one (Cbor.Int64 Cbor.cbor_major_type_uint64 get_profile_profile_descriptor `CddlMap.map_group_match_item_for` profile_descriptor) `CddlMap.map_group_concat` (
   default_args_group
+)
 
 #restart-solver
 let _ : squash (get_profile_output_args_group == default_args_group) = ()
@@ -245,7 +246,6 @@ let _ : squash (get_profile_output_args_group == default_args_group) = ()
   get_profile_output_args_group
 )
 
-(*
 // Section 6.2
 
 [@@CMacro]
@@ -254,40 +254,34 @@ let open_session_initiator_handshake = 1uL
 let open_session_is_migratable = 2uL
 
 let open_session_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal open_session_initiator_handshake `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal open_session_is_migratable `Cddl.MapGroupEntry` Cddl.t_bool) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal open_session_initiator_handshake `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal open_session_is_migratable `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat`
   default_args_group
-))
+)
 
-#push-options "--z3rlimit 32"
-let _ : squash (open_session_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv open_session_input_args_group
-#pop-options
+let _ : squash (open_session_input_args_group == default_args_group) = ()
 
-[@@_input_args] let open_session_input_args = Cddl.t_map open_session_input_args_group
+[@@_input_args] let open_session_input_args = CddlMap.t_map open_session_input_args_group
 
 [@@CMacro]
 let open_session_responder_handshake = 1uL
 
 let open_session_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal open_session_responder_handshake `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal open_session_responder_handshake `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )
 
-#push-options "--z3rlimit 32"
-let _ : squash (open_session_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv open_session_output_args_group
-#pop-options
+let _ : squash (open_session_output_args_group == default_args_group) = ()
 
-[@@_output_args] let open_session_output_args = Cddl.t_map open_session_output_args_group
+[@@_output_args] let open_session_output_args = CddlMap.t_map open_session_output_args_group
 
 let responder_handshake_payload = Cddl.uint
 
 // Section 6.3
 
-[@@_input_args] let close_session_input_args = Cddl.t_map default_args_group
+[@@_input_args] let close_session_input_args = CddlMap.t_map default_args_group
 
-[@@_output_args] let close_session_output_args = Cddl.t_map default_args_group
+[@@_output_args] let close_session_output_args = CddlMap.t_map default_args_group
 
 // Section 6.4
 
@@ -297,32 +291,26 @@ let sync_session_session_id = 1uL
 let sync_session_initiator_counter = 2uL
 
 let sync_session_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sync_session_session_id `Cddl.MapGroupEntry` Cddl.uint) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sync_session_initiator_counter `Cddl.MapGroupEntry` Cddl.uint) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sync_session_session_id `CddlMap.map_group_match_item` Cddl.uint) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sync_session_initiator_counter `CddlMap.map_group_match_item` Cddl.uint) `CddlMap.map_group_concat` (
   default_args_group
 ))
 
-#push-options "--z3rlimit 32"
-let _ : squash (sync_session_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv sync_session_input_args_group
-#pop-options
+let _ : squash (sync_session_input_args_group == default_args_group) = ()
 
-[@@_input_args] let sync_session_input_args = Cddl.t_map sync_session_input_args_group
+[@@_input_args] let sync_session_input_args = CddlMap.t_map sync_session_input_args_group
 
 [@@CMacro]
 let sync_session_responder_counter = 1uL
 
 let sync_session_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sync_session_responder_counter `Cddl.MapGroupEntry` Cddl.uint) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sync_session_responder_counter `CddlMap.map_group_match_item` Cddl.uint) `CddlMap.map_group_concat` (
   default_args_group
 )
 
-#push-options "--z3rlimit 32"
-let _ : squash (sync_session_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv sync_session_output_args_group
-#pop-options
+let _ : squash (sync_session_output_args_group == default_args_group) = ()
 
-[@@_output_args] let sync_session_output_args = Cddl.t_map sync_session_output_args_group
+[@@_output_args] let sync_session_output_args = CddlMap.t_map sync_session_output_args_group
 
 // Section 6.5
 
@@ -334,33 +322,27 @@ let export_session_importer_identity = 2uL
 let export_session_psk = 3uL
 
 let export_session_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal export_session_session_id `Cddl.MapGroupEntry` Cddl.uint) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal export_session_importer_identity `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal export_session_psk `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal export_session_session_id `CddlMap.map_group_match_item` Cddl.uint) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal export_session_importer_identity `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal export_session_psk `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )))
 
-#push-options "--z3rlimit 32"
-let _ : squash (export_session_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv export_session_input_args_group
-#pop-options
+let _ : squash (export_session_input_args_group == default_args_group) = ()
 
-[@@_input_args] let export_session_input_args = Cddl.t_map export_session_input_args_group
+[@@_input_args] let export_session_input_args = CddlMap.t_map export_session_input_args_group
 
 [@@CMacro]
 let export_session_exported_data = 1uL
 
 let export_session_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal export_session_exported_data `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal export_session_exported_data `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )
 
-#push-options "--z3rlimit 32"
-let _ : squash (export_session_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv export_session_output_args_group
-#pop-options
+let _ : squash (export_session_output_args_group == default_args_group) = ()
 
-[@@_output_args] let export_session_output_args = Cddl.t_map export_session_output_args_group
+[@@_output_args] let export_session_output_args = CddlMap.t_map export_session_output_args_group
 
 // Section 6.6
 
@@ -374,19 +356,16 @@ let import_session_exported_data = 3uL
 let import_session_psk = 4uL
 
 let import_session_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal import_session_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal import_session_retain_context `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal import_session_exported_data `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal import_session_psk `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal import_session_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal import_session_retain_context `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal import_session_exported_data `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal import_session_psk `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 ))))
 
-#push-options "--z3rlimit 32"
-let _ : squash (import_session_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv import_session_input_args_group
-#pop-options
+let _ : squash (import_session_input_args_group == default_args_group) = ()
 
-[@@_input_args] let import_session_input_args = Cddl.t_map import_session_input_args_group
+[@@_input_args] let import_session_input_args = CddlMap.t_map import_session_input_args_group
 
 [@@CMacro]
 let import_session_importer_identity = 1uL
@@ -394,17 +373,14 @@ let import_session_importer_identity = 1uL
 let import_session_new_context_handle = 2uL
 
 let import_session_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal import_session_importer_identity `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal import_session_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal import_session_importer_identity `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal import_session_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 ))
 
-#push-options "--z3rlimit 32"
-let _ : squash (import_session_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv import_session_output_args_group
-#pop-options
+let _ : squash (import_session_output_args_group == default_args_group) = ()
 
-[@@_output_args] let import_session_output_args = Cddl.t_map import_session_output_args_group
+[@@_output_args] let import_session_output_args = CddlMap.t_map import_session_output_args_group
 
 // Section 6.7
 
@@ -416,33 +392,27 @@ let initialize_context_use_default_context = 2uL
 let initialize_context_seed = 3uL
 
 let initialize_context_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal initialize_context_simulation `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal initialize_context_use_default_context `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal initialize_context_seed `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal initialize_context_simulation `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal initialize_context_use_default_context `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal initialize_context_seed `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )))
 
-#push-options "--z3rlimit 32"
-let _ : squash (initialize_context_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv initialize_context_input_args_group
-#pop-options
+let _ : squash (initialize_context_input_args_group == default_args_group) = ()
 
-[@@_input_args] let initialize_context_input_args = Cddl.t_map initialize_context_input_args_group
+[@@_input_args] let initialize_context_input_args = CddlMap.t_map initialize_context_input_args_group
 
 [@@CMacro]
 let initialize_context_new_context_handle = 1uL
 
 let initialize_context_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal initialize_context_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal initialize_context_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )
 
-#push-options "--z3rlimit 32"
-let _ : squash (initialize_context_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv initialize_context_output_args_group
-#pop-options
+let _ : squash (initialize_context_output_args_group == default_args_group) = ()
 
-[@@_output_args] let initialize_context_output_args = Cddl.t_map initialize_context_output_args_group
+[@@_output_args] let initialize_context_output_args = CddlMap.t_map initialize_context_output_args_group
 
 // Section 6.8
 
@@ -473,23 +443,22 @@ let internal_input_type =
   Cddl.t_uint_literal internal_input_type_dpe_dice
 
 let derive_child_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_retain_parent_context `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_allow_child_to_derive `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_create_certificate `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_new_session_initiator_handshake `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_new_session_is_migratable `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_input_data `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_internal_inputs `Cddl.MapGroupEntry` Cddl.t_array3 (Cddl.array_group3_zero_or_more (Cddl.array_group3_item internal_input_type))) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_retain_parent_context `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_allow_child_to_derive `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_create_certificate `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_new_session_initiator_handshake `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_new_session_is_migratable `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_input_data `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_internal_inputs `CddlMap.map_group_match_item` Cddl.t_array3 (Cddl.array_group3_zero_or_more (Cddl.array_group3_item internal_input_type))) `CddlMap.map_group_concat` (
   default_args_group
 ))))))))
 
-#push-options "--z3rlimit 32 --fuel 10"
-let _ : squash (derive_child_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv derive_child_input_args_group
+#push-options "--z3rlimit 16"
+let _ : squash (derive_child_input_args_group == default_args_group) = ()
 #pop-options
 
-[@@_input_args] let derive_child_input_args = Cddl.t_map derive_child_input_args_group
+[@@_input_args] let derive_child_input_args = CddlMap.t_map derive_child_input_args_group
 
 [@@CMacro]
 let derive_child_new_context_handle = 1uL
@@ -499,18 +468,15 @@ let derive_child_new_session_responder_handshake = 2uL
 let derive_child_parent_context_handle = 3uL
 
 let derive_child_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_new_session_responder_handshake `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_child_parent_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_new_session_responder_handshake `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_child_parent_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )))
 
-#push-options "--z3rlimit 32"
-let _ : squash (derive_child_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv derive_child_output_args_group
-#pop-options
+let _ : squash (derive_child_output_args_group == default_args_group) = ()
 
-[@@_output_args] let derive_child_output_args = Cddl.t_map derive_child_output_args_group
+[@@_output_args] let derive_child_output_args = CddlMap.t_map derive_child_output_args_group
 
 // Section 6.9
 
@@ -547,20 +513,17 @@ let policy_type =
   Cddl.t_uint_literal tcg_dice_kp_assertLoc
 
 let certify_key_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal certify_key_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal certify_key_retain_context `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal certify_key_public_key `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal certify_key_label `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal certify_key_policies `Cddl.MapGroupEntry` Cddl.t_array3 (Cddl.array_group3_zero_or_more (Cddl.array_group3_item policy_type))) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal certify_key_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal certify_key_retain_context `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal certify_key_public_key `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal certify_key_label `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal certify_key_policies `CddlMap.map_group_match_item` Cddl.t_array3 (Cddl.array_group3_zero_or_more (Cddl.array_group3_item policy_type))) `CddlMap.map_group_concat` (
   default_args_group
 )))))
 
-#push-options "--z3rlimit 32"
-let _ : squash (certify_key_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv certify_key_input_args_group
-#pop-options
+let _ : squash (certify_key_input_args_group == default_args_group) = ()
 
-[@@_input_args] let certify_key_input_args = Cddl.t_map certify_key_input_args_group
+[@@_input_args] let certify_key_input_args = CddlMap.t_map certify_key_input_args_group
 
 [@@CMacro]
 let certify_key_certificate_chain = 1uL
@@ -570,18 +533,17 @@ let certify_key_derived_public_key = 2uL
 let certify_key_new_context_handle = 3uL
 
 let certify_key_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal certify_key_certificate_chain `Cddl.MapGroupEntry` Cddl.t_array3 (Cddl.array_group3_one_or_more (Cddl.array_group3_item Cddl.bytes))) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal certify_key_derived_public_key `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal certify_key_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal certify_key_certificate_chain `CddlMap.map_group_match_item` Cddl.t_array3 (Cddl.array_group3_one_or_more (Cddl.array_group3_item Cddl.bytes))) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal certify_key_derived_public_key `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal certify_key_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )))
 
-#push-options "--z3rlimit 32"
-let _ : squash (certify_key_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv certify_key_output_args_group
+#push-options "--z3rlimit 16"
+let _ : squash (certify_key_output_args_group == default_args_group) = ()
 #pop-options
 
-[@@_output_args] let certify_key_output_args = Cddl.t_map certify_key_output_args_group
+[@@_output_args] let certify_key_output_args = CddlMap.t_map certify_key_output_args_group
 
 // Section 6.10
 
@@ -597,20 +559,19 @@ let sign_is_symmetric = 4uL
 let sign_to_be_signed = 5uL
 
 let sign_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sign_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sign_retain_context `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sign_label `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sign_is_symmetric `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sign_to_be_signed `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sign_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sign_retain_context `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sign_label `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sign_is_symmetric `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sign_to_be_signed `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )))))
 
-#push-options "--z3rlimit 32 --fuel 8"
-let _ : squash (sign_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv sign_input_args_group
+#push-options "--z3rlimit 16"
+let _ : squash (sign_input_args_group == default_args_group) = ()
 #pop-options
 
-[@@_input_args] let sign_input_args = Cddl.t_map sign_input_args_group
+[@@_input_args] let sign_input_args = CddlMap.t_map sign_input_args_group
 
 [@@CMacro]
 let sign_signature = 1uL
@@ -618,17 +579,14 @@ let sign_signature = 1uL
 let sign_new_context_handle = 2uL
 
 let sign_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sign_signature `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal sign_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sign_signature `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal sign_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 ))
 
-#push-options "--z3rlimit 32 --fuel 8"
-let _ : squash (sign_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv sign_output_args_group
-#pop-options
+let _ : squash (sign_output_args_group == default_args_group) = ()
 
-[@@_output_args] let sign_output_args = Cddl.t_map sign_output_args_group
+[@@_output_args] let sign_output_args = CddlMap.t_map sign_output_args_group
 
 // Section 6.11
 
@@ -644,20 +602,17 @@ let seal_label = 4uL
 let seal_data_to_seal = 5uL
 
 let seal_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal seal_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal seal_retain_context `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal seal_unseal_policy `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal seal_label `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal seal_data_to_seal `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal seal_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal seal_retain_context `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal seal_unseal_policy `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal seal_label `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal seal_data_to_seal `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )))))
 
-#push-options "--z3rlimit 32 --fuel 8"
-let _ : squash (seal_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv seal_input_args_group
-#pop-options
+let _ : squash (seal_input_args_group == default_args_group) = ()
 
-[@@_input_args] let seal_input_args = Cddl.t_map seal_input_args_group
+[@@_input_args] let seal_input_args = CddlMap.t_map seal_input_args_group
 
 [@@CMacro]
 let seal_sealed_data = 1uL
@@ -665,17 +620,14 @@ let seal_sealed_data = 1uL
 let seal_new_context_handle = 2uL
 
 let seal_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal seal_sealed_data `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal seal_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal seal_sealed_data `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal seal_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 ))
 
-#push-options "--z3rlimit 32"
-let _ : squash (seal_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv seal_output_args_group
-#pop-options
+let _ : squash (seal_output_args_group == default_args_group) = ()
 
-[@@_output_args] let seal_output_args = Cddl.t_map seal_output_args_group
+[@@_output_args] let seal_output_args = CddlMap.t_map seal_output_args_group
 
 // Section 6.12
 
@@ -691,20 +643,19 @@ let unseal_label = 4uL
 let unseal_data_to_unseal = 5uL
 
 let unseal_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal unseal_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal unseal_retain_context `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal unseal_is_asymmetric `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal unseal_label `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal unseal_data_to_unseal `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal unseal_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal unseal_retain_context `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal unseal_is_asymmetric `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal unseal_label `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal unseal_data_to_unseal `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )))))
 
-#push-options "--z3rlimit 32 --fuel 8"
-let _ : squash (unseal_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv unseal_input_args_group
+#push-options "--z3rlimit 16"
+let _ : squash (unseal_input_args_group == default_args_group) = ()
 #pop-options
 
-[@@_input_args] let unseal_input_args = Cddl.t_map unseal_input_args_group
+[@@_input_args] let unseal_input_args = CddlMap.t_map unseal_input_args_group
 
 [@@CMacro]
 let unseal_unsealed_data = 1uL
@@ -712,17 +663,14 @@ let unseal_unsealed_data = 1uL
 let unseal_new_context_handle = 2uL
 
 let unseal_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal unseal_unsealed_data `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal unseal_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal unseal_unsealed_data `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal unseal_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 ))
 
-#push-options "--z3rlimit 32"
-let _ : squash (unseal_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv unseal_output_args_group
-#pop-options
+let _ : squash (unseal_output_args_group == default_args_group) = ()
 
-[@@_output_args] let unseal_output_args = Cddl.t_map unseal_output_args_group
+[@@_output_args] let unseal_output_args = CddlMap.t_map unseal_output_args_group
 
 // Section 6.13
 
@@ -736,19 +684,16 @@ let derive_sealing_unseal_policy = 3uL
 let derive_sealing_label = 4uL
 
 let derive_sealing_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_sealing_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_sealing_retain_context `Cddl.MapGroupEntry` Cddl.t_bool) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_sealing_unseal_policy `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_sealing_label `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_sealing_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_sealing_retain_context `CddlMap.map_group_match_item` Cddl.t_bool) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_sealing_unseal_policy `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_sealing_label `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 ))))
 
-#push-options "--z3rlimit 32"
-let _ : squash (derive_sealing_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv derive_sealing_input_args_group
-#pop-options
+let _ : squash (derive_sealing_input_args_group == default_args_group) = ()
 
-[@@_input_args] let derive_sealing_input_args = Cddl.t_map derive_sealing_input_args_group
+[@@_input_args] let derive_sealing_input_args = CddlMap.t_map derive_sealing_input_args_group
 
 [@@CMacro]
 let derive_sealing_derived_public_key = 1uL
@@ -756,17 +701,14 @@ let derive_sealing_derived_public_key = 1uL
 let derive_sealing_new_context_handle = 2uL
 
 let derive_sealing_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_sealing_derived_public_key `Cddl.MapGroupEntry` Cddl.bytes) false (
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal derive_sealing_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_sealing_derived_public_key `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal derive_sealing_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 ))
 
-#push-options "--z3rlimit 32"
-let _ : squash (derive_sealing_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv derive_sealing_output_args_group
-#pop-options
+let _ : squash (derive_sealing_output_args_group == default_args_group) = ()
 
-[@@_output_args] let derive_sealing_output_args = Cddl.t_map derive_sealing_output_args_group
+[@@_output_args] let derive_sealing_output_args = CddlMap.t_map derive_sealing_output_args_group
 
 // Section 6.14
 
@@ -774,31 +716,27 @@ let _ : squash (derive_sealing_output_args_group `Cddl.map_group_equiv` default_
 let rotate_context_handle_context_handle = 1uL
 
 let rotate_context_handle_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal rotate_context_handle_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal rotate_context_handle_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )
 
-#push-options "--z3rlimit 32"
-let _ : squash (rotate_context_handle_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv rotate_context_handle_input_args_group
-#pop-options
+let _ : squash (rotate_context_handle_input_args_group == default_args_group) = ()
 
-[@@_input_args] let rotate_context_handle_input_args = Cddl.t_map rotate_context_handle_input_args_group
+[@@_input_args] let rotate_context_handle_input_args = CddlMap.t_map rotate_context_handle_input_args_group
 
 [@@CMacro]
 let rotate_context_handle_new_context_handle = 2uL
 
 let rotate_context_handle_output_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal rotate_context_handle_new_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal rotate_context_handle_new_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )
 
-#push-options "--z3rlimit 32"
-let _ : squash (rotate_context_handle_output_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv rotate_context_handle_output_args_group
+#push-options "--z3rlimit 16"
+let _ : squash (rotate_context_handle_output_args_group == default_args_group) = ()
 #pop-options
 
-[@@_output_args] let rotate_context_handle_output_args = Cddl.t_map rotate_context_handle_output_args_group
+[@@_output_args] let rotate_context_handle_output_args = CddlMap.t_map rotate_context_handle_output_args_group
 
 // Section 6.15
 
@@ -806,18 +744,15 @@ let _ : squash (rotate_context_handle_output_args_group `Cddl.map_group_equiv` d
 let destroy_context_context_handle = 1uL
 
 let destroy_context_input_args_group =
-  Cddl.map_group_cons_zero_or_one (Cddl.t_uint_literal destroy_context_context_handle `Cddl.MapGroupEntry` Cddl.bytes) false (
+  CddlMap.map_group_zero_or_one (Cddl.t_uint_literal destroy_context_context_handle `CddlMap.map_group_match_item` Cddl.bytes) `CddlMap.map_group_concat` (
   default_args_group
 )
 
-#push-options "--z3rlimit 32"
-let _ : squash (destroy_context_input_args_group `Cddl.map_group_equiv` default_args_group) =
-  Cddl.map_group_ignore_restricted_entries_no_one_equiv destroy_context_input_args_group
-#pop-options
+let _ : squash (destroy_context_input_args_group == default_args_group) = ()
 
-[@@_input_args] let destroy_context_input_args = Cddl.t_map destroy_context_input_args_group
+[@@_input_args] let destroy_context_input_args = CddlMap.t_map destroy_context_input_args_group
 
-[@@_output_args] let destroy_context_output_args = Cddl.t_map default_args_group
+[@@_output_args] let destroy_context_output_args = CddlMap.t_map default_args_group
 
 // Section 5.9.4: summary
 
@@ -835,8 +770,8 @@ let output_args : Cddl.typ = _ by (create_choice_from (`_output_args))
 
 #push-options "--z3rlimit 64"
 #restart-solver
-let _ : squash (input_args `Cddl.typ_equiv` Cddl.t_map default_args_group) = ()
-let _ : squash (output_args `Cddl.typ_equiv` Cddl.t_map default_args_group) = ()
+let _ : squash (input_args `Cddl.typ_equiv` CddlMap.t_map default_args_group) = ()
+let _ : squash (output_args `Cddl.typ_equiv` CddlMap.t_map default_args_group) = ()
 #pop-options
 
 let command_message = Cddl.t_array3 (
@@ -846,7 +781,7 @@ let command_message = Cddl.t_array3 (
 
 let command_message' = Cddl.t_array3 (
   Cddl.array_group3_item command_id `Cddl.array_group3_concat`
-  Cddl.array_group3_item (Cddl.t_map default_args_group)
+  Cddl.array_group3_item (CddlMap.t_map default_args_group)
 )
 
 #push-options "--z3rlimit 32"
@@ -861,7 +796,7 @@ let response_message = Cddl.t_array3 (
 
 let response_message' = Cddl.t_array3 (
   Cddl.array_group3_item error_code `Cddl.array_group3_concat`
-  Cddl.array_group3_item (Cddl.t_map default_args_group)
+  Cddl.array_group3_item (CddlMap.t_map default_args_group)
 )
 
 #push-options "--z3rlimit 32"
