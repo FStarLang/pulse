@@ -199,6 +199,19 @@ val apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
   )
   (ensures m1 == m2)
 
+let apply_map_group_det_map_group_equiv0 (m1 m2: map_group)
+  (prf1: (l: cbor_map) -> Lemma
+    (~ (MapGroupNonDet? (apply_map_group_det m1 l)))
+  )
+  (prf2: (l: cbor_map) -> Lemma
+    (apply_map_group_det m1 l == apply_map_group_det m2 l)
+  )
+: Lemma
+  (ensures m1 == m2)
+= Classical.forall_intro prf1;
+  Classical.forall_intro prf2;
+  apply_map_group_det_map_group_equiv m1 m2
+
 val apply_map_group_det_choice (m1 m2: map_group) (l: cbor_map) : Lemma
   (match apply_map_group_det m1 l with
   | MapGroupFail -> apply_map_group_det (m1 `map_group_choice` m2) l == apply_map_group_det m2 l
@@ -243,7 +256,31 @@ val apply_map_group_det_zero_or_more_match_item
   (apply_map_group_det (map_group_zero_or_more (map_group_match_item key value)) l ==
     MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))) l)
   )
-  [SMTPat (apply_map_group_det (map_group_zero_or_more (map_group_match_item key value)) l)]
+
+val map_group_filter
+  (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
+: map_group
+
+val apply_map_group_det_filter
+  (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
+  (l: cbor_map)
+: Lemma
+  (apply_map_group_det (map_group_filter f) l ==
+    MapGroupDet (List.Tot.filter f l)
+  )
+  [SMTPat (apply_map_group_det (map_group_filter f) l)]
+
+let map_zero_or_more_match_item_alt_eq
+  (key value: typ)
+: Lemma
+  (map_group_zero_or_more (map_group_match_item key value) ==
+    map_group_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value)))
+  )
+  [SMTPat (map_group_zero_or_more (map_group_match_item key value))]
+= Classical.forall_intro (apply_map_group_det_zero_or_more_match_item key value);
+  apply_map_group_det_map_group_equiv
+    (map_group_zero_or_more (map_group_match_item key value))
+    (map_group_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))))
 
 let andp (#t: Type) (p1 p2: t -> bool) (x: t) : bool =
   p1 x && p2 x
@@ -251,10 +288,19 @@ let andp (#t: Type) (p1 p2: t -> bool) (x: t) : bool =
 let rec list_filter_filter (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
   (ensures (List.Tot.filter p2 (List.Tot.filter p1 l) == List.Tot.filter (andp p1 p2) l))
   (decreases l)
-  [SMTPat (List.Tot.filter p2 (List.Tot.filter p1 l))]
+//  [SMTPat (List.Tot.filter p2 (List.Tot.filter p1 l))]
 = match l with
   | [] -> ()
   | a :: q -> list_filter_filter p1 p2 q
+
+#restart-solver
+let map_group_filter_filter (p1 p2: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool) : Lemma
+  (map_group_filter p1 `map_group_concat` map_group_filter p2 == map_group_filter (andp p1 p2))
+  [SMTPat (map_group_filter p1 `map_group_concat` map_group_filter p2)]
+= Classical.forall_intro (list_filter_filter p1 p2);
+  apply_map_group_det_map_group_equiv
+    (map_group_filter p1 `map_group_concat` map_group_filter p2)
+    (map_group_filter (andp p1 p2))
 
 let rec list_filter_ext (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
   (requires forall (x: t) . List.Tot.memP x l ==> p1 x == p2 x)
@@ -266,7 +312,7 @@ let rec list_filter_ext (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
 
 let list_filter_filter_comm (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
   (List.Tot.filter p2 (List.Tot.filter p1 l) == List.Tot.filter p1 (List.Tot.filter p2 l))
-  [SMTPat (List.Tot.filter p2 (List.Tot.filter p1 l))]
+//  [SMTPat (List.Tot.filter p2 (List.Tot.filter p1 l))]
 = list_filter_filter p1 p2 l;
   list_filter_filter p2 p1 l;
   list_filter_ext (andp p1 p2) (andp p2 p1) l
@@ -282,6 +328,15 @@ let list_filter_implies_2 (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
   (ensures List.Tot.filter p1 (List.Tot.filter p2 l) == List.Tot.filter p1 l)
 = list_filter_filter_comm p1 p2 l;
   list_filter_implies_1 p1 p2 l
+
+val map_group_zero_or_one_match_item_filter (key value: typ) (p: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool) : Lemma
+  (requires (
+    forall x . p x ==> notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value)) x
+  ))
+  (ensures
+    map_group_zero_or_one (map_group_match_item key value) `map_group_concat` map_group_filter p == map_group_filter p
+  )
+  [SMTPat (map_group_zero_or_one (map_group_match_item key value) `map_group_concat` map_group_filter p)]
 
 val matches_map_group (g: map_group) (m: cbor_map) : GTot bool
 
