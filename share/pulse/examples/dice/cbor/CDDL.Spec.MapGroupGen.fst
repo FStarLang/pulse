@@ -1078,3 +1078,132 @@ let matches_map_group_det (g: map_group) (m: cbor_map) : Lemma
   | MapGroupDet m' -> matches_map_group g m <==> m' == []
   | _ -> True)
 = ()
+
+let map_group_entry_consumed
+  (l: cbor_map)
+  (entry: (Cbor.raw_data_item & Cbor.raw_data_item))
+  (g: map_group)
+: Tot prop
+= List.Tot.memP entry l /\
+  (exists l' . FStar.GSet.mem l' (g l) /\ ~ (List.Tot.memP entry l'))
+
+let map_group_entry_consumed_matches_map_group
+  (l: cbor_map)
+  (entry: (Cbor.raw_data_item & Cbor.raw_data_item))
+  (g: map_group)
+: Lemma
+  (requires (List.Tot.memP entry l /\ g `matches_map_group` l))
+  (ensures map_group_entry_consumed l entry g)
+= ()
+
+let map_group_entry_consumed_concat
+  (l: cbor_map)
+  (entry: (Cbor.raw_data_item & Cbor.raw_data_item))
+  (g1 g2: map_group)
+: Lemma
+  (requires map_group_entry_consumed l entry (g1 `map_group_concat` g2))
+  (ensures
+    map_group_entry_consumed l entry g1 \/
+    (exists l' . FStar.GSet.mem l' (apply_map_group g1 l) /\ map_group_entry_consumed l' entry g2)
+  )
+= ()
+
+let map_group_entry_consumed_concat_det
+  (l: cbor_map)
+  (entry: (Cbor.raw_data_item & Cbor.raw_data_item))
+  (g1 g2: map_group)
+: Lemma
+  (requires map_group_entry_consumed l entry (g1 `map_group_concat` g2) /\
+    MapGroupDet? (apply_map_group_det g1 l)
+  )
+  (ensures
+    map_group_entry_consumed l entry g1 \/
+    (let MapGroupDet l' = apply_map_group_det g1 l in map_group_entry_consumed l' entry g2)
+  )
+= ()
+
+let rec list_memP_extract
+  (#t: Type)
+  (x: t)
+  (l: list t)
+: Ghost (list t & list t)
+  (requires FStar.List.Tot.memP x l)
+  (ensures fun (ll, lr) ->
+    l == ll `List.Tot.append` (x :: lr)
+  )
+= let a :: q = l in
+  if FStar.StrongExcludedMiddle.strong_excluded_middle (a == x)
+  then ([], q)
+  else
+    let (ll, lr) = list_memP_extract x q in
+    (a :: ll, lr)
+
+let list_memP_map
+  (#a #b: Type)
+  (f: a -> Tot b)
+  (l: list a)
+  (y: b)
+: Lemma
+  (ensures (List.Tot.memP y (List.Tot.map f l) <==> (exists (x : a) . List.Tot.memP x l /\ f x == y)))
+= Classical.move_requires (List.Tot.memP_map_elim f y) l;
+  Classical.forall_intro (fun x -> Classical.move_requires (List.Tot.memP_map_intro f x) l)
+
+let map_group_entry_consumed_match_item_intro
+  (l: cbor_map)
+  (kv: (Cbor.raw_data_item & Cbor.raw_data_item))
+  (key value: typ)
+: Lemma
+  (requires
+    List.Tot.memP kv l /\
+    matches_map_group_entry key value kv
+  )
+  (ensures
+    map_group_entry_consumed l kv (map_group_match_item key value)
+  )
+= let (ll, lr) = list_memP_extract kv l in
+  assert (map_group_match_item_witness_pred key value l (ll `List.Tot.append` lr) (ll, kv, lr));
+  List.Tot.map_append fst ll (kv :: lr);
+  List.Tot.no_repeats_p_append (List.Tot.map fst ll) (List.Tot.map fst (kv :: lr));
+  assert (~ (List.Tot.memP (fst kv) (List.Tot.map fst ll)));
+  assert (~ (List.Tot.memP (fst kv) (List.Tot.map fst lr)));
+  List.Tot.append_memP (List.Tot.map fst ll) (List.Tot.map fst lr) (fst kv);
+  List.Tot.map_append fst ll lr;
+  assert (~ (List.Tot.memP (fst kv) (List.Tot.map fst (ll `List.Tot.append` lr))));
+  Classical.move_requires (List.Tot.memP_map_intro fst kv) (ll `List.Tot.append` lr);
+  assert (~ (List.Tot.memP kv (ll `List.Tot.append` lr)))
+
+let map_group_entry_consumed_match_item_elim
+  (l: cbor_map)
+  (kv: (Cbor.raw_data_item & Cbor.raw_data_item))
+  (key value: typ)
+: Lemma
+  (requires
+    map_group_entry_consumed l kv (map_group_match_item key value)
+  )
+  (ensures
+    List.Tot.memP kv l /\
+    matches_map_group_entry key value kv
+  )
+= let l' = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun l' -> FStar.GSet.mem l' (map_group_match_item key value l) /\ ~ (List.Tot.memP kv l')) in
+  let (ll, kv', lr) = map_group_match_item_elim key value l l' in
+  List.Tot.append_memP ll lr kv;
+  List.Tot.append_memP ll (kv' :: lr) kv;
+  assert (kv == kv')
+
+let map_group_entry_consumed_match_item
+  (l: cbor_map)
+  (kv: (Cbor.raw_data_item & Cbor.raw_data_item))
+  (key value: typ)
+: Lemma
+  (
+    map_group_entry_consumed l kv (map_group_match_item key value) <==> (
+    List.Tot.memP kv l /\
+    matches_map_group_entry key value kv
+  ))
+= Classical.move_requires (map_group_entry_consumed_match_item_intro l kv key) value;
+  Classical.move_requires (map_group_entry_consumed_match_item_elim l kv key) value
+
+let map_group_disjoint
+  (g1 g2: map_group)
+: Tot prop
+= forall l1 l2 entry . ~ (map_group_entry_consumed l1 entry g1 /\ map_group_entry_consumed l2 entry g2)
