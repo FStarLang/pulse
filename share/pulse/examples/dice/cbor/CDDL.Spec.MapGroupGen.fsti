@@ -310,6 +310,14 @@ let rec list_filter_ext (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
   | [] -> ()
   | a :: q -> list_filter_ext p1 p2 q
 
+let map_group_filter_ext (p1 p2: _ -> bool) : Lemma
+  (requires forall x . p1 x == p2 x)
+  (ensures map_group_filter p1 == map_group_filter p2)
+= Classical.forall_intro (Classical.move_requires (list_filter_ext p1 p2));
+  apply_map_group_det_map_group_equiv
+    (map_group_filter p1)
+    (map_group_filter p2)
+
 let list_filter_filter_comm (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
   (List.Tot.filter p2 (List.Tot.filter p1 l) == List.Tot.filter p1 (List.Tot.filter p2 l))
 //  [SMTPat (List.Tot.filter p2 (List.Tot.filter p1 l))]
@@ -337,6 +345,19 @@ val map_group_zero_or_one_match_item_filter (key value: typ) (p: (Cbor.raw_data_
     map_group_zero_or_one (map_group_match_item key value) `map_group_concat` map_group_filter p == map_group_filter p
   )
   [SMTPat (map_group_zero_or_one (map_group_match_item key value) `map_group_concat` map_group_filter p)]
+
+let map_group_zero_or_more_match_item_choice_left
+  (key1 key2 value: typ)
+: Lemma
+  (map_group_zero_or_more (map_group_match_item (key1 `t_choice` key2) value) ==
+    map_group_zero_or_more (map_group_match_item key1 value) `map_group_concat`
+    map_group_zero_or_more (map_group_match_item key2 value)
+  )
+= map_group_filter_ext
+    (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (key1 `t_choice` key2) value)))
+    (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key1 value)) `andp`
+      notp (FStar.Ghost.Pull.pull (matches_map_group_entry key2 value))
+    )
 
 val matches_map_group (g: map_group) (m: cbor_map) : GTot bool
 

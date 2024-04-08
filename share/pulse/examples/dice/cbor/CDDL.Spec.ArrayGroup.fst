@@ -441,7 +441,7 @@ let array_group3_concat_unique_strong_implies_weak
   (array_group3_concat_unique_strong a1 a3 ==> array_group3_concat_unique_weak a1 a3)
 = ()
 
-#push-options "--z3rlimit 64 --fuel 4 --ifuel 4"
+#push-options "--z3rlimit 128 --fuel 4 --ifuel 4"
 #restart-solver
 
 let array_group3_concat_unique_weak_concat_zero_or_more_right

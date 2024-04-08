@@ -45,3 +45,21 @@ let typ_disjoint (a1 a2: typ) : Tot prop
 
 let t_literal (i: Cbor.raw_data_item) : typ =
   (fun x -> FStar.StrongExcludedMiddle.strong_excluded_middle (x == i))
+
+let t_choice (#b: option Cbor.raw_data_item) (t1 t2: bounded_typ_gen b) : bounded_typ_gen b = (fun x -> t1 x || t2 x)
+
+let t_choice_equiv
+  #b
+  (t1 t1' t2 t2' : bounded_typ_gen b)
+: Lemma
+  (requires (t1 `typ_equiv` t1' /\ t2 `typ_equiv` t2'))
+  (ensures ((t1 `t_choice` t2) `typ_equiv` (t1' `t_choice` t2')))
+= ()
+// etc.
+
+let t_choice_simpl
+  #b
+  (t: bounded_typ_gen b)
+: Lemma
+  ((t `t_choice` t) `typ_equiv` t)
+= ()

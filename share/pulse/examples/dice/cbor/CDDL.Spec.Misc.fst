@@ -4,24 +4,6 @@ module Cbor = CBOR.Spec
 module U8 = FStar.UInt8
 module U64 = FStar.UInt64
 
-let t_choice (#b: option Cbor.raw_data_item) (t1 t2: bounded_typ_gen b) : bounded_typ_gen b = (fun x -> t1 x || t2 x)
-
-let t_choice_equiv
-  #b
-  (t1 t1' t2 t2' : bounded_typ_gen b)
-: Lemma
-  (requires (t1 `typ_equiv` t1' /\ t2 `typ_equiv` t2'))
-  (ensures ((t1 `t_choice` t2) `typ_equiv` (t1' `t_choice` t2')))
-= ()
-// etc.
-
-let t_choice_simpl
-  #b
-  (t: bounded_typ_gen b)
-: Lemma
-  ((t `t_choice` t) `typ_equiv` t)
-= ()
-
 // Appendix D
 
 let uint : typ = (fun x -> Cbor.Int64? x && Cbor.Int64?.typ x = Cbor.cbor_major_type_uint64)
