@@ -1069,6 +1069,18 @@ let map_group_zero_or_more_map_group_match_item_for
     (map_group_zero_or_more (map_group_match_item_for key value))
     (map_group_zero_or_one (map_group_match_item_for key value))
 
+let map_group_choice_assoc
+  (g1 g2 g3: map_group)
+: Lemma
+  ((g1 `map_group_choice` g2) `map_group_choice` g3 == g1 `map_group_choice` (g2 `map_group_choice` g3))
+= assert (((g1 `map_group_choice` g2) `map_group_choice` g3) `map_group_equiv` (g1 `map_group_choice` (g2 `map_group_choice` g3)))
+
+let map_group_zero_or_one_choice
+  (g1 g2: map_group)
+: Lemma
+  (map_group_zero_or_one (g1 `map_group_choice` g2) == g1 `map_group_choice` map_group_zero_or_one g2)
+= map_group_choice_assoc g1 g2 map_group_nop
+
 let matches_map_group (g: map_group) (m: cbor_map) : GTot bool =
     FStar.GSet.mem [] (g m)
 
