@@ -1032,6 +1032,43 @@ let map_group_zero_or_one_match_item_filter
       end
     )
 
+let rec list_filter_and_extract_none
+  (#t: Type)
+  (p: t -> bool)
+  (l: list t)
+: Lemma
+  (requires (None? (list_filter_and_extract p l)))
+  (ensures (List.Tot.filter (notp p) l == l))
+= match l with
+  | [] -> ()
+  | a :: q -> list_filter_and_extract_none p q
+
+let list_ghost_assoc_none_filter_matches_map_group_entry_for
+  (key: Cbor.raw_data_item)
+  (value: typ)
+  (l: cbor_map)
+: Lemma
+  (requires (match Cbor.list_ghost_assoc key l with
+  | None -> True
+  | Some v -> ~ (value v)))
+  (ensures List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal key) value))) l == l)
+= list_filter_and_extract_assoc key value l;
+  list_filter_and_extract_none (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal key) value)) l
+
+let map_group_zero_or_more_map_group_match_item_for
+  (key: Cbor.raw_data_item)
+  (value: typ)
+: Lemma
+  (map_group_zero_or_more (map_group_match_item_for key value) ==
+    map_group_zero_or_one (map_group_match_item_for key value)
+  )
+= Classical.forall_intro (Classical.move_requires (
+      list_ghost_assoc_none_filter_matches_map_group_entry_for key value
+  ));
+  apply_map_group_det_map_group_equiv
+    (map_group_zero_or_more (map_group_match_item_for key value))
+    (map_group_zero_or_one (map_group_match_item_for key value))
+
 let matches_map_group (g: map_group) (m: cbor_map) : GTot bool =
     FStar.GSet.mem [] (g m)
 

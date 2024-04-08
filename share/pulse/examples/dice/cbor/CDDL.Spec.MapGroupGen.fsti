@@ -359,6 +359,14 @@ let map_group_zero_or_more_match_item_choice_left
       notp (FStar.Ghost.Pull.pull (matches_map_group_entry key2 value))
     )
 
+val map_group_zero_or_more_map_group_match_item_for
+  (key: Cbor.raw_data_item)
+  (value: typ)
+: Lemma
+  (map_group_zero_or_more (map_group_match_item_for key value) ==
+    map_group_zero_or_one (map_group_match_item_for key value)
+  )
+
 val matches_map_group (g: map_group) (m: cbor_map) : GTot bool
 
 val matches_map_group_det (g: map_group) (m: cbor_map) : Lemma
