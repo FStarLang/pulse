@@ -1021,9 +1021,9 @@ let map_group_concat_assoc' (m1 m2 m3: map_group) : Lemma
 let map_group_concat_assoc m1 m2 m3 =
   map_group_concat_assoc' m1 m2 m3
 
-let map_group_mk_cut (cut: typ) : map_group =
+let map_group_mk_cut_gen (cut: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool) : map_group =
   FE.on_dom_g cbor_map #map_group_codom (fun l -> 
-    if List.Tot.for_all (notp (FStar.Ghost.Pull.pull (matches_map_group_entry cut any))) l
+    if List.Tot.for_all cut l
     then map_group_nop l
     else map_group_always_false l
   )
@@ -1559,7 +1559,16 @@ let apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map)
 
 #pop-options
 
-let apply_map_group_det_mk_cut cut l = ()
+let apply_map_group_det_mk_cut_gen
+  (cut: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
+  (l: cbor_map)
+: Lemma
+  (apply_map_group_det (map_group_mk_cut_gen cut) l == (
+    if List.Tot.for_all cut l
+    then MapGroupDet ghost_map_empty l
+    else MapGroupFail
+  ))
+= ()
 
 #restart-solver
 let apply_map_group_det_match_item_for

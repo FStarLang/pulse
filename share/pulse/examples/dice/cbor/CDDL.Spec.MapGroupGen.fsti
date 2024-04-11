@@ -234,7 +234,12 @@ val map_group_concat (m1 m2: map_group) : map_group
 val map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
   (map_group_concat m1 (map_group_concat m2 m3) == map_group_concat (map_group_concat m1 m2) m3)
 
-val map_group_mk_cut (cut: typ) : map_group
+val map_group_mk_cut_gen
+  (cut: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
+: map_group
+
+let map_group_mk_cut (cut: typ) : map_group =
+  map_group_mk_cut_gen (notp (FStar.Ghost.Pull.pull (matches_map_group_entry cut any)))
 
 val map_group_zero_or_more
   (m: map_group)
@@ -398,13 +403,24 @@ val apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map) : Lemma
   | _ -> True)
   [SMTPat (apply_map_group_det (map_group_concat m1 m2) l)]
 
-val apply_map_group_det_mk_cut (cut: typ) (l: cbor_map) : Lemma
+val apply_map_group_det_mk_cut_gen
+  (cut: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
+  (l: cbor_map)
+: Lemma
+  (apply_map_group_det (map_group_mk_cut_gen cut) l == (
+    if List.Tot.for_all cut l
+    then MapGroupDet ghost_map_empty l
+    else MapGroupFail
+  ))
+  [SMTPat (apply_map_group_det (map_group_mk_cut_gen cut) l)]
+
+let apply_map_group_det_mk_cut (cut: typ) (l: cbor_map) : Lemma
   (apply_map_group_det (map_group_mk_cut cut) l == (
     if List.Tot.for_all (notp (FStar.Ghost.Pull.pull (matches_map_group_entry cut any))) l
     then MapGroupDet ghost_map_empty l
     else MapGroupFail
   ))
-  [SMTPat (apply_map_group_det (map_group_mk_cut cut) l)]
+= ()
 
 val apply_map_group_det_match_item_for
   (k: Cbor.raw_data_item)
