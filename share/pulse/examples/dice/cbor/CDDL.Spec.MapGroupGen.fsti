@@ -127,9 +127,9 @@ val map_group : Type0
 
 val map_group_always_false : map_group
 
-val map_group_end : map_group
-
 val map_group_nop : map_group
+
+val map_group_end : map_group
 
 val map_group_match_item (key value: typ) : map_group
 
@@ -249,14 +249,6 @@ val apply_map_group_det_match_item_for
   ))
   [SMTPat (apply_map_group_det (map_group_match_item_for k ty) l)]
 
-val apply_map_group_det_zero_or_more_match_item
-  (key value: typ)
-  (l: cbor_map)
-: Lemma
-  (apply_map_group_det (map_group_zero_or_more (map_group_match_item key value)) l ==
-    MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))) l)
-  )
-
 val map_group_filter
   (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
 : map_group
@@ -269,18 +261,6 @@ val apply_map_group_det_filter
     MapGroupDet (List.Tot.filter f l)
   )
   [SMTPat (apply_map_group_det (map_group_filter f) l)]
-
-let map_zero_or_more_match_item_alt_eq
-  (key value: typ)
-: Lemma
-  (map_group_zero_or_more (map_group_match_item key value) ==
-    map_group_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value)))
-  )
-  [SMTPat (map_group_zero_or_more (map_group_match_item key value))]
-= Classical.forall_intro (apply_map_group_det_zero_or_more_match_item key value);
-  apply_map_group_det_map_group_equiv
-    (map_group_zero_or_more (map_group_match_item key value))
-    (map_group_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))))
 
 let andp (#t: Type) (p1 p2: t -> bool) (x: t) : bool =
   p1 x && p2 x
@@ -345,6 +325,26 @@ val map_group_zero_or_one_match_item_filter (key value: typ) (p: (Cbor.raw_data_
     map_group_zero_or_one (map_group_match_item key value) `map_group_concat` map_group_filter p == map_group_filter p
   )
   [SMTPat (map_group_zero_or_one (map_group_match_item key value) `map_group_concat` map_group_filter p)]
+
+val apply_map_group_det_zero_or_more_match_item
+  (key value: typ)
+  (l: cbor_map)
+: Lemma
+  (apply_map_group_det (map_group_zero_or_more (map_group_match_item key value)) l ==
+    MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))) l)
+  )
+
+let map_zero_or_more_match_item_alt_eq
+  (key value: typ)
+: Lemma
+  (map_group_zero_or_more (map_group_match_item key value) ==
+    map_group_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value)))
+  )
+  [SMTPat (map_group_zero_or_more (map_group_match_item key value))]
+= Classical.forall_intro (apply_map_group_det_zero_or_more_match_item key value);
+  apply_map_group_det_map_group_equiv
+    (map_group_zero_or_more (map_group_match_item key value))
+    (map_group_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))))
 
 let map_group_zero_or_more_match_item_choice_left
   (key1 key2 value: typ)
