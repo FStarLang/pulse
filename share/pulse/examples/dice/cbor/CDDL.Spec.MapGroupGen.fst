@@ -273,8 +273,9 @@ module FE = FStar.FunctionalExtensionality
 let ghost_map (key value: Type) : Type =
   FE.restricted_g_t key (fun _ -> option value)
 
-let ghost_map_mem (#key #value: Type) (kv: (key & value)) (f: ghost_map key value) : Tot prop =
-  f (fst kv) == Some (snd kv)
+let apply_ghost_map
+  m k
+= m k
 
 let ghost_map_feq (#key #value: Type) (f1 f2: ghost_map key value) : Tot prop =
   FE.feq_g f1 f2
@@ -283,6 +284,10 @@ let ghost_map_feq_eq (#key #value: Type) (f1 f2: ghost_map key value) : Lemma
   (ensures (ghost_map_feq f1 f2 <==> f1 == f2))
   [SMTPat (ghost_map_feq f1 f2)]
 = ()
+
+let ghost_map_ext
+  m1 m2
+= ghost_map_feq_eq m1 m2
 
 let ghost_map_equiv_intro
   (#key #value: Type) (f1 f2: ghost_map key value)
@@ -312,21 +317,6 @@ let ghost_map_equiv (#key #value: Type) (f1 f2: ghost_map key value) : Lemma
   (requires (forall kv . ghost_map_mem kv f1 <==> ghost_map_mem kv f2))
   (ensures f1 == f2)
 = ghost_map_equiv_intro' f1 f2 (fun _ -> ())
-
-let ghost_map_defined (#key #value: Type) (k: key) (f: ghost_map key value) : Tot prop =
-  Some? (f k)
-
-let ghost_map_disjoint (#key #value1 #value2: Type) (f1: ghost_map key value1) (f2: ghost_map key value2) : Tot prop =
-  (forall k . ~ (ghost_map_defined k f1 /\ ghost_map_defined k f2))
-
-let map_group_item_post
-  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
-  (l': (ghost_map Cbor.raw_data_item Cbor.raw_data_item & list (Cbor.raw_data_item & Cbor.raw_data_item)))
-: Tot prop
-=
-  (snd l' `is_sublist_of` l) /\
-  (forall x . ~ (ghost_map_defined x (fst l') /\ List.Tot.memP x (List.Tot.map fst (snd l')))) /\
-  (forall x . (ghost_map_mem x (fst l') \/ List.Tot.memP x (snd l')) <==> List.Tot.memP x l)
 
 let rec list_memP_extract
   (#t: Type)
@@ -458,6 +448,35 @@ let rec list_ghost_assoc_memP
   | [] -> ()
   | _ :: q -> list_ghost_assoc_memP k q
 
+let ghost_map_empty (#key #value: Type) : Tot (ghost_map key value) =
+  FE.on_dom_g _ (fun _ -> None)
+
+let apply_ghost_map_empty k = ()
+
+let ghost_map_singleton (#key #value: Type) (k: key) (v: value) : Tot (ghost_map key value) =
+  FE.on_dom_g _ (fun k' ->
+    if FStar.StrongExcludedMiddle.strong_excluded_middle (k == k')
+    then Some v
+    else None
+  )
+
+let apply_ghost_map_singleton k v k' = ()
+
+let ghost_map_union (#key #value: Type) (m1 m2: ghost_map key value) : Tot (ghost_map key value) =
+  FE.on_dom_g _ (fun k' ->
+    let res1 = m1 k' in
+    if Some? res1
+    then res1
+    else m2 k'
+  )
+
+let apply_ghost_map_union m1 m2 k = ()
+
+let ghost_map_disjoint_union (#key #value: Type) (m1 m2: ghost_map key value) : Lemma
+  (requires ghost_map_disjoint m1 m2)
+  (ensures m1 `ghost_map_union` m2 == m2 `ghost_map_union` m1)
+= assert ((m1 `ghost_map_union` m2) `FE.feq_g` (m2 `ghost_map_union` m1))
+
 #restart-solver
 let map_group_item_post_prop
   (l: cbor_map)
@@ -527,38 +546,6 @@ let map_group_item_post_prop
     | Some y -> Some y
     | None -> fst l' x
   end)
-
-let ghost_map_empty (#key #value: Type) : Tot (ghost_map key value) =
-  FE.on_dom_g _ (fun _ -> None)
-
-let ghost_map_singleton (#key #value: Type) (k: key) (v: value) : Tot (ghost_map key value) =
-  FE.on_dom_g _ (fun k' ->
-    if FStar.StrongExcludedMiddle.strong_excluded_middle (k == k')
-    then Some v
-    else None
-  )
-
-let ghost_map_union (#key #value: Type) (m1 m2: ghost_map key value) : Tot (ghost_map key value) =
-  FE.on_dom_g _ (fun k' ->
-    let res1 = m1 k' in
-    if Some? res1
-    then res1
-    else m2 k'
-  )
-
-let ghost_map_disjoint_mem_union (#key #value: Type) (m1 m2: ghost_map key value) (xv: (key & value)) : Lemma
-  (requires ghost_map_disjoint m1 m2)
-  (ensures ghost_map_mem xv (m1 `ghost_map_union` m2) <==> ghost_map_mem xv m1 \/ ghost_map_mem xv m2)
-= ()
-
-let ghost_map_disjoint_mem_union' (#key #value: Type) (m1 m2: ghost_map key value) (_: squash (ghost_map_disjoint m1 m2)) : Lemma
-  (ensures forall xv . ghost_map_mem xv (m1 `ghost_map_union` m2) <==> ghost_map_mem xv m1 \/ ghost_map_mem xv m2)
-= ()
-
-let ghost_map_disjoint_union (#key #value: Type) (m1 m2: ghost_map key value) : Lemma
-  (requires ghost_map_disjoint m1 m2)
-  (ensures m1 `ghost_map_union` m2 == m2 `ghost_map_union` m1)
-= assert ((m1 `ghost_map_union` m2) `FE.feq_g` (m2 `ghost_map_union` m1))
 
 let map_group_post
   (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
@@ -1286,20 +1273,19 @@ let ghost_map_filter
     | None -> None
   )
 
-let ghost_map_filter_ext
-  (#key #value: Type)
-  (f1 f2: (key & value) -> GTot bool)
-  (m: ghost_map key value)
-: Lemma
-  (requires forall x . f1 x == f2 x)
-  (ensures ghost_map_filter f1 m == ghost_map_filter f2 m)
-= ghost_map_equiv (ghost_map_filter f1 m) (ghost_map_filter f2 m)
+let apply_ghost_map_filter
+  f m k
+= ()
 
 let ghost_map_of_list
   (#key #value: Type)
   (l: list (key & value))
 : ghost_map key value
 = FE.on_dom_g _ (fun k -> Cbor.list_ghost_assoc k l)
+
+let apply_ghost_map_of_list
+  l k
+= ()
 
 let ghost_map_of_list_singleton
   (#key #value: Type)
@@ -1308,15 +1294,6 @@ let ghost_map_of_list_singleton
   (ghost_map_of_list [kv] == ghost_map_singleton (fst kv) (snd kv))
   [SMTPat (ghost_map_of_list [kv])]
 = assert (ghost_map_of_list [kv] `ghost_map_feq` ghost_map_singleton (fst kv) (snd kv))
-
-let ghost_map_of_list_singleton'
-  (#key #value: Type)
-  (k: key)
-  (v: value)
-: Lemma
-  (ghost_map_of_list [k, v] == ghost_map_singleton k v)
-  [SMTPat (ghost_map_singleton k v)]
-= ghost_map_of_list_singleton (k, v)
 
 let rec list_ghost_assoc_append
   (#key #value: Type)
@@ -1350,13 +1327,6 @@ let ghost_map_of_list_mem_gen
 : Lemma
   (ghost_map_mem x (ghost_map_of_list l) <==> List.Tot.memP x l)
 = list_ghost_assoc_memP_strong (fst x) (snd x) l
-
-let ghost_map_of_list_mem
-  (l: cbor_map)
-  (x: (Cbor.raw_data_item & Cbor.raw_data_item))
-: Lemma
-  (ghost_map_mem x (ghost_map_of_list l) <==> List.Tot.memP x l)
-= ghost_map_of_list_mem_gen l () x
 
 let list_filter_memP
   (#t: Type)
@@ -1457,13 +1427,15 @@ let apply_map_group_det (m: map_group) (l: cbor_map) : Pure map_group_result
   if FStar.StrongExcludedMiddle.strong_excluded_middle (s == FStar.GSet.empty)
   then MapGroupFail
   else if FStar.StrongExcludedMiddle.strong_excluded_middle (exists x . s == FStar.GSet.singleton x)
-  then MapGroupDet (snd (FStar.IndefiniteDescription.indefinite_description_ghost _ (fun x -> s == FStar.GSet.singleton x)))
+  then
+    let x = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun x -> s == FStar.GSet.singleton x) in
+    MapGroupDet (fst x) (snd x)
   else MapGroupNonDet
 
 #restart-solver
 let apply_map_group_det_eq_singleton (m: map_group) (l: cbor_map) (x : (_ & list _)) : Lemma
   (requires (m l `FStar.GSet.equal` FStar.GSet.singleton x))
-  (ensures (apply_map_group_det m l == MapGroupDet (snd x)))
+  (ensures (apply_map_group_det m l == MapGroupDet (fst x) (snd x)))
 = let s = m l in
   assert (s == FStar.GSet.singleton x);
   if FStar.StrongExcludedMiddle.strong_excluded_middle (s == FStar.GSet.empty)
@@ -1473,16 +1445,25 @@ let apply_map_group_det_eq_singleton (m: map_group) (l: cbor_map) (x : (_ & list
     assert (MapGroupDet? (apply_map_group_det m l))
   end
 
+#restart-solver
+let apply_map_group_det_eq_map (m1 m2: map_group) (l: cbor_map) : Lemma
+  (requires m1 l == m2 l)
+  (ensures apply_map_group_det m1 l == apply_map_group_det m2 l)
+= match apply_map_group_det m1 l with
+  | MapGroupDet c1 l1 -> apply_map_group_det_eq_singleton m2 l (c1, l1)
+  | _ -> ()
+
 let apply_map_group_det_always_false (l: cbor_map) : Lemma
   (apply_map_group_det map_group_always_false l == MapGroupFail)
 = ()
 
-let apply_map_group_det_end (l: cbor_map) : Lemma
-  (apply_map_group_det map_group_end l == (if Nil? l then MapGroupDet l else MapGroupFail))
+#restart-solver
+let apply_map_group_det_nop (l: cbor_map) : Lemma
+  (apply_map_group_det map_group_nop l == MapGroupDet ghost_map_empty l)
 = ()
 
-let apply_map_group_det_nop (l: cbor_map) : Lemma
-  (apply_map_group_det map_group_nop l == MapGroupDet l)
+let apply_map_group_det_end (l: cbor_map) : Lemma
+  (apply_map_group_det map_group_end l == (if Nil? l then MapGroupDet ghost_map_empty l else MapGroupFail))
 = ()
 
 let apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
@@ -1493,44 +1474,46 @@ let apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
   (ensures m1 == m2)
 = map_group_equiv_intro m1 m2
     (fun l l' ->
-      let MapGroupDet s1 = apply_map_group_det m1 l in
+      let MapGroupDet _ s1 = apply_map_group_det m1 l in
       let (k1, l1) = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun s1 -> m1 l == FStar.GSet.singleton s1) in
       let (k2, l2) = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun s2 -> m2 l == FStar.GSet.singleton s2) in
       assert (l1 == l2);
       ghost_map_equiv k1 k2
     )
     (fun l l' ->
-      let MapGroupDet s1 = apply_map_group_det m1 l in
+      let MapGroupDet _ s1 = apply_map_group_det m1 l in
       let (k1, l1) = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun s1 -> m1 l == FStar.GSet.singleton s1) in
       let (k2, l2) = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun s2 -> m2 l == FStar.GSet.singleton s2) in
       assert (l1 == l2);
       ghost_map_equiv k1 k2
     )
 
-let apply_map_group_det_choice (m1 m2: map_group) (l: cbor_map) : Lemma
-  (match apply_map_group_det m1 l with
-  | MapGroupFail -> apply_map_group_det (m1 `map_group_choice` m2) l == apply_map_group_det m2 l
-  | MapGroupDet l1 -> apply_map_group_det (m1 `map_group_choice` m2) l == MapGroupDet l1
-  | _ -> True
-  )
-= ()
+let gset_singleton_inj
+  (#t: Type)
+  (x1 x2: t)
+: Lemma
+  (requires FStar.GSet.singleton x1 == FStar.GSet.singleton x2)
+  (ensures x1 == x2)
+= assert (x1 `FStar.GSet.mem` FStar.GSet.singleton x2)
+
+#restart-solver
+let apply_map_group_det_choice (m1 m2: map_group) (l: cbor_map)
+= match apply_map_group_det m1 l with
+  | MapGroupFail -> apply_map_group_det_eq_map (m1 `map_group_choice` m2) m2 l
+  | _ -> apply_map_group_det_eq_map (m1 `map_group_choice` m2) m1 l
 
 #push-options "--z3rlimit 16"
 
 #restart-solver
-let apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map) : Lemma
-  (match apply_map_group_det m1 l with
-  | MapGroupFail -> apply_map_group_det (m1 `map_group_concat` m2) l == MapGroupFail
-  | MapGroupDet l1 -> apply_map_group_det (m1 `map_group_concat` m2) l == apply_map_group_det m2 l1
-  | _ -> True)
+let apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map)
 = match apply_map_group_det m1 l with
   | MapGroupFail ->
     assert (map_group_concat m1 m2 l `FStar.GSet.equal` FStar.GSet.empty)
-  | MapGroupDet lr1 ->
+  | MapGroupDet c1 lr1 ->
     let l1 = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun x -> m1 l == FStar.GSet.singleton x) in
     begin match apply_map_group_det m2 lr1 with
     | MapGroupFail -> assert (map_group_concat m1 m2 l `FStar.GSet.equal` FStar.GSet.empty)
-    | MapGroupDet lr2 ->
+    | MapGroupDet c2 lr2 ->
       let l2 = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun x -> m2 lr1 == FStar.GSet.singleton x) in
       let l0 = (ghost_map_union (fst l1) (fst l2), snd l2) in
       gset_equal_intro
@@ -1583,14 +1566,6 @@ let apply_map_group_det_match_item_for
   (k: Cbor.raw_data_item)
   (ty: typ)
   (l: cbor_map)
-: Lemma
-  (apply_map_group_det (map_group_match_item_for k ty) l == (match Cbor.list_ghost_assoc k l with
-  | None ->  MapGroupFail
-  | Some x ->
-    if ty x
-    then MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) l)
-    else MapGroupFail
-  ))
 = map_group_match_item_for_eq k ty l;
   list_filter_and_extract_assoc k ty l;
   match list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty)) l with
@@ -1640,6 +1615,48 @@ let map_group_filter
 let apply_map_group_det_filter
   f l
 = apply_map_group_det_eq_singleton (map_group_filter f) l (map_group_filter_item f l)
+
+let orp (#t: Type) (p1 p2: t -> bool) (x: t) : bool =
+  p1 x || p2 x
+
+let ghost_map_filter_union
+  (#key #value: Type)
+  (p1 p2: (key & value) -> bool)
+  (m: ghost_map key value)
+: Lemma
+  (ghost_map_filter p1 m `ghost_map_union`
+    ghost_map_filter p2 m ==
+    ghost_map_filter (p1 `orp` p2) m
+  )
+= ghost_map_feq_eq
+    (ghost_map_filter p1 m `ghost_map_union`
+      ghost_map_filter p2 m)
+    (ghost_map_filter (p1 `orp` p2) m)
+
+let ghost_map_filter_not_filter_not_strong
+  (p1 p2: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
+  (l: cbor_map)
+: Lemma
+  (ghost_map_filter (notp p1) (ghost_map_of_list l) `ghost_map_union`
+    ghost_map_filter (notp p2) (ghost_map_of_list (List.Tot.filter p1 l)) ==
+    ghost_map_filter (notp (p1 `andp` p2)) (ghost_map_of_list l)
+  )
+= ghost_map_filter_of_list (notp p2) (List.Tot.filter p1 l);
+  list_filter_filter p1 (notp p2) l;
+  ghost_map_filter_of_list (p1 `andp` notp p2) l;
+  ghost_map_filter_union (notp p1) (p1 `andp` notp p2) (ghost_map_of_list l);
+  ghost_map_filter_ext
+    (notp p1 `orp` (p1 `andp` notp p2))
+    (notp (p1 `andp` p2))
+    (ghost_map_of_list l)
+
+let map_group_filter_filter
+  p1 p2
+= Classical.forall_intro (list_filter_filter p1 p2);
+  Classical.forall_intro (ghost_map_filter_not_filter_not_strong p1 p2);
+  apply_map_group_det_map_group_equiv
+    (map_group_filter p1 `map_group_concat` map_group_filter p2)
+    (map_group_filter (andp p1 p2))
 
 let list_filter_implies_2' (#t: Type) (p1 p2: t -> bool) : Lemma
   (requires (forall (x: t) . p1 x ==> p2 x))
@@ -1823,10 +1840,6 @@ let map_group_zero_or_more_match_item_filter (key value: typ) : Lemma
 let apply_map_group_det_zero_or_more_match_item
   (key value: typ)
   (l: cbor_map)
-: Lemma
-  (apply_map_group_det (map_group_zero_or_more (map_group_match_item key value)) l ==
-    MapGroupDet (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value))) l)
-  )
 = map_group_zero_or_more_match_item_filter key value;
   ghost_map_filter_ext
     (matches_map_group_entry key value)
@@ -1861,6 +1874,9 @@ let list_ghost_assoc_none_filter_matches_map_group_entry_for
 = list_filter_and_extract_assoc key value l;
   list_filter_and_extract_none (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal key) value)) l
 
+#push-options "--z3rlimit 64"
+
+#restart-solver
 let map_group_zero_or_more_map_group_match_item_for
   (key: Cbor.raw_data_item)
   (value: typ)
@@ -1868,12 +1884,18 @@ let map_group_zero_or_more_map_group_match_item_for
   (map_group_zero_or_more (map_group_match_item_for key value) ==
     map_group_zero_or_one (map_group_match_item_for key value)
   )
-= Classical.forall_intro (Classical.move_requires (
-      list_ghost_assoc_none_filter_matches_map_group_entry_for key value
-  ));
-  apply_map_group_det_map_group_equiv
+= apply_map_group_det_map_group_equiv0
     (map_group_zero_or_more (map_group_match_item_for key value))
     (map_group_zero_or_one (map_group_match_item_for key value))
+    (fun l -> ())
+    (fun l ->
+      Classical.move_requires (list_ghost_assoc_none_filter_matches_map_group_entry_for key value) l;
+      let MapGroupDet c1 _ = apply_map_group_det (map_group_zero_or_more (map_group_match_item_for key value)) l in
+      let MapGroupDet c2 _ = apply_map_group_det (map_group_zero_or_one (map_group_match_item_for key value)) l in
+      assert (c1 `ghost_map_feq` c2)
+    )
+
+#pop-options
 
 let map_group_choice_assoc
   (g1 g2 g3: map_group)
@@ -1902,7 +1924,7 @@ let matches_map_group_mem (g: map_group) (m: cbor_map) (gm: _) : Lemma
 let matches_map_group_det (g: map_group) (m: cbor_map) : Lemma
   (match apply_map_group_det g m with
   | MapGroupFail -> ~ (matches_map_group g m)
-  | MapGroupDet m' -> matches_map_group g m <==> m' == []
+  | MapGroupDet _ m' -> matches_map_group g m <==> m' == []
   | _ -> True)
 = ()
 
@@ -1963,7 +1985,7 @@ let map_group_entry_consumed_concat_det
   )
   (ensures
     map_group_entry_consumed l entry g1 \/
-    (let MapGroupDet l' = apply_map_group_det g1 l in map_group_entry_consumed l' entry g2)
+    (let MapGroupDet _ l' = apply_map_group_det g1 l in map_group_entry_consumed l' entry g2)
   )
 = map_group_entry_consumed_concat l entry g1 g2
 
