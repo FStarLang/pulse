@@ -1591,6 +1591,46 @@ let apply_map_group_det_match_item_for
       (ghost_map_singleton (fst kv) (snd kv),
         List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) l)
 
+let rec list_filter_not_memP_map_fst
+  (k: Cbor.raw_data_item)
+  (ty: typ)
+  (l: list (Cbor.raw_data_item & Cbor.raw_data_item))
+: Lemma
+  (requires (~ (List.Tot.memP k (List.Tot.map fst l))))
+  (ensures List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) l == l
+  )
+= match l with
+  | [] -> ()
+  | _ :: q -> list_filter_not_memP_map_fst k ty q
+
+#restart-solver
+let list_ghost_assoc_matches_map_group_entry_for_irrel
+  (k: Cbor.raw_data_item)
+  (value1 value2: typ)
+  (l: cbor_map)
+: Lemma
+  (requires (match Cbor.list_ghost_assoc k l with
+  | Some v -> value1 v /\ value2 v
+  | _ -> False
+  ))
+  (ensures
+    List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value1))) l ==
+      List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value2))) l
+  )
+= let Some v = Cbor.list_ghost_assoc k l in
+  list_filter_and_extract_assoc k value1 l;
+  let Some (ll, kv, lr) = list_filter_and_extract (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value1)) l in
+  list_filter_append (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value1))) ll (kv :: lr);
+  list_filter_append (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value1))) ll lr;
+  list_filter_not_memP_map_fst k value1 ll;
+  list_filter_not_memP_map_fst k value1 lr;
+  list_ghost_assoc_append ll (kv :: lr) k;
+  list_ghost_assoc_memP k ll;
+  list_filter_append (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value2))) ll (kv :: lr);
+  list_filter_append (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value2))) ll lr;
+  list_filter_not_memP_map_fst k value2 ll;
+  list_filter_not_memP_map_fst k value2 lr
+
 // FIXME: swap `notp f` with `f`?
 let map_group_filter_item
   (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)

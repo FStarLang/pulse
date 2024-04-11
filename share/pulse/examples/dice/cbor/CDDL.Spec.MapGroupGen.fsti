@@ -436,6 +436,20 @@ val apply_map_group_det_match_item_for
   ))
   [SMTPat (apply_map_group_det (map_group_match_item_for k ty) l)]
 
+val list_ghost_assoc_matches_map_group_entry_for_irrel
+  (k: Cbor.raw_data_item)
+  (value1 value2: typ)
+  (l: cbor_map)
+: Lemma
+  (requires (match Cbor.list_ghost_assoc k l with
+  | Some v -> value1 v /\ value2 v
+  | _ -> False
+  ))
+  (ensures
+    List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value1))) l ==
+      List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) value2))) l
+  )
+
 val map_group_filter
   (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
 : map_group
