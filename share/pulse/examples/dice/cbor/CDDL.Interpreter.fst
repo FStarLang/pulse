@@ -96,23 +96,19 @@ type elem_struct_map_group_kind =
 type maybe_atom_struct_map_group = elem_struct_map_group_kind & atom_struct_map_group
 
 [@@bounded_attr; sem_attr]
-noeq
 type elem_struct_map_group =
 | TStructConcat of list maybe_atom_struct_map_group
 
 [@@bounded_attr; sem_attr]
-noeq
 type struct_map_group =
 | TStructChoice of list elem_struct_map_group
 
 [@@bounded_attr; sem_attr]
-noeq
 type elem_map_group =
 | TMTable: (s: struct_map_group) -> (t: table_map_group) -> elem_map_group
 
 let choice_map_group = list string
 
-noeq
 type map_group =
 | TMapElem of elem_map_group
 | TMapChoice of list string
@@ -158,7 +154,7 @@ noeq
 type semenv_elem =
 | SEType of Spec.typ
 | SEArrayGroup of Spec.array_group3 None
-| SEMapGroup: (cut: list literal) -> (sem: MapSpec.map_group) -> semenv_elem
+| SEMapGroup: (sem: MapSpec.map_group) -> semenv_elem
 
 [@@ bounded_attr; sem_attr]
 noeq
@@ -207,17 +203,8 @@ let se_map_group
   (i: name se.se_bound)
 : Tot (MapSpec.map_group)
 = match se.se_env i with
-  | SEMapGroup _ t -> t
+  | SEMapGroup t -> t
   | _ -> MapSpec.map_group_always_false
-
-[@@ sem_attr]
-let se_map_group_cut
-  (se: semenv)
-  (i: name se.se_bound)
-: Tot (list literal)
-= match se.se_env i with
-  | SEMapGroup cut _ -> cut
-  | _ -> []
 
 let name_env_included (s1 s2: name_env) : Tot prop =
   (forall (i: name s1) . i `name_mem` s2)
@@ -288,7 +275,6 @@ let semenv_extend_array_group
 let semenv_extend_map_group
   (se: semenv)
   (new_name: string)
-  (cut: list literal)
   (a: MapSpec.map_group)
 : Pure semenv
     (requires
@@ -297,9 +283,9 @@ let semenv_extend_map_group
     (ensures fun se' ->
       se'.se_bound == se.se_bound `extend_name_env` new_name /\
       semenv_included se se' /\
-      se'.se_env new_name == SEMapGroup cut a
+      se'.se_env new_name == SEMapGroup a
     )
-= semenv_extend_gen se new_name (SEMapGroup cut a)
+= semenv_extend_gen se new_name (SEMapGroup a)
 
 [@@ bounded_attr ]
 let rec elem_typ_bounded
@@ -672,37 +658,17 @@ let rec spec_type_of_cut
   | [] -> Spec.t_always_false
   | a :: q -> spec_type_of_literal a `Spec.t_choice` spec_type_of_cut q
 
-let sem_cut
-  (cut: list literal)
-: Tot MapSpec.map_group
-= MapSpec.map_group_mk_cut (spec_type_of_cut cut)
-
 [@@ sem_attr ]
 let atom_struct_map_group_sem
-  (cut: list literal)
   (env: semenv)
   (a: atom_struct_map_group)
 : Pure MapSpec.map_group
     (requires atom_struct_map_group_bounded env.se_bound a)
     (ensures fun _ -> True)
 = match a with
-  | TSDef n -> sem_cut cut `MapSpec.map_group_concat` se_map_group env n
-  | TSEntry _ key value ->
-    if list_mem literal_eq key cut
-    then MapSpec.map_group_always_false
-    else MapSpec.map_group_match_item_for (eval_literal key) (elem_typ_sem env value)
-
-[@@ sem_attr ]
-let atom_struct_map_group_cut
-  (env: semenv)
-  (a: atom_struct_map_group)
-: Pure (list literal)
-    (requires atom_struct_map_group_bounded env.se_bound a)
-    (ensures fun _ -> True)
-= match a with
-  | TSDef n -> se_map_group_cut env n
-  | TSEntry true key _ -> [key]
-  | TSEntry false _ _ -> []
+  | TSDef n -> se_map_group env n
+  | TSEntry cut key value ->
+    MapSpec.map_group_match_item_for cut (eval_literal key) (elem_typ_sem env value)
 
 [@@ bounded_attr ]
 let maybe_atom_struct_map_group_bounded
@@ -714,27 +680,16 @@ let maybe_atom_struct_map_group_bounded
 
 [@@ sem_attr ]
 let maybe_atom_struct_map_group_sem
-  (cut: list literal)
   (env: semenv)
   (a: (elem_struct_map_group_kind & atom_struct_map_group))
 : Pure MapSpec.map_group
     (requires maybe_atom_struct_map_group_bounded env.se_bound a)
     (ensures fun _ -> True)
 = let (kd, a') = a in
-  let s = atom_struct_map_group_sem cut env a' in
+  let s = atom_struct_map_group_sem env a' in
   match kd with
   | TSRequired -> s
   | TSOptional -> MapSpec.map_group_zero_or_one s
-
-[@@ sem_attr ]
-let maybe_atom_struct_map_group_cut
-  (env: semenv)
-  (a: (elem_struct_map_group_kind & atom_struct_map_group))
-: Pure (list literal)
-    (requires maybe_atom_struct_map_group_bounded env.se_bound a)
-    (ensures fun _ -> True)
-= let (kd, a') = a in
-  atom_struct_map_group_cut env a'
 
 [@@ bounded_attr ]
 let elem_struct_map_group_bounded
@@ -756,7 +711,6 @@ let rec list_append
 
 [@@sem_attr]
 let rec elem_struct_map_group_sem
-  (cut: list literal)
   (env: semenv)
   (a: elem_struct_map_group)
 : Pure MapSpec.map_group
@@ -765,27 +719,11 @@ let rec elem_struct_map_group_sem
     (decreases (TStructConcat?._0 a))
 = match TStructConcat?._0 a with
   | [] -> MapSpec.map_group_nop
-  | [x] -> maybe_atom_struct_map_group_sem cut env x
+  | [x] -> maybe_atom_struct_map_group_sem env x
   | x :: q ->
-    let cut' = maybe_atom_struct_map_group_cut env x `list_append` cut in
     MapSpec.map_group_concat
-      (maybe_atom_struct_map_group_sem cut env x)
-      (elem_struct_map_group_sem cut' env (TStructConcat q))
-
-[@@sem_attr]
-let rec elem_struct_map_group_cut
-  (env: semenv)
-  (a: elem_struct_map_group)
-: Pure (list literal)
-    (requires elem_struct_map_group_bounded env.se_bound a)
-    (ensures fun _ -> True)
-    (decreases (TStructConcat?._0 a))
-= match TStructConcat?._0 a with
-  | [] -> []
-  | [x] -> maybe_atom_struct_map_group_cut env x
-  | x :: q ->
-    elem_struct_map_group_cut env (TStructConcat q) `list_append`
-      maybe_atom_struct_map_group_cut env x
+      (maybe_atom_struct_map_group_sem env x)
+      (elem_struct_map_group_sem env (TStructConcat q))
 
 [@@ bounded_attr ]
 let struct_map_group_bounded
@@ -796,7 +734,6 @@ let struct_map_group_bounded
 
 [@@sem_attr]
 let rec struct_map_group_sem
-  (cut: list literal)
   (env: semenv)
   (a: struct_map_group)
 : Pure MapSpec.map_group
@@ -805,27 +742,11 @@ let rec struct_map_group_sem
     (decreases (TStructChoice?._0 a))
 = match TStructChoice?._0 a with
   | [] -> MapSpec.map_group_always_false
-  | [x] -> elem_struct_map_group_sem cut env x
+  | [x] -> elem_struct_map_group_sem env x
   | x :: q ->
-    let cut' = elem_struct_map_group_cut env x `list_append` cut in
     MapSpec.map_group_choice
-      (elem_struct_map_group_sem cut env x)
-      (struct_map_group_sem cut' env (TStructChoice q))
-
-[@@sem_attr]
-let rec struct_map_group_cut
-  (env: semenv)
-  (a: struct_map_group)
-: Pure (list literal)
-    (requires struct_map_group_bounded env.se_bound a)
-    (ensures fun _ -> True)
-    (decreases (TStructChoice?._0 a))
-= match TStructChoice?._0 a with
-  | [] -> []
-  | [x] -> elem_struct_map_group_cut env x
-  | x :: q ->
-    struct_map_group_cut env (TStructChoice q) `list_append`
-    elem_struct_map_group_cut env x
+      (elem_struct_map_group_sem env x)
+      (struct_map_group_sem env (TStructChoice q))
 
 [@@ bounded_attr ]
 let table_map_group_item_bounded
@@ -844,7 +765,7 @@ let table_map_group_item_sem
     (requires table_map_group_item_bounded env.se_bound a)
     (ensures fun _ -> True)
 = let (k, v) = a in
-  MapSpec.map_group_zero_or_more (MapSpec.map_group_match_item (elem_typ_sem env k) (elem_typ_sem env v))
+  MapSpec.map_group_zero_or_more (MapSpec.map_group_match_item false (elem_typ_sem env k) (elem_typ_sem env v))
 
 [@@ bounded_attr ]
 let table_map_group_bounded
@@ -879,30 +800,15 @@ let elem_map_group_bounded
 
 [@@ sem_attr ]
 let elem_map_group_sem
-  (cut: list literal)
   (env: semenv)
   (a: elem_map_group)
 : Pure MapSpec.map_group
     (requires elem_map_group_bounded env.se_bound a)
     (ensures fun _ -> True)
 = let TMTable s t = a in
-  let cut' = struct_map_group_cut env s `list_append` cut in
   MapSpec.map_group_concat
-    (struct_map_group_sem cut env s)
-    (MapSpec.map_group_concat
-      (sem_cut cut')
-      (table_map_group_sem env t)
-    )
-
-[@@ sem_attr ]
-let elem_map_group_cut
-  (env: semenv)
-  (a: elem_map_group)
-: Pure (list literal)
-    (requires elem_map_group_bounded env.se_bound a)
-    (ensures fun _ -> True)
-= let TMTable s _ = a in
-  struct_map_group_cut env s
+    (struct_map_group_sem env s)
+    (table_map_group_sem env t)
 
 [@@ bounded_attr ]
 let choice_map_group_bounded
@@ -925,10 +831,7 @@ let rec choice_map_group_sem
   | a :: q ->
     MapSpec.map_group_choice
       (se_map_group env a)
-      (MapSpec.map_group_concat
-        (sem_cut (se_map_group_cut env a))
-        (choice_map_group_sem env q)
-      )
+      (choice_map_group_sem env q)
 
 [@@ bounded_attr ]
 let map_group_bounded
@@ -938,6 +841,17 @@ let map_group_bounded
 = match e with
   | TMapElem x -> elem_map_group_bounded bound x
   | TMapChoice x -> choice_map_group_bounded bound x
+
+[@@ sem_attr ]
+let map_group_sem
+  (env: semenv)
+  (a: map_group)
+: Pure MapSpec.map_group
+    (requires map_group_bounded env.se_bound a)
+    (ensures fun _ -> True)
+= match a with
+  | TMapElem x -> elem_map_group_sem env x
+  | TMapChoice x -> choice_map_group_sem env x
 
 [@@ bounded_attr ]
 let typ_bounded
@@ -982,6 +896,7 @@ let typ_sem
   | TChoice l -> sem_typ_choice env l
   | TTag tag t -> Spec.t_tag tag (elem_typ_sem env t)
   | TArray a -> Spec.t_array3 (array_group_sem env a)
+  | TMap m -> MapSpec.t_map (map_group_sem env m)
   | TEscapeHatch t -> t
 
 let typ_sem_included (s1 s2: semenv) (t: typ) : Lemma
@@ -1000,6 +915,7 @@ let typ_sem_included (s1 s2: semenv) (t: typ) : Lemma
   ]]
 = match t with
   | TChoice l -> sem_typ_choice_included s1 s2 l
+  | TMap _ -> assume False
   | _ -> ()
 
 let rec array_group_bounded_append
@@ -1063,15 +979,6 @@ let rec array_group_sem_append
   | [_] -> ()
   | _ :: q1 -> array_group_sem_append env q1 t2
 
-let map_group = Spec.map_group None // TODO: add syntax support
-[@@ bounded_attr ]
-let map_group_bounded (_: name_env) (x: map_group) : Tot bool = true // TODO
-[@@ sem_attr ]
-let map_group_sem (_: semenv) (x: map_group) : Pure (Spec.map_group None)
-  (requires True)
-  (ensures (fun _ -> True))
-= x // TODO
-
 [@@ sem_attr]
 let ast_env_elem0 (s: semenv_elem) : Type0 =
   match s with
@@ -1089,17 +996,18 @@ let ast_env_elem_prop (e_semenv: semenv) (s: semenv_elem) (x: ast_env_elem0 s) :
     Spec.array_group3_equiv (array_group_sem e_semenv x) phi
   | SEMapGroup phi ->
     map_group_bounded e_semenv.se_bound x /\
-    Spec.map_group_equiv (map_group_sem e_semenv x) phi
+    map_group_sem e_semenv x == phi
 
 let ast_env_elem_prop_included (e1 e2: semenv) (s: semenv_elem) (x: ast_env_elem0 s) : Lemma
   (requires semenv_included e1 e2 /\
     ast_env_elem_prop e1 s x
   )
   (ensures ast_env_elem_prop e2 s x)
+  [SMTPat (ast_env_elem_prop e1 s x); SMTPat (ast_env_elem_prop e2 s x)]
 = match s with
   | SEType _ -> typ_sem_included e1 e2 x
   | SEArrayGroup _ -> array_group_sem_included e1 e2 x
-  | SEMapGroup _ -> () // TODO
+  | SEMapGroup _ -> assume False // TODO
 
 [@@ sem_attr]
 let ast_env_elem (e_semenv: semenv) (s: semenv_elem) =
@@ -1524,6 +1432,7 @@ let typ_sem_restrict_typ_spec_correct
       else ()
     | _ -> ()
     end
+  | TMap _ -> assume False
   | TEscapeHatch _ -> ()
 
 noeq
@@ -1666,6 +1575,7 @@ and typ_productive_correct
       array_group_sem_restrict_typ_spec_correct e new_name s x t x'
     | _ -> ()
     end
+  | TMap _ -> assume False
   | TEscapeHatch _ -> ()
 
 and choice_typ_productive_correct
@@ -1852,7 +1762,7 @@ let rec typ_equiv
     array_group_equiv e fuel' t1 t2
   | TElem (TElemArray i1), TElem (TElemArray i2) ->
     array_group_equiv e fuel' ["", i1] ["", i2]
-  | TElem (TMap i1), TElem (TMap i2) -> i1 = i2 // TODO
+  | (TMap i1), (TMap i2) -> i1 = i2 // TODO
   | _ -> false
 
 and array_group_equiv
@@ -1988,11 +1898,23 @@ let rec typ_disjoint
     array_group_disjoint e fuel' true ["", i2] i1
   | TArray _, _
   | _, TArray _ -> ResultSuccess
-  | TElem TFalse, TElem TBool -> ResultFailure "typ_disjoint: TFalse, TBool"
-  | TElem TBool, TElem TFalse -> ResultFailure "typ_disjoint: TBool, TFalse"
-  | TElem TTrue, TElem TBool -> ResultFailure "typ_disjoint: TTrue, TBool"
-  | TElem TBool, TElem TTrue -> ResultFailure "typ_disjoint: TBool, TTrue"
-  | TElem (TMap _), TElem (TMap _) -> ResultFailure "typ_disjoint: TMap, TMap" // TODO
+  | TElem (TLiteral (TLSimple l1)) , TElem TBool
+  | TElem TBool, TElem (TLiteral (TLSimple l1))
+  -> if l1 = Spec.simple_value_false || l1 = Spec.simple_value_true
+    then ResultFailure "typ_disjoint: TFalse, TBool"
+    else ResultSuccess
+  | TElem (TLiteral (TLString ty1 _)), TElem TByteString
+  | TElem TByteString, TElem (TLiteral (TLString ty1 _))
+  -> if ty1 = cddl_major_type_byte_string
+    then ResultFailure "typ_disjoint: byte_string"
+    else ResultSuccess
+  | TElem (TLiteral (TLString ty1 _)), TElem TTextString
+  | TElem TTextString, TElem (TLiteral (TLString ty1 _))
+  -> if ty1 = cddl_major_type_text_string
+    then ResultFailure "typ_disjoint: byte_string"
+    else ResultSuccess
+  | (TMap _), (TMap _) -> ResultFailure "typ_disjoint: TMap, TMap" // TODO
+  | TMap _, _ | _, TMap _ -> ResultSuccess
   | TElem e1, TElem e2 ->
     if e1 <> e2
     then ResultSuccess
@@ -2139,7 +2061,7 @@ let rec spec_array_group_splittable_fold
 
 // the converse does not hold: consider a* b* a*, then [a] has two decompositions: [a] [] [] and [] [] [a]
 
-#push-options "--z3rlimit 32"
+#push-options "--z3rlimit 64"
 
 #restart-solver
 let rec spec_array_group_splittable_fold_gen
@@ -2508,7 +2430,7 @@ let spec_ast_env_elem_well_formed
     | _ -> True
     end
   | SEArrayGroup _ -> spec_array_group_splittable env e
-  | SEMapGroup _ -> True
+  | SEMapGroup _ -> True // TODO
 
 let ast_env_elem_well_formed'
   (e: ast_env)
