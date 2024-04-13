@@ -47,6 +47,13 @@ type lock = {
 let lock_alive l #p v =
   inv (iref_of l.i) (cinv_vp l.i (lock_inv l.r l.gr v)) ** active l.i p
 
+let lock_alive0 l v =
+  inv (iref_of l.i) (cinv_vp l.i (lock_inv l.r l.gr v))
+
+instance dup_lock_alive0 l v = {
+  dup_f = dup (inv (iref_of l.i) (cinv_vp l.i (lock_inv l.r l.gr v)));
+}
+
 let lock_acquired l = GR.pts_to l.gr #0.5R 1ul
 
 ```pulse
@@ -303,5 +310,90 @@ fn elim_alive_into_inv_and_active (l:lock) (v:vprop) (#p:perm)
       cinv_vp l.i (lock_inv l.r l.gr v) as iref_v_of l v
   };
   intro_stick _ _ _ aux
+}
+```
+
+(* Some repetition here *)
+```pulse
+ghost
+fn lock_alive0_inj_l
+  (l:lock) (#p1 :perm) (#v1 #v2 :vprop)
+  requires lock_alive l #p1 v1 ** lock_alive0 l v2
+  ensures  lock_alive l #p1 v1 ** lock_alive0 l v1
+{
+  unfold (lock_alive l #p1 v1);
+  unfold (lock_alive0 l v2);
+  invariant_name_identifies_invariant
+    (CInv.iref_of l.i) (CInv.iref_of l.i);
+  assert (
+    pure (
+      cinv_vp l.i (lock_inv l.r l.gr v1)
+      ==
+      cinv_vp l.i (lock_inv l.r l.gr v2)
+    )
+  );
+  fold (lock_alive l #p1 v1);
+  fold (lock_alive0 l v1);
+}
+```
+
+(* More repetition here *)
+```pulse
+ghost
+fn lock_alive0_inj_r
+  (l:lock) (#p1 :perm) (#v1 #v2 :vprop)
+  requires lock_alive l #p1 v1 ** lock_alive0 l v2
+  ensures  lock_alive l #p1 v2 ** lock_alive0 l v2
+{
+  unfold (lock_alive l #p1 v1);
+  unfold (lock_alive0 l v2);
+  invariant_name_identifies_invariant
+    (CInv.iref_of l.i) (CInv.iref_of l.i);
+  assert (
+    pure (
+      cinv_vp l.i (lock_inv l.r l.gr v1)
+      ==
+      cinv_vp l.i (lock_inv l.r l.gr v2)
+    )
+  );
+  fold (lock_alive l #p1 v2);
+  fold (lock_alive0 l v2);
+}
+```
+
+(* Even more repetition here *)
+```pulse
+ghost
+fn lock_alive0_inj_both
+  (l:lock) (#v1 #v2 :vprop)
+  requires lock_alive0 l v1 ** lock_alive0 l v2
+  ensures  lock_alive0 l v2 ** lock_alive0 l v2
+{
+  unfold (lock_alive0 l v1);
+  unfold (lock_alive0 l v2);
+  invariant_name_identifies_invariant
+    (CInv.iref_of l.i) (CInv.iref_of l.i);
+  assert (
+    pure (
+      cinv_vp l.i (lock_inv l.r l.gr v1)
+      ==
+      cinv_vp l.i (lock_inv l.r l.gr v2)
+    )
+  );
+  fold (lock_alive0 l v2);
+  fold (lock_alive0 l v2);
+}
+```
+
+```pulse
+ghost
+fn get_lock_alive0 (l:lock) (#p:perm) (#v:vprop)
+  requires lock_alive l #p v
+  ensures lock_alive l #p v ** lock_alive0 l v
+{
+  unfold (lock_alive l #p v);
+  dup (inv (CInv.iref_of l.i) (cinv_vp l.i (lock_inv l.r l.gr v))) ();
+  fold (lock_alive0 l v);
+  fold (lock_alive l #p v);
 }
 ```
