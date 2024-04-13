@@ -216,7 +216,7 @@ val map_group_nop : map_group
 
 val map_group_end : map_group
 
-val map_group_match_item (key value: typ) : map_group
+val map_group_match_item (cut: bool) (key value: typ) : map_group
 
 let matches_map_group_entry
   (key value: typ)
@@ -234,13 +234,6 @@ val map_group_concat (m1 m2: map_group) : map_group
 val map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
   (map_group_concat m1 (map_group_concat m2 m3) == map_group_concat (map_group_concat m1 m2) m3)
 
-val map_group_mk_cut_gen
-  (cut: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
-: map_group
-
-let map_group_mk_cut (cut: typ) : map_group =
-  map_group_mk_cut_gen (notp (FStar.Ghost.Pull.pull (matches_map_group_entry cut any)))
-
 val map_group_zero_or_more
   (m: map_group)
 : map_group
@@ -249,10 +242,11 @@ let map_group_one_or_more (m: map_group) : map_group =
   map_group_concat m (map_group_zero_or_more m)
 
 let map_group_match_item_for
+  (cut: bool)
   (k: Cbor.raw_data_item)
   (ty: typ)
 : Tot map_group
-= map_group_match_item (t_literal k) ty
+= map_group_match_item cut (t_literal k) ty
 
 val ghost_map_filter
   (#key #value: Type)
@@ -336,6 +330,7 @@ val map_group_zero_or_more_zero_or_one_eq
 [@@erasable]
 noeq
 type map_group_result =
+| MapGroupCutFail
 | MapGroupFail
 | MapGroupDet:
   (consumed: ghost_map Cbor.raw_data_item Cbor.raw_data_item) ->
@@ -386,6 +381,7 @@ let apply_map_group_det_map_group_equiv0 (m1 m2: map_group)
 
 val apply_map_group_det_choice (m1 m2: map_group) (l: cbor_map) : Lemma
   (match apply_map_group_det m1 l with
+  | MapGroupCutFail -> apply_map_group_det (m1 `map_group_choice` m2) l == MapGroupCutFail
   | MapGroupFail -> apply_map_group_det (m1 `map_group_choice` m2) l == apply_map_group_det m2 l
   | MapGroupDet c1 l1 -> apply_map_group_det (m1 `map_group_choice` m2) l == MapGroupDet c1 l1
   | _ -> True
@@ -394,6 +390,7 @@ val apply_map_group_det_choice (m1 m2: map_group) (l: cbor_map) : Lemma
 
 val apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map) : Lemma
   (match apply_map_group_det m1 l with
+  | MapGroupCutFail -> apply_map_group_det (m1 `map_group_concat` m2) l == MapGroupCutFail
   | MapGroupFail -> apply_map_group_det (m1 `map_group_concat` m2) l == MapGroupFail
   | MapGroupDet c1 l1 ->
     apply_map_group_det (m1 `map_group_concat` m2) l == begin match apply_map_group_det m2 l1 with
@@ -403,38 +400,22 @@ val apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map) : Lemma
   | _ -> True)
   [SMTPat (apply_map_group_det (map_group_concat m1 m2) l)]
 
-val apply_map_group_det_mk_cut_gen
-  (cut: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool)
-  (l: cbor_map)
-: Lemma
-  (apply_map_group_det (map_group_mk_cut_gen cut) l == (
-    if List.Tot.for_all cut l
-    then MapGroupDet ghost_map_empty l
-    else MapGroupFail
-  ))
-  [SMTPat (apply_map_group_det (map_group_mk_cut_gen cut) l)]
-
-let apply_map_group_det_mk_cut (cut: typ) (l: cbor_map) : Lemma
-  (apply_map_group_det (map_group_mk_cut cut) l == (
-    if List.Tot.for_all (notp (FStar.Ghost.Pull.pull (matches_map_group_entry cut any))) l
-    then MapGroupDet ghost_map_empty l
-    else MapGroupFail
-  ))
-= ()
-
 val apply_map_group_det_match_item_for
+  (cut: bool)
   (k: Cbor.raw_data_item)
   (ty: typ)
   (l: cbor_map)
 : Lemma
-  (apply_map_group_det (map_group_match_item_for k ty) l == (match Cbor.list_ghost_assoc k l with
+  (apply_map_group_det (map_group_match_item_for cut k ty) l == (match Cbor.list_ghost_assoc k l with
   | None ->  MapGroupFail
   | Some x ->
     if ty x
     then MapGroupDet (ghost_map_singleton k x) (List.Tot.filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (t_literal k) ty))) l)
+    else if cut
+    then MapGroupCutFail
     else MapGroupFail
   ))
-  [SMTPat (apply_map_group_det (map_group_match_item_for k ty) l)]
+  [SMTPat (apply_map_group_det (map_group_match_item_for cut k ty) l)]
 
 val list_ghost_assoc_matches_map_group_entry_for_irrel
   (k: Cbor.raw_data_item)
@@ -513,28 +494,28 @@ let list_filter_implies_2 (#t: Type) (p1 p2: t -> bool) (l: list t) : Lemma
   (ensures List.Tot.filter p1 (List.Tot.filter p2 l) == List.Tot.filter p1 l)
 = list_filter_filter_comm p1 p2 l;
   list_filter_implies_1 p1 p2 l
-
+  
 val map_group_zero_or_one_match_item_filter (key value: typ) (p: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool) : Lemma
   (requires (
     forall x . p x ==> notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value)) x
   ))
   (ensures
-    map_group_zero_or_one (map_group_match_item key value) `map_group_concat` map_group_filter p == map_group_filter p
+    map_group_zero_or_one (map_group_match_item false key value) `map_group_concat` map_group_filter p == map_group_filter p
   )
-  [SMTPat (map_group_zero_or_one (map_group_match_item key value) `map_group_concat` map_group_filter p)]
+  [SMTPat (map_group_zero_or_one (map_group_match_item false key value) `map_group_concat` map_group_filter p)]
 
 val map_group_zero_or_more_match_item_filter (key value: typ) : Lemma
-  (map_group_zero_or_more (map_group_match_item key value) ==
+  (map_group_zero_or_more (map_group_match_item false key value) ==
     map_group_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value)))
   )
-  [SMTPat (map_group_zero_or_more (map_group_match_item key value))]
+  [SMTPat (map_group_zero_or_more (map_group_match_item false key value))]
 
 let map_group_zero_or_more_match_item_choice_left
   (key1 key2 value: typ)
 : Lemma
-  (map_group_zero_or_more (map_group_match_item (key1 `t_choice` key2) value) ==
-    map_group_zero_or_more (map_group_match_item key1 value) `map_group_concat`
-    map_group_zero_or_more (map_group_match_item key2 value)
+  (map_group_zero_or_more (map_group_match_item false (key1 `t_choice` key2) value) ==
+    map_group_zero_or_more (map_group_match_item false key1 value) `map_group_concat`
+    map_group_zero_or_more (map_group_match_item false key2 value)
   )
 = map_group_filter_ext
     (notp (FStar.Ghost.Pull.pull (matches_map_group_entry (key1 `t_choice` key2) value)))
@@ -546,8 +527,8 @@ val map_group_zero_or_more_map_group_match_item_for
   (key: Cbor.raw_data_item)
   (value: typ)
 : Lemma
-  (map_group_zero_or_more (map_group_match_item_for key value) ==
-    map_group_zero_or_one (map_group_match_item_for key value)
+  (map_group_zero_or_more (map_group_match_item_for false key value) ==
+    map_group_zero_or_one (map_group_match_item_for false key value)
   )
 
 val matches_map_group (g: map_group) (m: cbor_map) : GTot bool
