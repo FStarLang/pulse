@@ -535,6 +535,7 @@ val matches_map_group (g: map_group) (m: cbor_map) : GTot bool
 
 val matches_map_group_det (g: map_group) (m: cbor_map) : Lemma
   (match apply_map_group_det g m with
+  | MapGroupCutFail
   | MapGroupFail -> ~ (matches_map_group g m)
   | MapGroupDet _ m' -> matches_map_group g m <==> m' == []
   | _ -> True)
