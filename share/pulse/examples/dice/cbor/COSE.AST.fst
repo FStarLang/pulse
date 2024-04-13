@@ -8,16 +8,9 @@ module Spec = COSE.Spec
 let e0 = empty_wf_ast_env
 
 [@@ bounded_attr; sem_attr]
-let e1 = wf_ast_env_extend_map_group e0 "header_map0" 
+let e2 = wf_ast_env_extend_typ e0 "header_map"
   (_ by (solve_bounded ()))
-  Spec.header_map0
-  (_ by (solve_bounded ()))
-  (_ by (solve_spec_ast_env_elem_well_formed ()))
-
-[@@ bounded_attr; sem_attr]
-let e2 = wf_ast_env_extend_typ e1 "header_map"
-  (_ by (solve_bounded ()))
-  (TElem (TMap "header_map0"))
+  (TEscapeHatch Spec.header_map) // lem (TMap "header_map0"))
   (_ by (solve_bounded ()))
   (_ by (solve_spec_ast_env_elem_well_formed ()))
 
@@ -76,7 +69,7 @@ let e8 =
     (_ by (solve_bounded ()))
     (TChoice [
       TByteString;
-      TNil;
+      (TLiteral (TLSimple CDDL.Spec.simple_value_nil));
     ])
     (_ by (solve_bounded ()))
     (_ by (solve_spec_ast_env_elem_well_formed ()))
