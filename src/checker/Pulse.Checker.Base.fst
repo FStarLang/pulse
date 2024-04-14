@@ -50,8 +50,8 @@ let format_failed_goal (g:env) (ctxt:list term) (goal:list term) =
     (env_to_string g)
 
 
-let mk_arrow ty t = RT.mk_arrow (elab_term ty) T.Q_Explicit (elab_term t)
-let mk_abs ty t = RT.(mk_abs (elab_term ty) T.Q_Explicit (elab_term t))
+let mk_arrow ty t = RT.mk_arrow ty T.Q_Explicit t
+let mk_abs ty t = RT.(mk_abs ty T.Q_Explicit t)
 
 let intro_comp_typing (g:env) 
                       (c:comp_st)
@@ -75,9 +75,9 @@ let intro_comp_typing (g:env)
     | C_STAtomic i obs st -> 
       let stc = intro_st_comp_typing st in
       CT_STAtomic _ i obs _ i_typing stc
-    | C_STGhost st -> 
+    | C_STGhost i st -> 
       let stc = intro_st_comp_typing st in
-      CT_STGhost _ _ stc
+      CT_STGhost _ i _ i_typing stc
 
 irreducible
 let post_typing_as_abstraction
@@ -86,12 +86,20 @@ let post_typing_as_abstraction
   : FStar.Ghost.erased (RT.tot_typing (elab_env g) (mk_abs ty t) (mk_arrow ty tm_vprop))                                 
   = admit()
 
-let check_effect_annot (g:env) (e:effect_annot) : T.Tac (effect_annot_typing g e) =
+let check_effect_annot (g:env) (e:effect_annot)
+  : T.Tac (e':effect_annot { effect_annot_labels_match e e' } & effect_annot_typing g e') =
+  let check_opens opens : T.Tac _ = CP.check_term g opens T.E_Total tm_inames in
   match e with
-  | EffectAnnotSTT
-  | EffectAnnotGhost -> ()
+  | EffectAnnotSTT -> (| e, () |)
+  | EffectAnnotGhost { opens } ->
+    let (| opens, d |) = check_opens opens in
+    (| EffectAnnotGhost { opens }, d |)
   | EffectAnnotAtomic { opens } ->
-    CP.core_check_term g opens T.E_Total tm_inames
+    let (| opens, d |) = check_opens opens in
+    (| EffectAnnotAtomic { opens }, d |)
+  | EffectAnnotAtomicOrGhost { opens } ->
+    let (| opens, d |) = check_opens opens in
+    (| EffectAnnotAtomicOrGhost { opens }, d |)
 
 let intro_post_hint g effect_annot ret_ty_opt post =
   let x = fresh g in
@@ -105,7 +113,7 @@ let intro_post_hint g effect_annot ret_ty_opt post =
   let (| post, post_typing |) = CP.check_vprop (push_binding g x ppname_default ret_ty) (open_term_nv post (v_as_nv x)) in 
   let post' = close_term post x in
   Pulse.Typing.FV.freevars_close_term post x 0;
-  let effect_annot_typing = check_effect_annot g effect_annot in
+  let (| effect_annot, effect_annot_typing |) = check_effect_annot g effect_annot in
   assume (open_term post' x == post);
   { g;
     effect_annot;
@@ -115,14 +123,13 @@ let intro_post_hint g effect_annot ret_ty_opt post =
     x; post_typing_src=post_typing;
     post_typing=post_typing_as_abstraction #_ #_ #_ #post' post_typing }
 
-
 let comp_typing_as_effect_annot_typing (#g:env) (#c:comp_st) (ct:comp_typing_u g c)
 : effect_annot_typing g (effect_annot_of_comp c)
 = let _, iname_typing = Metatheory.comp_typing_inversion ct in
   match c with
   | C_ST _ -> ()
-  | C_STGhost _ -> ()
-  | C_STAtomic opens obs _ -> iname_typing
+  | C_STGhost _ _
+  | C_STAtomic _ _ _ -> iname_typing
   
 
 let post_hint_from_comp_typing #g #c ct = 
@@ -211,7 +218,7 @@ let comp_st_with_post (c:comp_st) (post:term)
   : c':comp_st { st_comp_of_comp c' == ({ st_comp_of_comp c with post} <: st_comp) } =
   match c with
   | C_ST st -> C_ST { st with post }
-  | C_STGhost st -> C_STGhost { st with post }
+  | C_STGhost i st -> C_STGhost i { st with post }
   | C_STAtomic i obs st -> C_STAtomic i obs {st with post}
 
 let ve_unit_r g (p:term) : vprop_equiv g (tm_star p tm_emp) p = 
@@ -290,7 +297,7 @@ let vprop_equiv_typing_bk (#g:env) (#ctxt:_) (ctxt_typing:tot_typing g ctxt tm_v
 let comp_with_pre (c:comp_st) (pre:term) =
   match c with
   | C_ST st -> C_ST { st with pre }
-  | C_STGhost st -> C_STGhost { st with pre }
+  | C_STGhost i st -> C_STGhost i { st with pre }
   | C_STAtomic i obs st -> C_STAtomic i obs {st with pre}
 
 
@@ -426,7 +433,7 @@ let continuation_elaborator_with_bind (#g:env) (ctxt:term)
           e2_typing
           t_typing
           post_typing
-          (Some? post_hint)
+          post_hint
       in
       (| e, c, e_typing |)
     )
@@ -435,8 +442,9 @@ let continuation_elaborator_with_bind (#g:env) (ctxt:term)
 #pop-options
 
 module LN = Pulse.Typing.LN
-#push-options "--z3rlimit_factor 4 --fuel 1 --ifuel 1"
+#push-options "--z3rlimit_factor 8 --fuel 1 --ifuel 1"
 
+let coerce_eq (#a #b:Type) (x:a) (_:squash (a == b)) : y:b{y == x} = x
 
 let st_comp_typing_with_post_hint 
       (#g:env) (#ctxt:_)
@@ -471,7 +479,7 @@ let st_comp_typing_with_post_hint
         assert (subst_term tm_vprop (renaming ph.x x) == tm_vprop);
         assume (subst_term (open_term ph.post ph.x) (renaming ph.x x) ==
                 open_term ph.post x);
-        tt
+        coerce_eq tt ()
   in
   let post_typing_src
     : tot_typing (push_binding g x ppname_default ph.ret_ty)
@@ -517,9 +525,10 @@ let continuation_elaborator_with_bind_fn (#g:env) (#ctxt:term)
         let i_typing = CP.core_check_term g i T.E_Total tm_inames in
         CT_STAtomic _ _ obs _ i_typing stc
 
-      | C_STGhost st -> 
+      | C_STGhost i st ->
+        let i_typing = CP.core_check_term g i T.E_Total tm_inames in
         let stc = st_comp_typing_with_post_hint ctxt_typing post_hint c2 in
-        CT_STGhost _ _ stc
+        CT_STGhost _ i _ i_typing stc
     in
     let d : st_typing g e c2 =
         T_BindFn g e1 e2_closed c1 c2 b x e1_typing u c1_typing d2 c2_typing
@@ -549,16 +558,17 @@ let return_in_ctxt (g:env) (y:var) (y_ppname:ppname) (u:universe) (ty:term) (ctx
   (ty_typing:universe_of g ty u)
   (post_hint0:post_hint_opt g { Some? post_hint0 /\ checker_res_matches_post_hint g post_hint0 y ty ctxt})
 : Pure (st_typing_in_ctxt g ctxt post_hint0)
-      (requires lookup g y == Some ty)
-      (ensures fun _ -> True)
+       (requires lookup g y == Some ty)
+       (ensures fun _ -> True)
 = let Some post_hint = post_hint0 in
   let x = fresh g in
   assume (~ (x `Set.mem` freevars post_hint.post));
   let ctag =
     match post_hint.effect_annot with
     | EffectAnnotAtomic _ -> STT_Atomic
-    | EffectAnnotGhost -> STT_Ghost
-    | _ -> STT
+    | EffectAnnotGhost _ -> STT_Ghost
+    | EffectAnnotAtomicOrGhost _ -> STT_Atomic
+    | EffectAnnotSTT -> STT
   in
   let y_tm = tm_var {nm_index=y;nm_ppname=y_ppname} in
   let d = T_Return g ctag false u ty y_tm post_hint.post x ty_typing
@@ -570,11 +580,19 @@ let return_in_ctxt (g:env) (y:var) (y_ppname:ppname) (u:universe) (ty:term) (ctx
   let d : st_typing g t c = d in
   assume (comp_u c == post_hint.u); // this u should follow from equality of t
   match c, post_hint.effect_annot with
-  | C_STAtomic _ obs _, EffectAnnotAtomic { opens } ->
+  | C_STAtomic _ obs _, EffectAnnotAtomic { opens }
+  | C_STAtomic _ obs _, EffectAnnotAtomicOrGhost { opens } ->
     assert (comp_inames c == tm_emp_inames);
     let pht = post_hint_typing g post_hint x in
     let validity = emp_inames_included g opens pht.effect_annot_typing in
     let d = T_Sub _ _ _ _ d (STS_AtomicInvs _ (st_comp_of_comp c) tm_emp_inames opens obs obs validity) in
+    (| _, _, d |)
+  | C_STGhost _ _, EffectAnnotGhost { opens }
+  | C_STGhost _ _, EffectAnnotAtomicOrGhost { opens } ->
+    assert (comp_inames c == tm_emp_inames);
+    let pht = post_hint_typing g post_hint x in
+    let validity = emp_inames_included g opens pht.effect_annot_typing in
+    let d = T_Sub _ _ _ _ d (STS_GhostInvs _ (st_comp_of_comp c) tm_emp_inames opens validity) in
     (| _, _, d |)
   | _ -> 
     (| _, _, d |)
@@ -600,7 +618,7 @@ let match_comp_res_with_post_hint (#g:env) (#t:st_term) (#c:comp_st)
                 (P.term_to_string ret_ty))
          | Some tok ->
            let d_equiv
-             : RT.equiv _ (elab_term cres) (elab_term ret_ty) =
+             : RT.equiv _ cres ret_ty =
              RT.Rel_eq_token _ _ _ (FStar.Squash.return_squash tok) in
            
            let c' = with_st_comp c {(st_comp_of_comp c) with res = ret_ty } in
@@ -684,7 +702,7 @@ let rec is_stateful_arrow (g:env) (c:option comp) (args:list T.argv) (out:list T
     match c with
     | None -> None
     | Some (C_ST _)
-    | Some (C_STGhost _)
+    | Some (C_STGhost _ _)
     | Some (C_STAtomic _ _ _) -> (
       match args, out with
       | [], hd::tl -> Some (List.rev tl, hd)
@@ -759,23 +777,22 @@ let apply_conversion
       (#g:env) (#e:term) (#eff:_) (#t0:term)
       (d:typing g e eff t0)
       (#t1:term)
-      (eq:Ghost.erased (RT.related (elab_env g) (elab_term t0) RT.R_Eq (elab_term t1)))
+      (eq:Ghost.erased (RT.related (elab_env g) t0 RT.R_Eq t1))
   : typing g e eff t1
-  = let d : RT.typing (elab_env g) (elab_term e) (eff, (elab_term t0)) = d._0 in
-    let r : RT.related (elab_env g) (elab_term t0) RT.R_Eq (elab_term t1) = eq in
+  = let d : RT.typing (elab_env g) e (eff, t0) = d._0 in
+    let r : RT.related (elab_env g) t0 RT.R_Eq t1 = eq in
     let r  = RT.Rel_equiv _ _ _ RT.R_Sub r in
-    let s : RT.sub_comp (elab_env g) (eff, (elab_term t0)) (eff, elab_term t1) = 
+    let s : RT.sub_comp (elab_env g) (eff, t0) (eff, t1) = 
         RT.Relc_typ _ _ _ _ _ r
     in
     E (RT.T_Sub _ _ _ _ d s)
-    
+
 let norm_typing
       (g:env) (e:term) (eff:_) (t0:term)
       (d:typing g e eff t0)
       (steps:list norm_step)
   : T.Tac (t':term & typing g e eff t')
-  = let t = elab_term t0 in
-    let u_t_typing : Ghost.erased (u:R.universe & RT.typing _ _ _) = 
+  = let u_t_typing : Ghost.erased (u:R.universe & RT.typing _ _ _) = 
       Pulse.Typing.Metatheory.Base.typing_correctness d._0
     in
     let (| t', t'_typing, related_t_t' |) =
@@ -797,7 +814,7 @@ let norm_typing_inverse
       let d1 = Ghost.hide d1._0 in
       Pulse.RuntimeUtils.norm_well_typed_term d1 steps
     in
-    if TermEq.term_eq (elab_term t0) t1'
+    if TermEq.term_eq t0 t1'
     then (
       let related_t1'_t1 = Ghost.hide (RT.Rel_sym _ _ _ related_t1_t1') in
       Some (apply_conversion d related_t1'_t1)
@@ -814,24 +831,24 @@ let norm_st_typing_inverse
       (steps:list norm_step)
   : T.Tac (option (st_typing g e (C_Tot t1)))
   = let d1 
-      : Ghost.erased (RT.tot_typing (elab_env g) (elab_term t1) (RT.tm_type u))
-      = Ghost.hide d1._0
+      : Ghost.erased (RT.tot_typing (elab_env g) t1 (RT.tm_type u))
+      = Ghost.hide (coerce_eq d1._0 ())
     in
     let (| t1', t1'_typing, related_t1_t1' |) =
       Pulse.RuntimeUtils.norm_well_typed_term d1 steps
     in
-    if TermEq.term_eq (elab_term t0) t1'
+    if TermEq.term_eq t0 t1'
     then (
       let t0_typing 
-        : Ghost.erased (RT.tot_typing (elab_env g) (elab_term t0) (RT.tm_type u)) =
-        rt_equiv_typing #_ #_ #(elab_term t0) related_t1_t1' d1
+        : Ghost.erased (RT.tot_typing (elab_env g) t0 (RT.tm_type u)) =
+        rt_equiv_typing #_ #_ #t0 related_t1_t1' d1
       in
       let eq
-        : Ghost.erased (RT.equiv (elab_env g) (elab_term t0) (elab_term t1))
+        : Ghost.erased (RT.equiv (elab_env g) t0 t1)
         = Ghost.hide (RT.Rel_sym _ _ _ related_t1_t1')
       in
       let steq : st_equiv g (C_Tot t0) (C_Tot t1) =
-        ST_TotEquiv _ _ _ u (E (Ghost.reveal t0_typing)) eq
+        ST_TotEquiv _ _ _ u (E (coerce_eq (Ghost.reveal t0_typing) ())) eq
       in
       Some (T_Equiv _ _ _ _ d steq)
     )

@@ -30,21 +30,21 @@ let elab_open_commute' (e:term)
                        (v:term)
                        (n:index)
   : Lemma (ensures
-              RT.subst_term (elab_term e) [ RT.DT n (elab_term v) ] ==
-              elab_term (open_term' e v n))
+              RT.subst_term e [ RT.DT n v ] ==
+              (open_term' e v n))
   = ()
 
 let elab_comp_open_commute' (c:comp) (v:term) (n:index)
   : Lemma (ensures
-              RT.subst_term (elab_comp c) [ RT.DT n (elab_term v) ] ==
+              RT.subst_term (elab_comp c) [ RT.DT n v ] ==
               elab_comp (open_comp' c v n))
   = match c with
     | C_Tot t -> elab_open_commute' t v n
-    | C_ST s
-    | C_STGhost s -> 
+    | C_ST s ->
       elab_open_commute' s.res v n;
       elab_open_commute' s.pre v n;
       elab_open_commute' s.post v (n + 1)
+    | C_STGhost inames s
     | C_STAtomic inames _ s ->
       elab_open_commute' inames v n;
       elab_open_commute' s.res v n;
@@ -55,10 +55,10 @@ let elab_close_commute' (e:term)
                         (v:var)
                         (n:index)
   : Lemma (ensures (
-              RT.subst_term (elab_term e) [ RT.ND v n ] ==
-              elab_term (close_term' e v n)))
+              RT.subst_term e [ RT.ND v n ] ==
+              (close_term' e v n)))
   = ()
-  
+
 let elab_comp_close_commute' (c:comp) (v:var) (n:index)
   : Lemma (ensures
               RT.subst_term (elab_comp c) [ RT.ND v n ] ==
@@ -66,11 +66,11 @@ let elab_comp_close_commute' (c:comp) (v:var) (n:index)
           (decreases c)
   = match c with
     | C_Tot t -> elab_close_commute' t v n
-    | C_ST s
-    | C_STGhost s  -> 
+    | C_ST s ->
       elab_close_commute' s.res v n;
       elab_close_commute' s.pre v n;
       elab_close_commute' s.post v (n + 1)
+    | C_STGhost inames s 
     | C_STAtomic inames _ s ->
       elab_close_commute' inames v n;
       elab_close_commute' s.res v n;
@@ -78,8 +78,8 @@ let elab_comp_close_commute' (c:comp) (v:var) (n:index)
       elab_close_commute' s.post v (n + 1)
 
 let elab_open_commute (t:term) (x:var)
-  : Lemma (elab_term (open_term t x) == RT.open_term (elab_term t) x)
-  = RT.open_term_spec (elab_term t) x;
+  : Lemma (open_term t x == RT.open_term t x)
+  = RT.open_term_spec t x;
     elab_open_commute' t (null_var x) 0
 
 let elab_comp_close_commute (c:comp) (x:var)
@@ -88,8 +88,8 @@ let elab_comp_close_commute (c:comp) (x:var)
     elab_comp_close_commute' c x 0
 
 let elab_comp_open_commute (c:comp) (x:term)
-  : Lemma (elab_comp (open_comp_with c x) == RT.open_with (elab_comp c) (elab_term x))
-  = RT.open_with_spec (elab_comp c) (elab_term x);
+  : Lemma (elab_comp (open_comp_with c x) == RT.open_with (elab_comp c) x)
+  = RT.open_with_spec (elab_comp c) x;
     elab_comp_open_commute' c x 0
 
 let elab_ln t i = ()
@@ -100,11 +100,11 @@ let elab_ln_comp (c:comp) (i:int)
 
   match c with
   | C_Tot t -> elab_ln t i
-  | C_ST st
-  | C_STGhost st ->
+  | C_ST st ->
     elab_ln st.res i;
     elab_ln st.pre i;
     elab_ln st.post (i + 1)
+  | C_STGhost inames st
   | C_STAtomic inames _ st ->
     elab_ln inames i;
     elab_ln st.res i;
@@ -112,18 +112,18 @@ let elab_ln_comp (c:comp) (i:int)
     elab_ln st.post (i + 1)
 
 let elab_freevars_eq (e:term)
-  : Lemma (Set.equal (freevars e) (RT.freevars (elab_term e))) = ()
+  : Lemma (Set.equal (freevars e) (RT.freevars e)) = ()
 
 let elab_freevars_comp_eq (c:comp)
   : Lemma (Set.equal (freevars_comp c) (RT.freevars (elab_comp c))) =
 
   match c with
   | C_Tot t -> elab_freevars_eq t
-  | C_ST st
-  | C_STGhost st ->
+  | C_ST st ->
     elab_freevars_eq st.res;
     elab_freevars_eq st.pre;
     elab_freevars_eq st.post
+  | C_STGhost inames st
   | C_STAtomic inames _ st ->
     elab_freevars_eq inames;
     elab_freevars_eq st.res;

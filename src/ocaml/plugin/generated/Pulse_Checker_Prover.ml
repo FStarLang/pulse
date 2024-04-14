@@ -1903,9 +1903,7 @@ let (prove :
 let (canon_post : Pulse_Syntax_Base.comp_st -> Pulse_Syntax_Base.comp_st) =
   fun c ->
     let canon_st_comp_post c1 =
-      match Pulse_Syntax_Pure.inspect_term
-              (Pulse_Elaborate_Pure.elab_term c1.Pulse_Syntax_Base.post)
-      with
+      match Pulse_Syntax_Pure.inspect_term c1.Pulse_Syntax_Base.post with
       | Pulse_Syntax_Pure.Tm_FStar uu___ -> c1
       | post_v ->
           {
@@ -1921,8 +1919,8 @@ let (canon_post : Pulse_Syntax_Base.comp_st -> Pulse_Syntax_Base.comp_st) =
         Pulse_Syntax_Base.C_ST (canon_st_comp_post s)
     | Pulse_Syntax_Base.C_STAtomic (i, obs, s) ->
         Pulse_Syntax_Base.C_STAtomic (i, obs, (canon_st_comp_post s))
-    | Pulse_Syntax_Base.C_STGhost s ->
-        Pulse_Syntax_Base.C_STGhost (canon_st_comp_post s)
+    | Pulse_Syntax_Base.C_STGhost (i, s) ->
+        Pulse_Syntax_Base.C_STGhost (i, (canon_st_comp_post s))
 let (typing_canon :
   Pulse_Typing_Env.env ->
     Pulse_Syntax_Base.st_term ->

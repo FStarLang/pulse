@@ -39,7 +39,7 @@ let canon_comp (c:comp_st) : comp_st =
 
 #push-options "--admit_smt_queries true"
 let canon_comp_eq_res (g:env) (c:comp_st)
-  : RT.equiv (elab_env g) (elab_term (comp_res c)) (elab_term (comp_res (canon_comp c)))
+  : RT.equiv (elab_env g) (comp_res c) (comp_res (canon_comp c))
   = RT.Rel_refl _ _ _ 
 #pop-options
 
@@ -73,7 +73,7 @@ let rec intro_uvars_for_logical_implicits (g:env) (uvs:env { disjoint g uvs }) (
       match c_rest with
        | C_ST _
        | C_STAtomic _ _ _
-       | C_STGhost _ ->
+       | C_STGhost _ _ ->
          (| uvs', push_env g uvs', {term=Tm_STApp {head=t;arg_qual=Some Implicit;arg=null_var x};
                                     range=Pulse.RuntimeUtils.range_of_term t;
                                     effect_tag=as_effect_hint (ctag_of_comp_st c_rest) } |)
@@ -165,7 +165,7 @@ let apply_impure_function
           let t = { term = Tm_STApp {head; arg_qual=qual; arg}; range; effect_tag=as_effect_hint (ctag_of_comp_st comp_typ) } in
           let c = (canon_comp (open_comp_with comp_typ arg)) in
           (| t, c, d |)
-        | C_STGhost res ->
+        | C_STGhost _ res ->
           // get the non-informative witness
           let x = fresh g in
           if x `Set.mem` freevars_comp (comp_typ)

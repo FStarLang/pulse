@@ -24,6 +24,7 @@ open Pulse.Typing
 
 module L = FStar.List.Tot
 module T = FStar.Tactics
+module RT = FStar.Reflection.Typing
 
 module Env = Pulse.Typing.Env
 
@@ -75,10 +76,11 @@ val ss_comp_commutes (c:comp) (ss:ss_t)
               (C_STAtomic? c ==> r == C_STAtomic (ss_term (comp_inames c) ss)
                                                  (C_STAtomic?.obs c)
                                                  (ss_st_comp (st_comp_of_comp c) ss)) /\
-              (C_STGhost? c ==> r == C_STGhost (ss_st_comp (st_comp_of_comp c) ss))))
+              (C_STGhost? c ==> r == C_STGhost (ss_term (comp_inames c) ss)
+                                               (ss_st_comp (st_comp_of_comp c) ss))))
           [SMTPat (ss_comp c ss)]
 
-type nt_substs = l:list subst_elt { forall elt. L.memP elt l ==> NT? elt }
+type nt_substs = l:list subst_elt { forall elt. L.memP elt l ==> RT.NT? elt }
 
 let nt_subst_term (t:term) (ss:nt_substs) : term =
   L.fold_left (fun t elt -> subst_term t [elt]) t ss
@@ -117,7 +119,8 @@ val nt_subst_comp_commutes (c:comp) (nts:nt_substs)
               (C_STAtomic? c ==> r == C_STAtomic (nt_subst_term (comp_inames c) nts)
                                                   (C_STAtomic?.obs c)
                                                  (nt_subst_st_comp (st_comp_of_comp c) nts)) /\
-              (C_STGhost? c ==> r == C_STGhost (nt_subst_st_comp (st_comp_of_comp c) nts))))
+              (C_STGhost? c ==> r == C_STGhost (nt_subst_term (comp_inames c) nts)
+                                               (nt_subst_st_comp (st_comp_of_comp c) nts))))
           [SMTPat (nt_subst_comp c nts)]
 
 let rec well_typed_nt_substs
@@ -129,11 +132,11 @@ let rec well_typed_nt_substs
   
   match bindings uvs, nts, effect_labels with
   | [], [], [] -> True
-  | _::_, (NT x e)::nts_rest, eff::effect_labels_rest ->
+  | _::_, (RT.NT x e)::nts_rest, eff::effect_labels_rest ->
     let y, ty, rest_uvs = remove_binding uvs in
     x == y /\
     typing g e eff ty /\
-    well_typed_nt_substs g (subst_env rest_uvs [ NT x e ]) nts_rest effect_labels_rest
+    well_typed_nt_substs g (subst_env rest_uvs [ RT.NT x e ]) nts_rest effect_labels_rest
   | _, _, _ -> False
 
 val is_permutation (nts:nt_substs) (ss:ss_t) : Type0

@@ -34,8 +34,12 @@ val is_full_array (#a:Type) (x:array a) : prop
 
 val pts_to (#a:Type) (x:array a) (#[exact (`full_perm)] p:perm) (s: Seq.seq a) : vprop
 
+val pts_to_is_small (#a:Type) (x:array a) (p:perm) (s:Seq.seq a)
+  : Lemma (is_small (pts_to x #p s))
+          [SMTPat (is_small (pts_to x #p s))]
+
 val pts_to_len (#t:Type) (a:array t) (#p:perm) (#x:Seq.seq t)
-    : stt_ghost unit
+    : stt_ghost unit emp_inames
           (pts_to a #p x)
           (fun _ → pts_to a #p x ** pure (length a == Seq.length x))
 
@@ -93,7 +97,7 @@ val share
   (arr:array a)
   (#s:Ghost.erased (Seq.seq a))
   (#p:perm)
-  : stt_ghost unit
+  : stt_ghost unit emp_inames
       (requires pts_to arr #p s)
       (ensures fun _ -> pts_to arr #(half_perm p) s ** pts_to arr #(half_perm p) s)
 
@@ -102,7 +106,7 @@ val gather
   (arr:array a)
   (#s0 #s1:Ghost.erased (Seq.seq a))
   (#p0 #p1:perm)
-  : stt_ghost unit
+  : stt_ghost unit emp_inames
       (requires pts_to arr #p0 s0 ** pts_to arr #p1 s1)
       (ensures fun _ -> pts_to arr #(sum_perm p0 p1) s0 ** pure (s0 == s1))
 
@@ -114,11 +118,15 @@ val pts_to_range
   (#[exact (`full_perm)] p:perm)
   ([@@@ equate_by_smt] s: Seq.seq a) : vprop
 
+val pts_to_range_is_small (#a:Type) (x:array a) (i j : nat) (p:perm) (s:Seq.seq a)
+  : Lemma (is_small (pts_to_range x i j #p s))
+          [SMTPat (is_small (pts_to_range x i j #p s))]
+
 val pts_to_range_prop
   (#elt: Type) (a: array elt) (#i #j: nat)
   (#p: perm)
   (#s: Seq.seq elt)
-: stt_ghost unit
+: stt_ghost unit emp_inames
     (pts_to_range a i j #p s)
     (fun _ -> pts_to_range a i j #p s ** pure (
       (i <= j /\ j <= length a /\ eq2 #nat (Seq.length s) (j - i))
@@ -129,7 +137,7 @@ val pts_to_range_intro
   (a: array elt)
   (p: perm)
   (s: Seq.seq elt)
-: stt_ghost unit
+: stt_ghost unit emp_inames
     (pts_to a #p s)
     (fun _ -> pts_to_range a 0 (length a) #p s)
 
@@ -138,7 +146,7 @@ val pts_to_range_elim
   (a: array elt)
   (p: perm)
   (s: Seq.seq elt)
-: stt_ghost unit
+: stt_ghost unit emp_inames
     (pts_to_range a 0 (length a) #p s)
     (fun _ -> pts_to a #p s)
 
@@ -148,7 +156,7 @@ val pts_to_range_split
   (i m j: nat)
   (#p: perm)
   (#s: Seq.seq elt)
-: stt_ghost unit
+: stt_ghost unit emp_inames
     (pts_to_range a i j #p s **
       pure (i <= m /\ m <= j)
     )
@@ -169,7 +177,7 @@ val pts_to_range_join
   (i m j: nat)
   (#p: perm)
   (#s1 #s2: Seq.seq elt)
-: stt_ghost unit
+: stt_ghost unit emp_inames
     (pts_to_range a i m #p s1 ** pts_to_range a m j #p s2)
     (fun _ -> pts_to_range a i j #p (s1 `Seq.append` s2))
 

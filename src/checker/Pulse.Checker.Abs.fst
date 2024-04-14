@@ -24,6 +24,7 @@ open Pulse.Typing.Combinators
 open Pulse.Checker.Pure
 open Pulse.Checker.Base
 
+module RT = FStar.Reflection.Typing
 module P = Pulse.Syntax.Printer
 module FV = Pulse.Typing.FV
 module T = FStar.Tactics.V2
@@ -48,7 +49,7 @@ let range_of_comp (c:comp) =
   | C_Tot t -> RU.range_of_term t
   | C_ST st -> range_of_st_comp st
   | C_STAtomic _ _ st -> range_of_st_comp st
-  | C_STGhost st -> range_of_st_comp st
+  | C_STGhost _ st -> range_of_st_comp st
 
 let rec arrow_of_abs (env:_) (prog:st_term { Tm_Abs? prog.term })
   : T.Tac (term & t:st_term { Tm_Abs? t.term })
@@ -77,7 +78,7 @@ let rec arrow_of_abs (env:_) (prog:st_term { Tm_Abs? prog.term })
         let c = open_comp_with c (U.term_of_nvar px) in
         match c with
         | C_Tot tannot -> (
-          let t = RU.hnf_lax (elab_env env) (elab_term tannot) in
+          let t = RU.hnf_lax (elab_env env) tannot in
           //retain the original annotation, so that we check it wrt the inferred type in maybe_rewrite_body_typing
           let t = close_term t x in
           let annot = close_comp c x in
@@ -195,12 +196,10 @@ let sub_effect_comp g r (asc:comp_ascription) (c_computed:comp) : T.Tac (option 
     match c_computed, c with
     | C_Tot t1, C_Tot t2 -> nop
     | C_ST _, C_ST _ -> nop
-    | C_STGhost _, C_STGhost _ -> nop
-    | C_STAtomic i Neutral c1, C_STGhost _ ->
+    | C_STGhost _ _, C_STGhost _ _ -> nop
+    | C_STAtomic i Neutral c1, C_STGhost _ _ ->
       let lift = Lift_Neutral_Ghost g c_computed in
-      if eq_tm i tm_emp_inames
-      then Some (| C_STGhost c1, lift |)
-      else None
+      Some (| C_STGhost i c1, lift |)
     | C_STAtomic i o1 c1, C_STAtomic j o2 c2 ->
       if sub_observability o1 o2
       then let lift = Lift_Observability g c_computed o2 in
@@ -217,11 +216,9 @@ let check_effect_annotation g r (asc:comp_ascription) (c_computed:comp) : T.Tac 
   | Some c ->
     match c, c_computed with
     | C_Tot _, C_Tot _
-    | C_ST _, C_ST _ 
-    | C_STGhost _, C_STGhost _ -> nop
-
-    | C_STAtomic i Observable c1, C_STAtomic j Observable c2
-    | C_STAtomic i Unobservable c1, C_STAtomic j Unobservable c2 ->
+    | C_ST _, C_ST _  -> nop
+    | C_STGhost i c1, C_STGhost j c2
+    | C_STAtomic i Observable c1, C_STAtomic j Observable c2 ->
       // This should be true since we used the annotated computation type
       // to check the body of the function, but this fact is not exposed
       // by the checker and post hints yet.
@@ -231,7 +228,7 @@ let check_effect_annotation g r (asc:comp_ascription) (c_computed:comp) : T.Tac 
         assert (c == c_computed);
         nop
       ) else
-
+      
       let b = mk_binder "res" Range.range_0 c2.res in
       let phi = tm_inames_subset j i in
       let typing = tm_inames_subset_typing g j i in
@@ -252,6 +249,7 @@ let check_effect_annotation g r (asc:comp_ascription) (c_computed:comp) : T.Tac 
       let d_sub : st_sub g c_computed c =
         match c_computed with
         | C_STAtomic _ obs _ -> STS_AtomicInvs g c2 j i obs obs tok
+        | C_STGhost _ _ -> STS_GhostInvs g c2 j i tok
       in
       (| c, d_sub |)
 
@@ -299,9 +297,9 @@ let maybe_rewrite_body_typing
 
 let open_ascription (c:comp_ascription) (nv:nvar) : comp_ascription =
   let t = term_of_nvar nv in
-  subst_ascription c [DT 0 t]
+  subst_ascription c [RT.DT 0 t]
 let close_ascription (c:comp_ascription) (nv:nvar) : comp_ascription =
-  subst_ascription c [ND (snd nv) 0]
+  subst_ascription c [RT.ND (snd nv) 0]
 
 #push-options "--z3rlimit_factor 4"
 let rec check_abs_core

@@ -51,12 +51,11 @@ let freevars_close_comp (c:comp)
     | C_Tot t ->
       freevars_close_term' t x i
 
-    | C_ST s
-    | C_STGhost s ->    
+    | C_ST s ->
       freevars_close_term' s.res x i;
       freevars_close_term' s.pre x i;      
       freevars_close_term' s.post x (i + 1)
-
+    | C_STGhost n s
     | C_STAtomic n _ s ->
       freevars_close_term' n x i;    
       freevars_close_term' s.res x i;
@@ -216,9 +215,10 @@ let rec freevars_close_st_term' (t:st_term) (x:var) (i:index)
       freevars_close_st_term' body x i;
       match returns_inv with
       | None -> ()
-      | Some (b, r) ->
+      | Some (b, r, is) ->
         freevars_close_term' b.binder_ty x i;
-        freevars_close_term' r x (i + 1)
+        freevars_close_term' r x (i + 1);
+        freevars_close_term' is x i
 #pop-options
 
 let freevars_close_term (e:term) (x:var) (i:index)
@@ -278,9 +278,7 @@ let tot_or_ghost_typing_freevars
   : Lemma 
     (ensures freevars t `Set.subset` vars_of_env g /\
              freevars ty `Set.subset` vars_of_env g)
-  = elab_freevars t;
-    elab_freevars ty;      
-    let E d = d in
+  = let E d = d in
     refl_typing_freevars d;
     assert (vars_of_env_r (elab_env g) `Set.equal` (vars_of_env g))
 
@@ -340,9 +338,7 @@ let st_equiv_freevars #g (#c1 #c2:_)
       vprop_equiv_freevars eq_post;
       freevars_open_term_inv (comp_post c1) x;
       freevars_open_term_inv (comp_post c2) x;
-      Pulse.Elaborate.elab_freevars (comp_res c1);
-      refl_equiv_freevars eq_res;
-      Pulse.Elaborate.elab_freevars (comp_res c2)
+      refl_equiv_freevars eq_res
     )
     | ST_TotEquiv _ t1 t2 u t1_typing eq ->
       let t2_typing = Pulse.Typing.Metatheory.Base.rt_equiv_typing eq t1_typing._0 in
@@ -366,6 +362,7 @@ let rec st_sub_freevars #g (#c1 #c2:_)
   | STS_Trans _ _ _ _ d1 d2 ->
     st_sub_freevars d1;
     st_sub_freevars d2
+  | STS_GhostInvs _ _ is1 is2 tok
   | STS_AtomicInvs _ _ is1 is2 _ _ tok ->
     assume (freevars is2 `Set.subset` freevars (tm_inames_subset is1 is2));
     prop_validity_fv g (tm_inames_subset is1 is2)
@@ -397,11 +394,9 @@ let comp_typing_freevars  (#g:_) (#c:_) (#u:_)
     | CT_ST _ _ dst -> 
       st_comp_typing_freevars dst
 
+    | CT_STGhost _ _ _ it dst
     | CT_STAtomic _ _ _ _ it dst -> 
       tot_or_ghost_typing_freevars it;
-      st_comp_typing_freevars dst
-
-    | CT_STGhost _ _ dst -> 
       st_comp_typing_freevars dst
 
 let freevars_open_st_term_inv (e:st_term) 
@@ -469,7 +464,7 @@ let freevars_array (t:term)
   = admit()
 
 // FIXME: tame this proof
-#push-options "--fuel 3 --ifuel 1 --z3rlimit_factor 15 --query_stats --retry 5"
+#push-options "--fuel 3 --ifuel 1 --z3rlimit_factor 15 --query_stats --retry 5 --split_queries no"
 let rec st_typing_freevars (#g:_) (#t:_) (#c:_)
                            (d:st_typing g t c)
 : Lemma 
@@ -652,12 +647,14 @@ let rec st_typing_freevars (#g:_) (#t:_) (#c:_)
     tot_or_ghost_typing_freevars u_typing;
     freevars_array init_t
 
-  | T_Admit _ s _ (STC _ _ x t_typing pre_typing post_typing)
-  | T_Unreachable _ s _ (STC _ _ x t_typing pre_typing post_typing) _ ->
+  | T_Admit _ c c_typing
+  | T_Unreachable _ c c_typing _ ->
+    comp_typing_freevars c_typing;
+    let st_typing, _ = Pulse.Typing.Metatheory.Base.comp_typing_inversion c_typing in
+    let STC _ _ x t_typing pre_typing post_typing = st_typing in
     tot_or_ghost_typing_freevars t_typing;
-    tot_or_ghost_typing_freevars pre_typing;
     tot_or_ghost_typing_freevars post_typing;
-    freevars_open_term s.post (term_of_no_name_var x) 0
+    freevars_open_term (comp_post c) (term_of_no_name_var x) 0
 
   | T_WithInv _ _ _ _ _ _ _ _ _ ->
     admit () // IOU

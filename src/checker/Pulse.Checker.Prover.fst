@@ -195,7 +195,7 @@ let rec get_q_at_hd (g:env) (l:list vprop) (q:vprop { L.existsb (fun v -> eq_tm 
     else let (| tl', _ |) = get_q_at_hd g tl q in
          (| hd::tl', RU.magic #(vprop_equiv _ _ _) () |)
 
-#push-options "--z3rlimit_factor 4"
+#push-options "--z3rlimit_factor 4 --ifuel 2 --fuel 1 --split_queries no"
 let prove
   (#g:env) (#ctxt:vprop) (ctxt_typing:vprop_typing g ctxt)
   (uvs:env { disjoint g uvs })
@@ -290,14 +290,14 @@ let prove
 
 let canon_post (c:comp_st) : comp_st =
   let canon_st_comp_post (c:st_comp) : st_comp =
-    match inspect_term (elab_term c.post) with
+    match inspect_term c.post with
     | Tm_FStar _ -> c
     | post_v -> { c with post=pack_term_view_wr post_v (RU.range_of_term c.post) }
   in
   match c with
   | C_ST s -> C_ST (canon_st_comp_post s)
   | C_STAtomic i obs s -> C_STAtomic i obs (canon_st_comp_post s)
-  | C_STGhost s -> C_STGhost (canon_st_comp_post s)
+  | C_STGhost i s -> C_STGhost i (canon_st_comp_post s)
 
 irreducible
 let typing_canon #g #t (#c:comp_st) (d:st_typing g t c) : st_typing g t (canon_post c) =

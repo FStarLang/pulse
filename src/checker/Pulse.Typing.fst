@@ -35,10 +35,10 @@ let debug_log (level:string)  (g:env) (f: unit -> T.Tac string) : T.Tac unit =
   then T.print (Printf.sprintf "Debug@%s:{ %s }\n" level (f ()))
 
 let tm_unit = tm_fvar (as_fv unit_lid)
-let tm_bool = tm_fvar (as_fv bool_lid)
+let tm_bool = RT.bool_ty
 let tm_int  = tm_fvar (as_fv int_lid)
 let tm_nat  = tm_fvar (as_fv nat_lid)
-let tm_szt  = tm_fvar (as_fv szt_lid)
+let tm_szt  = szt_tm
 let tm_true = tm_constant R.C_True
 let tm_false = tm_constant R.C_False
 
@@ -103,6 +103,7 @@ let comp_return (c:ctag) (use_eq:bool) (u:universe) (t:term) (e:term) (post:term
       { u; res = t; pre = open_term' post e 0; post = post_maybe_eq }
   | STT_Ghost ->
     C_STGhost
+      tm_emp_inames
       { u; res = t; pre = open_term' post e 0; post = post_maybe_eq }
 
 
@@ -110,8 +111,7 @@ module L = FStar.List.Tot
 let extend_env_l (f:R.env) (g:env_bindings) : R.env = 
   L.fold_right 
     (fun (x, b) g ->  
-      let t = elab_term b in
-      RT.extend_env g x t)
+      RT.extend_env g x b)
      g
      f
 let elab_env (e:env) : R.env = extend_env_l (fstar_env e) (bindings e)
@@ -137,7 +137,7 @@ let rec push_bindings (g:env) (bs:list binding{all_fresh g bs}) : Tot (g':env{en
 
 let elab_push_binding (g:env) (x:var { ~ (Set.mem x (dom g)) }) (t:typ)
   : Lemma (elab_env (push_binding g x ppname_default t) ==
-           RT.extend_env (elab_env g) x (elab_term t)) = ()
+           RT.extend_env (elab_env g) x t) = ()
 
 [@@ erasable; no_auto_projectors]
 noeq
@@ -195,7 +195,7 @@ type vprop_equiv : env -> term -> term -> Type =
      g:env ->
      t0:term ->
      t1:term ->
-     FTB.equiv_token (elab_env g) (elab_term t0) (elab_term t1) ->
+     FTB.equiv_token (elab_env g) t0 t1 ->
      vprop_equiv g t0 t1
 
   // | VE_Ex:
@@ -227,7 +227,18 @@ let add_frame (s:comp_st) (frame:term)
     match s with
     | C_ST s -> C_ST (add_frame_s s)
     | C_STAtomic inames obs s -> C_STAtomic inames obs (add_frame_s s)
-    | C_STGhost s -> C_STGhost (add_frame_s s)
+    | C_STGhost inames s -> C_STGhost inames (add_frame_s s)
+
+let add_frame_l (s:comp_st) (frame:term)
+  : comp_st
+  = let add_frame_s (s:st_comp) : st_comp =
+        { s with pre = tm_star frame s.pre;
+                 post = tm_star frame s.post }
+    in
+    match s with
+    | C_ST s -> C_ST (add_frame_s s)
+    | C_STAtomic inames obs s -> C_STAtomic inames obs (add_frame_s s)
+    | C_STGhost inames s -> C_STGhost inames (add_frame_s s)
 
 let add_inv (s:comp_st) (v:vprop)
   : comp_st
@@ -239,27 +250,26 @@ let at_most_one_observable o1 o2 =
   | _ -> true
 
 let join_obs (o1 o2:observability) : observability =
-  match o1, o2 with
-  | Neutral, o
-  | o, Neutral -> o
-  | Observable, _ -> Observable
-  | _, Observable -> Observable
-  | Unobservable, Unobservable -> Unobservable
+  if o1 = o2 then o1
+  else Observable
 
-let add_iname_at_least_unobservable (s:comp_st {C_STAtomic? s}) (inv_vprop inv_tm:term) =
-  let add_inv_tm (inames:term) = 
-    wr (Pulse.Reflection.Util.add_inv_tm (elab_term inv_vprop) (elab_term inames) (elab_term inv_tm))
-       (RU.range_of_term inames)
-  in
-  let C_STAtomic inames obs s = s in
-  C_STAtomic (add_inv_tm inames) (join_obs obs Unobservable) s
- 
+let comp_with_inv (s:comp_st {C_STAtomic? s || C_STGhost? s}) (i p:term) =
+  let add_inv inames = tm_add_inv inames i in
+  let add_inv_st_comp (s:st_comp) =
+    let frame = tm_inv i p in
+    { s with pre = tm_star frame s.pre;
+             post = tm_star frame s.post} in
+  match s with
+  | C_STAtomic inames obs s ->
+    C_STAtomic (add_inv inames) obs (add_inv_st_comp s)
+  | C_STGhost inames s ->
+    C_STGhost (add_inv inames) (add_inv_st_comp s)
 
 let bind_comp_compatible (c1 c2:comp_st)
   : prop
   = match c1, c2 with
-    | C_ST _, C_ST _
-    | C_STGhost _, C_STGhost _ -> True
+    | C_ST _, C_ST _ -> True
+    | C_STGhost inames1 _, C_STGhost inames2 _ -> inames1 == inames2
     | C_STAtomic inames1 obs1 _, C_STAtomic inames2 obs2 _ ->
       inames1 == inames2 /\ at_most_one_observable obs1 obs2
     | _, _ -> False
@@ -275,7 +285,7 @@ let bind_comp_out (c1:comp_st) (c2:comp_st{bind_comp_compatible c1 c2})
   : comp_st
   = let s : st_comp = {u=comp_u c2; res=comp_res c2; pre=comp_pre c1; post=comp_post c2} in
     match c1, c2 with
-    | C_STGhost _, C_STGhost _ -> C_STGhost s
+    | C_STGhost inames _, C_STGhost _ _ -> C_STGhost inames s
     | C_STAtomic inames obs1 _, C_STAtomic _ obs2 _ ->
       C_STAtomic inames (join_obs obs1 obs2) s
     | C_ST _, C_ST _ -> C_ST s
@@ -287,8 +297,7 @@ let st_equiv_pre (c1 c2:comp_st)
     | C_ST _, C_ST _ -> True
     | C_STAtomic inames1 obs1 _, C_STAtomic inames2 obs2 _ ->
       inames1 == inames2 /\ obs1 == obs2
-    | C_STGhost _, C_STGhost  _ ->
-      True
+    | C_STGhost inames1 _, C_STGhost inames2 _ -> inames1 == inames2
     | _, _ -> False)
 
 let non_informative_class (u:universe) (t:term)
@@ -305,40 +314,44 @@ let elim_exists_post (u:universe) (t:term) (p:term) (x:nvar)
 
 let comp_elim_exists (u:universe) (t:term) (p:term) (x:nvar)
   : comp
-  = C_STGhost {
-                u=u;
-                res=mk_erased u t;
-                pre=tm_exists_sl u (as_binder t) p;
-                post=elim_exists_post u t p x
-              }
+  = C_STGhost tm_emp_inames
+      {
+        u=u;
+        res=mk_erased u t;
+        pre=tm_exists_sl u (as_binder t) p;
+        post=elim_exists_post u t p x
+      }
 
 let comp_intro_pure (p:term) =
-  C_STGhost {
-              u=u_zero;
-              res=tm_unit;
-              pre=tm_emp;
-              post=tm_pure p
-            }
+  C_STGhost tm_emp_inames
+    {
+      u=u_zero;
+      res=tm_unit;
+      pre=tm_emp;
+      post=tm_pure p
+    }
 
 let named_binder (x:ppname) (t:term) = mk_binder_ppname t x
 
 let comp_intro_exists (u:universe) (b:binder) (p:term) (e:term)
   : comp
-  = C_STGhost {
-                u=u0;
-                res=tm_unit;
-                pre=open_term' p e 0;
-                post=tm_exists_sl u b p
-              }
+  = C_STGhost tm_emp_inames
+      {
+        u=u0;
+        res=tm_unit;
+        pre=open_term' p e 0;
+        post=tm_exists_sl u b p
+      }
 
 let comp_intro_exists_erased (u:universe) (b:binder) (p:term) (e:term)
   : comp
-  = C_STGhost {
-                u=u0;
-                res=tm_unit;
-                pre=open_term' p (mk_reveal u b.binder_ty e) 0;
-                post=tm_exists_sl u b p
-              }
+  = C_STGhost tm_emp_inames
+      {
+        u=u0;
+        res=tm_unit;
+        pre=open_term' p (mk_reveal u b.binder_ty e) 0;
+        post=tm_exists_sl u b p
+      }
 
 
 let comp_while_cond (x:ppname) (inv:term)
@@ -476,25 +489,20 @@ let comp_withlocal_array_body (arr:var) (a:term) (init:term) (len:term) (c:comp{
   }
 
 let comp_rewrite (p q:vprop) : comp =
-  C_STGhost  {
+  C_STGhost tm_emp_inames
+    {
 			u = u0;
 			res = tm_unit;
 			pre = p;
 			post = q;
 		}
 
-let comp_admit (c:ctag) (s:st_comp) : comp =
-  match c with
-  | STT -> C_ST s
-  | STT_Atomic -> C_STAtomic tm_emp_inames Neutral s
-  | STT_Ghost -> C_STGhost s
-
 [@@erasable]
 noeq
 type my_erased (a:Type) = | E of a
 
 let typing (g:env) (e:term) (eff:T.tot_or_ghost) (t:term) =
-  my_erased (RT.typing (elab_env g) (elab_term e) (eff, elab_term t))
+  my_erased (RT.typing (elab_env g) e (eff, t))
 
 let tot_typing (g:env) (e:term) (t:term) =
   typing g e T.E_Total t
@@ -525,16 +533,12 @@ let tm_join_inames (inames1 inames2 : term) : term =
   if eq_tm inames2 tm_emp_inames then inames1 else
   if eq_tm inames1 inames2 then inames1 else
 
-  let inames1 = elab_term inames1 in
-  let inames2 = elab_term inames2 in
   let join_lid = Pulse.Reflection.Util.mk_pulse_lib_core_lid "join_inames" in
   let join : R.term = R.pack_ln (R.Tv_FVar (R.pack_fv join_lid)) in
   wr (R.mk_e_app join [inames1; inames2])
      (T.range_of_term inames1)
 
 let tm_inames_subset (inames1 inames2 : term) : term =
-  let inames1 = elab_term inames1 in
-  let inames2 = elab_term inames2 in
   let join_lid = Pulse.Reflection.Util.mk_pulse_lib_core_lid "inames_subset" in
   let join : R.term = R.pack_ln (R.Tv_FVar (R.pack_fv join_lid)) in
   wr (R.mk_e_app join [inames1; inames2])
@@ -547,7 +551,7 @@ let tm_inames_subset_typing (g:env) (inames1 inames2 : term) : tot_typing g (tm_
   RU.magic()
 
 let prop_validity (g:env) (t:term) =
-  FTB.prop_validity_token (elab_env g) (elab_term t)
+  FTB.prop_validity_token (elab_env g) t
 
 [@@ no_auto_projectors]
 noeq
@@ -562,7 +566,7 @@ type st_equiv : env -> comp -> comp -> Type =
       tot_typing g (comp_pre c1) tm_vprop ->
       tot_typing g (comp_res c1) (tm_type (comp_u c1)) ->
       tot_typing (push_binding g x ppname_default (comp_res c1)) (open_term (comp_post c1) x) tm_vprop ->
-      RT.equiv (elab_env g) (elab_term (comp_res c1)) (elab_term (comp_res c2)) ->
+      RT.equiv (elab_env g) (comp_res c1) (comp_res c2) ->
       vprop_equiv g (comp_pre c1) (comp_pre c2) ->
       vprop_equiv (push_binding g x ppname_default (comp_res c1))
                   (open_term (comp_post c1) x)
@@ -575,7 +579,7 @@ type st_equiv : env -> comp -> comp -> Type =
       t2:term ->
       u:_ ->
       universe_of g t1 u ->
-      Ghost.erased (RT.equiv (elab_env g) (elab_term t1) (elab_term t2)) ->
+      Ghost.erased (RT.equiv (elab_env g) t1 t2) ->
       st_equiv g (C_Tot t1) (C_Tot t2)
 
 let sub_observability (o1 o2:observability) = o1 = Neutral || o1 = o2 || o2 = Observable
@@ -596,6 +600,14 @@ type st_sub : env -> comp -> comp -> Type =
     st_sub g c1 c2 ->
     st_sub g c2 c3 ->
     st_sub g c1 c3
+
+  | STS_GhostInvs :
+    g:env ->
+    stc:st_comp ->
+    is1:term ->
+    is2:term ->
+    prop_validity g (tm_inames_subset is1 is2) ->
+    st_sub g (C_STGhost is1 stc) (C_STGhost is2 stc)
 
   | STS_AtomicInvs :
     g:env ->
@@ -627,12 +639,12 @@ type lift_comp : env -> comp -> comp -> Type =
       g:env ->
       c:comp_st{C_STGhost? c} ->
       non_informative_c:non_informative_c g c ->
-      lift_comp g c (C_STAtomic tm_emp_inames Neutral (st_comp_of_comp c))
+      lift_comp g c (C_STAtomic (comp_inames c) Neutral (st_comp_of_comp c))
 
   | Lift_Neutral_Ghost:
       g:env ->
       c:comp_st{C_STAtomic? c /\ C_STAtomic?.obs c == Neutral } ->
-      lift_comp g c (C_STGhost (st_comp_of_comp c))
+      lift_comp g c (C_STGhost (comp_inames c) (st_comp_of_comp c))
 
 let wrst (ct:comp_st) (t:st_term') : st_term =
   { term = t; range = FStar.Range.range_0; effect_tag = as_effect_hint (ctag_of_comp_st ct) }
@@ -670,7 +682,7 @@ let tr_binding (vt : var & typ) : Tot R.binding =
   let v, t = vt in
   { 
     uniq = v;
-    sort = elab_term t;
+    sort = t;
     ppname = ppname_default.name;
  }
 
@@ -702,15 +714,17 @@ type comp_typing : env -> comp -> universe -> Type =
       comp_typing g (C_STAtomic inames obs st) (universe_of_comp (C_STAtomic inames obs st))
 
   | CT_STGhost :
-      g:env -> 
-      st:st_comp -> 
+      g:env ->
+      inames:term ->
+      st:st_comp ->
+      tot_typing g inames tm_inames ->
       st_comp_typing g st ->
-      comp_typing g (C_STGhost st) (universe_of_comp (C_STGhost st))
+      comp_typing g (C_STGhost inames st) (universe_of_comp (C_STGhost inames st))
 
 let comp_typing_u (e:env) (c:comp_st) = comp_typing e c (universe_of_comp c)
 
 let subtyping_token g t1 t2 =
-  T.subtyping_token (elab_env g) (elab_term t1) (elab_term t2)
+  T.subtyping_token (elab_env g) t1 t2
 
 val readback_binding : R.binding -> binding
 let readback_binding b = (b.uniq, b.sort)
@@ -718,9 +732,9 @@ let readback_binding b = (b.uniq, b.sort)
 let non_informative (g:env) (c:comp) =
   my_erased (RT.non_informative (elab_env g) (elab_comp c))
 
-let inv_disjointness (inv_p inames inv:term) = 
-  let g = Pulse.Reflection.Util.inv_disjointness_goal (elab_term inv_p) (elab_term inames) (elab_term inv) in 
-  S.wr g (RU.range_of_term inv)
+let inv_disjointness (inames i:term) = 
+  let g = Pulse.Reflection.Util.inv_disjointness_goal inames i in 
+  S.wr g (RU.range_of_term i)
 
 let eff_of_ctag = function
   | STT_Ghost -> T.E_Ghost
@@ -998,33 +1012,34 @@ type st_typing : env -> st_term -> comp -> Type =
 
   | T_Admit:
       g:env ->
-      s:st_comp ->
-      c:ctag ->
-      st_comp_typing g s ->
-      st_typing g (wtag (Some c) (Tm_Admit { ctag=c; u=s.u; typ=s.res; post=None }))
-                  (comp_admit c s)
+      c:comp_st ->
+      comp_typing g c (universe_of_comp c) ->
+      st_typing g (wtag (Some (ctag_of_comp_st c))
+                        (Tm_Admit { ctag=ctag_of_comp_st c;
+                                    u=comp_u c;
+                                    typ=comp_res c;
+                                    post=None }))
+                  c
 
   | T_Unreachable:
       g:env ->
-      s:st_comp ->
-      c:ctag ->
-      st_comp_typing g s ->
+      c:comp_st ->
+      comp_typing g c (universe_of_comp c) ->
       prop_validity g (S.wr (`False) FStar.Range.range_0) -> 
-      st_typing g (wtag (Some c) Tm_Unreachable) (comp_admit c s)
+      st_typing g (wtag (Some (ctag_of_comp_st c)) Tm_Unreachable) c
 
-  (* This limits the body to be atomic, rather than also allowing unobservable *)
   | T_WithInv:
       g:env ->
-      inv_tm : term ->
-      inv_vprop : vprop ->
-      inv_vprop_typing : tot_typing g inv_vprop tm_vprop -> // could be ghost
-      inv_typing : tot_typing g inv_tm (tm_inv inv_vprop) ->
-      body : st_term ->
-      c : comp_st { C_STAtomic? c } ->
-      body_typing : st_typing g body (add_frame c inv_vprop) ->
-      inv_disjointness_token:prop_validity g (inv_disjointness inv_vprop (comp_inames c) inv_tm) ->
-      st_typing g (wtag (Some STT_Atomic) (Tm_WithInv {name=inv_tm; body; returns_inv=None}))
-                  (add_iname_at_least_unobservable c inv_vprop inv_tm)
+      i:term ->
+      p:term ->
+      body:st_term ->
+      c:comp_st { C_STAtomic? c || C_STGhost? c } ->
+      tot_typing g i tm_iname_ref ->
+      tot_typing g p tm_vprop ->
+      body_typing : st_typing g body (add_frame_l c p) ->
+      inv_disjointness_token:prop_validity g (inv_disjointness (comp_inames c) i) ->
+      st_typing g (wtag (Some (ctag_of_comp_st c)) (Tm_WithInv {name=i; body; returns_inv=None}))
+                  (comp_with_inv c i p)
 
 and pats_complete : env -> term -> typ -> list R.pattern -> Type0 =
   // just check the elaborated term with the core tc
@@ -1034,7 +1049,7 @@ and pats_complete : env -> term -> typ -> list R.pattern -> Type0 =
     sc_ty:typ ->
     pats:list R.pattern ->
     bnds:list (list R.binding) ->
-    RT.match_is_complete (elab_env g) (elab_term sc) (elab_term sc_ty) pats bnds ->
+    RT.match_is_complete (elab_env g) sc sc_ty pats bnds ->
     pats_complete g sc sc_ty pats
 
 and brs_typing (g:env) (sc_u:universe) (sc_ty:typ) (sc:term) : list branch -> comp_st -> Type =
@@ -1105,8 +1120,8 @@ let star_typing_inversion (#g:_) (#t0 #t1:term) (d:tot_typing g (tm_star t0 t1) 
 
 let vprop_eq_typing_inversion g (t0 t1:term)
                               (token:FTB.equiv_token (elab_env g)
-                                                     (elab_term t0)
-                                                     (elab_term t1))
+                                                     t0
+                                                     t1)
   : GTot (tot_typing g t0 tm_vprop &
           tot_typing g t1 tm_vprop)
   = admit ()
@@ -1128,10 +1143,11 @@ let fresh_wrt (x:var) (g:env) (vars:_) =
 
 let effect_annot_typing (g:env) (e:effect_annot) =
   match e with
-  | EffectAnnotAtomic { opens } ->
+  | EffectAnnotGhost { opens }
+  | EffectAnnotAtomic { opens }
+  | EffectAnnotAtomicOrGhost { opens } ->
     tot_typing g opens tm_inames
-  | _ ->
-    unit
+  | _ -> unit
 
 noeq
 type post_hint_t = {
@@ -1146,8 +1162,8 @@ type post_hint_t = {
   post_typing_src:tot_typing (push_binding g x ppname_default ret_ty) (open_term post x) tm_vprop;
   post_typing:
     FStar.Ghost.erased (RT.tot_typing (elab_env g)
-                                      (RT.(mk_abs (elab_term ret_ty) T.Q_Explicit (elab_term post)))
-                                      (RT.mk_arrow (elab_term ret_ty) T.Q_Explicit (elab_term tm_vprop)))
+                                      (RT.(mk_abs ret_ty T.Q_Explicit post))
+                                      (RT.mk_arrow ret_ty T.Q_Explicit tm_vprop))
 }
 
 let post_hint_for_env_p (g:env) (p:post_hint_t) = g `env_extends` p.g
@@ -1169,7 +1185,6 @@ type post_hint_typing_t (g:env) (p:post_hint_t) (x:var { ~ (Set.mem x (dom g)) }
   post_typing:tot_typing (push_binding g x ppname_default p.ret_ty) (open_term p.post x) tm_vprop
 }
 
-
 irreducible
 let post_hint_typing (g:env)
                      (p:post_hint_for_env g)
@@ -1177,11 +1192,12 @@ let post_hint_typing (g:env)
   : post_hint_typing_t g p x
   = let effect_annot_typing : effect_annot_typing g p.effect_annot = 
       match p.effect_annot with
-      | EffectAnnotAtomic { opens } ->
+      | EffectAnnotAtomic { opens }
+      | EffectAnnotGhost { opens }
+      | EffectAnnotAtomicOrGhost { opens } ->
         let opens_typing : tot_typing g opens tm_inames = RU.magic () in //weakening
         opens_typing
-      | _ ->
-        ()
+      | _ -> ()
     in
   {
     effect_annot_typing;
@@ -1189,12 +1205,14 @@ let post_hint_typing (g:env)
     post_typing = RU.magic ();
   }
 
-let effect_annot_matches c (effect_annot:effect_annot) : prop =
+let effect_annot_matches (c:comp_st) (effect_annot:effect_annot) : prop =
   match c, effect_annot with
-  | C_ST _, EffectAnnotSTT
-  | C_STGhost _, EffectAnnotGhost -> True
+  | C_ST _, EffectAnnotSTT -> True
+  | C_STGhost inames' _, EffectAnnotGhost { opens }
   | C_STAtomic inames' _ _, EffectAnnotAtomic { opens } ->
     inames' == opens
+  | _, EffectAnnotAtomicOrGhost { opens } ->
+    (C_STAtomic? c \/ C_STGhost? c)  /\ (comp_inames c == opens)
   | _ -> False
 
 let comp_post_matches_hint (c:comp_st) (post_hint:option post_hint_t) =
