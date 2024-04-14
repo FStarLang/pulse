@@ -1713,7 +1713,7 @@ let ast_env_extend_rec_typ
 
 // This is nothing more than delta-equivalence
 
-#push-options "--z3rlimit 16"
+#push-options "--z3rlimit 32"
 
 [@@"opaque_to_smt"]
 let rec typ_equiv
