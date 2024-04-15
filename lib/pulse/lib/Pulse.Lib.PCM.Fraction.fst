@@ -43,7 +43,7 @@ let mk_frame_preserving_upd_none
 : Tot (frame_preserving_upd pcm_frac (Some (Ghost.reveal v0, full_perm)) None)
 = fun _ -> None
 
-let perm_ok p : prop = (p.v <=. one == true)
+let perm_ok p : prop = p.v <=. one
 
 let full_values_compatible (#a:Type u#a) (x:a)
 : Lemma (compatible pcm_frac (Some (x, full_perm)) (Some (x, full_perm)))
