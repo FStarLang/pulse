@@ -2725,3 +2725,635 @@ let solve_spec_ast_env_elem_well_formed () : FStar.Tactics.Tac unit =
 let solve_sem_equiv () : FStar.Tactics.Tac unit =
   FStar.Tactics.norm [delta_attr [`%sem_attr]; iota; zeta; primops; nbe];
   FStar.Tactics.smt ()
+
+noeq
+type target_type =
+| TTDef of string
+| TTUnit
+| TTSimple
+| TTUInt64
+| TTString
+| TTBool
+| TTOption of target_type
+| TTPair: target_type -> target_type -> target_type
+| TTUnion: target_type -> target_type -> target_type
+| TTArray of target_type
+| TTNonemptyArray of target_type
+| TTEscapeHatch of Spec.typ // TODO: remove
+
+type target_spec_env (bound: name_env) =
+  (name bound -> Type0)
+
+let rec target_type_bounded
+  (bound: name_env)
+  (t: target_type)
+: GTot bool
+= match t with
+  | TTDef s -> s `name_mem` bound
+  | TTPair t1 t2
+  | TTUnion t1 t2 ->
+    target_type_bounded bound t1 &&
+    target_type_bounded bound t2
+  | TTNonemptyArray a
+  | TTArray a
+  | TTOption a ->
+    target_type_bounded bound a
+  | TTSimple
+  | TTUInt64
+  | TTUnit
+  | TTBool
+  | TTEscapeHatch _
+  | TTString -> true
+
+let nelist (a: Type) : Type0 = (l: list a { Cons? l })
+
+let cbor_with (t: Spec.typ) : Type0 = (c: CBOR.Spec.raw_data_item { t c })
+
+module U8 = FStar.UInt8
+let string64 = (s: Seq.seq U8.t { Seq.length s < pow2 64 })
+module U64 = FStar.UInt64
+
+let rec target_type_sem
+  (bound: name_env)
+  (env: target_spec_env bound)
+  (t: target_type)
+: Pure Type0
+  (requires target_type_bounded bound t)
+  (ensures fun _ -> True)
+= match t with
+  | TTDef s -> env s
+  | TTPair t1 t2 -> target_type_sem bound env t1 & target_type_sem bound env t2
+  | TTUnion t1 t2 -> target_type_sem bound env t1 `sum` target_type_sem bound env t2
+  | TTArray a -> list (target_type_sem bound env a)
+  | TTNonemptyArray a -> nelist (target_type_sem bound env a)
+  | TTOption a -> option (target_type_sem bound env a)
+  | TTSimple -> CBOR.Spec.simple_value
+  | TTUInt64 -> U64.t
+  | TTUnit -> unit
+  | TTBool -> bool
+  | TTString -> string64
+  | TTEscapeHatch ty -> cbor_with ty
+
+let ttpair (t1 t2: target_type) : target_type = match t1, t2 with
+| TTUnit, _ -> t2
+| _, TTUnit -> t1
+| _ -> TTPair t1 t2
+
+let destruct_ttpair
+  (bound: name_env)
+  (env: target_spec_env bound)
+  (t1 t2: (t: target_type { target_type_bounded bound t }))
+  (x: target_type_sem bound env (t1 `ttpair` t2))
+: Tot (target_type_sem bound env t1 & target_type_sem bound env t2)
+= match t1, t2 with
+  | TTUnit, _ -> ((), x)
+  | _, TTUnit -> (x, ())
+  | _ -> x
+
+let construct_ttpair
+  (bound: name_env)
+  (env: target_spec_env bound)
+  (t1 t2: (t: target_type { target_type_bounded bound t }))
+  (x: target_type_sem bound env t1 & target_type_sem bound env t2)
+: Tot (target_type_sem bound env (t1 `ttpair` t2))
+= match t1, t2 with
+  | TTUnit, _ -> snd x
+  | _, TTUnit -> fst x
+  | _ -> x
+
+let rec target_type_of_elem_typ
+  (x: elem_typ)
+: Tot target_type
+= match x with
+  | TDef s -> TTDef s
+  | TLiteral _ -> TTUnit
+  | TBool -> TTBool
+  | TByteString
+  | TTextString -> TTString
+  | TElemArray s -> target_type_of_elem_array_group s
+
+and target_type_of_atom_array_group
+  (x: atom_array_group)
+: Tot target_type
+= match x with
+  | TADef i -> TTDef i
+  | TAElem t -> target_type_of_elem_typ t
+
+and target_type_of_elem_array_group
+  (x: elem_array_group)
+: Tot target_type
+= match x with
+  | TAAtom t -> target_type_of_atom_array_group t
+  | TAZeroOrMore t -> TTArray (target_type_of_atom_array_group t)
+  | TAZeroOrOne t -> TTOption (target_type_of_atom_array_group t)
+  | TAOneOrMore t -> TTNonemptyArray (target_type_of_atom_array_group t)
+
+let rec target_type_of_array_group
+  (a: array_group)
+: Tot target_type
+= match a with
+  | [] -> TTUnit
+  | (_ (* name *), t) :: q ->
+    target_type_of_elem_array_group t `ttpair`
+    target_type_of_array_group q
+
+let target_type_of_table_map_group_item
+  (x: table_map_group_item)
+: Tot target_type
+= let (k, v) = x in
+  TTArray (target_type_of_elem_typ k `ttpair` target_type_of_elem_typ v)
+
+let rec target_type_of_table_map_group
+  (l: table_map_group)
+: Tot target_type
+= match l with
+  | [] -> TTUnit
+  | a :: q -> target_type_of_table_map_group_item a `ttpair`
+    target_type_of_table_map_group q
+
+let target_type_of_atom_struct_map_group
+  (x: atom_struct_map_group)
+: Tot target_type
+= match x with
+  | TSDef name -> TTDef name
+  | TSEntry _ _ (* key *) value -> target_type_of_elem_typ value
+
+let target_type_of_maybe_atom_struct_map_group
+  (x: maybe_atom_struct_map_group)
+: Tot target_type
+= let (kd, x') = x in
+  let t' = target_type_of_atom_struct_map_group x' in
+  match kd with
+  | TSRequired -> t'
+  | TSOptional -> TTOption t'
+
+let rec target_type_of_elem_struct_map_group
+  (x: elem_struct_map_group)
+: Tot target_type
+  (decreases (List.Tot.length (TStructConcat?._0 x)))
+= match TStructConcat?._0 x with
+  | [] -> TTUnit
+  | a :: q -> target_type_of_maybe_atom_struct_map_group a `ttpair`
+    target_type_of_elem_struct_map_group (TStructConcat q)
+
+let rec target_type_of_struct_map_group
+  (x: struct_map_group)
+: Tot target_type
+  (decreases (List.Tot.length (TStructChoice?._0 x)))
+= match TStructChoice?._0 x with
+  | [] -> TTUnit (* dummy *)
+  | [a] -> target_type_of_elem_struct_map_group a
+  | a :: q -> target_type_of_elem_struct_map_group a `TTUnion`
+    target_type_of_struct_map_group (TStructChoice q)
+
+let target_type_of_elem_map_group
+  (x: elem_map_group)
+: Tot target_type
+= match x with
+  | TMTable (TStructChoice [TStructConcat []]) t -> // table only
+    target_type_of_table_map_group t
+  | TMTable s _ -> // struct only, but ignore the table
+    target_type_of_struct_map_group s
+
+let rec target_type_of_choice_map_group
+  (x: choice_map_group)
+: Tot target_type
+= match x with
+  | [] -> TTUnit (* dummy *)
+  | [a] -> TTDef a
+  | a :: q -> TTDef a `TTUnion` target_type_of_choice_map_group q
+
+let target_type_of_map_group
+  (x: map_group)
+: Tot target_type
+= match x with
+  | TMapElem e -> target_type_of_elem_map_group e
+  | TMapChoice l -> target_type_of_choice_map_group l
+
+let rec target_type_of_choice_typ
+  (l: list elem_typ)
+: Tot target_type
+= match l with
+  | [] -> TTUnit (* dummy *)
+  | [a] -> target_type_of_elem_typ a
+  | a :: q -> target_type_of_elem_typ a `TTUnion`
+    target_type_of_choice_typ q
+
+let target_type_of_typ
+  (t: typ)
+: Tot target_type
+= match t with
+  | TElem t -> target_type_of_elem_typ t
+  | TChoice l -> target_type_of_choice_typ l
+  | TTag _ t -> target_type_of_elem_typ t
+  | TEscapeHatch _ -> TTUnit (* ignore non-realizable types *)
+  | TArray a -> target_type_of_array_group a
+  | TMap m -> target_type_of_map_group m
+
+let rec target_type_of_elem_typ_bounded
+  (b: name_env)
+  (x: elem_typ)
+: Lemma
+  (requires elem_typ_bounded b x)
+  (ensures target_type_bounded b (target_type_of_elem_typ x))
+  [SMTPat (target_type_bounded b (target_type_of_elem_typ x))]
+= match x with
+  | TElemArray s -> target_type_of_elem_array_group_bounded b s
+  | _ -> ()
+
+and target_type_of_atom_array_group_bounded
+  (b: name_env)
+  (x: atom_array_group)
+: Lemma
+  (requires atom_array_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_atom_array_group x))
+  [SMTPat (target_type_bounded b (target_type_of_atom_array_group x))]
+= match x with
+  | TAElem t -> target_type_of_elem_typ_bounded b t
+  | _ -> ()
+
+and target_type_of_elem_array_group_bounded
+  (b: name_env)
+  (x: elem_array_group)
+: Lemma
+  (requires elem_array_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_elem_array_group x))
+  [SMTPat (target_type_bounded b (target_type_of_elem_array_group x))]
+= match x with
+  | TAAtom t
+  | TAZeroOrMore t
+  | TAZeroOrOne t
+  | TAOneOrMore t
+  -> target_type_of_atom_array_group_bounded b t
+
+let rec target_type_of_array_group_bounded
+  (b: name_env)
+  (x: array_group)
+: Lemma
+  (requires array_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_array_group x))
+  [SMTPat (target_type_bounded b (target_type_of_array_group x))]
+= match x with
+  | [] -> ()
+  | (_, t) :: q ->
+    target_type_of_elem_array_group_bounded b t;
+    target_type_of_array_group_bounded b q
+
+let target_type_of_table_map_group_item_bounded
+  (b: name_env)
+  (x: table_map_group_item)
+: Lemma
+  (requires table_map_group_item_bounded b x)
+  (ensures target_type_bounded b (target_type_of_table_map_group_item x))
+= ()
+
+let rec target_type_of_table_map_group_bounded
+  (b: name_env)
+  (x: table_map_group)
+: Lemma
+  (requires table_map_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_table_map_group x))
+  [SMTPat (target_type_bounded b (target_type_of_table_map_group x))]
+= match x with
+  | [] -> ()
+  | a :: q -> target_type_of_table_map_group_bounded b q
+
+let target_type_of_atom_struct_map_group_bounded
+  (b: name_env)
+  (x: atom_struct_map_group)
+: Lemma
+  (requires atom_struct_map_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_atom_struct_map_group x))
+= ()
+
+let target_type_of_maybe_atom_struct_map_group_bounded
+  (b: name_env)
+  (x: maybe_atom_struct_map_group)
+: Lemma
+  (requires maybe_atom_struct_map_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_maybe_atom_struct_map_group x))
+= ()
+
+let rec target_type_of_elem_struct_map_group_bounded
+  (b: name_env)
+  (x: elem_struct_map_group)
+: Lemma
+  (requires elem_struct_map_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_elem_struct_map_group x))
+  (decreases (TStructConcat?._0 x))
+  [SMTPat (target_type_bounded b (target_type_of_elem_struct_map_group x))]
+= match TStructConcat?._0 x with
+  | [] -> ()
+  | a :: q -> target_type_of_elem_struct_map_group_bounded b (TStructConcat q)
+
+let rec target_type_of_struct_map_group_bounded
+  (b: name_env)
+  (x: struct_map_group)
+: Lemma
+  (requires struct_map_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_struct_map_group x))
+  (decreases (TStructChoice?._0 x))
+  [SMTPat (target_type_bounded b (target_type_of_struct_map_group x))]
+= match TStructChoice?._0 x with
+  | [] -> ()
+  | a :: q -> target_type_of_struct_map_group_bounded b (TStructChoice q)
+
+let rec target_type_of_choice_map_group_bounded
+  (b: name_env)
+  (x: choice_map_group)
+: Lemma
+  (requires choice_map_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_choice_map_group x))
+  [SMTPat (target_type_bounded b (target_type_of_choice_map_group x))]
+= match x with
+  | [] -> ()
+  | a :: q -> target_type_of_choice_map_group_bounded b q
+
+let target_type_of_map_group_bounded
+  (b: name_env)
+  (x: map_group)
+: Lemma
+  (requires map_group_bounded b x)
+  (ensures target_type_bounded b (target_type_of_map_group x))
+  [SMTPat (target_type_bounded b (target_type_of_map_group x))]
+= ()
+
+let rec target_type_of_choice_typ_bounded
+  (b: name_env)
+  (x: list elem_typ)
+: Lemma
+  (requires typ_bounded b (TChoice x))
+  (ensures target_type_bounded b (target_type_of_choice_typ x))
+  [SMTPat (target_type_bounded b (target_type_of_choice_typ x))]
+= match x with
+  | [] -> ()
+  | a :: q -> target_type_of_choice_typ_bounded b q
+
+let target_type_of_typ_bounded
+  (b: name_env)
+  (x: typ)
+: Lemma
+  (requires typ_bounded b x)
+  (ensures target_type_bounded b (target_type_of_typ x))
+  [SMTPat (target_type_bounded b (target_type_of_typ x))]
+= ()
+
+(* Serializability condition needed because array and map sizes are bounded *)
+
+noeq
+type target_spec_size_env (b: name_env) = {
+  tss_env: target_spec_env b;
+  tss_array_size: (n: name b) -> (x: tss_env n) -> Tot nat;
+  tss_map_size: (n: name b) -> (x: tss_env n) -> Tot nat;
+}
+
+let array_size_of_atom_array_group
+  (b: name_env)
+  (env: target_spec_size_env b)
+  (t: atom_array_group { atom_array_group_bounded b t })
+  (x: target_type_sem b env.tss_env (target_type_of_atom_array_group t))
+: Tot nat
+= match t with
+  | TADef s -> env.tss_array_size s x
+  | TAElem _ -> 1
+
+let rec array_size_of_atom_array_group_list
+  (b: name_env)
+  (env: target_spec_size_env b)
+  (t: atom_array_group { atom_array_group_bounded b t })
+  (x: list (target_type_sem b env.tss_env (target_type_of_atom_array_group t)))
+: Tot nat
+= match x with
+  | [] -> 0
+  | a :: q -> array_size_of_atom_array_group b env t a +
+    array_size_of_atom_array_group_list b env t q
+
+let array_size_of_elem_array_group
+  (b: name_env)
+  (env: target_spec_size_env b)
+  (t: elem_array_group { elem_array_group_bounded b t })
+  (x: target_type_sem b env.tss_env (target_type_of_elem_array_group t))
+: Tot nat
+= match t with
+  | TAAtom t -> array_size_of_atom_array_group b env t x
+  | TAZeroOrMore t
+  | TAOneOrMore t -> array_size_of_atom_array_group_list b env t x
+  | TAZeroOrOne t ->
+    let x' : option (target_type_sem b env.tss_env (target_type_of_atom_array_group t)) = x in
+    begin match x' with
+    | None -> 0
+    | Some y -> array_size_of_atom_array_group b env t y
+    end
+
+let rec array_size_of_array_group
+  (b: name_env)
+  (env: target_spec_size_env b)
+  (t: array_group { array_group_bounded b t })
+  (x: target_type_sem b env.tss_env (target_type_of_array_group t))
+: Tot nat
+= match t with
+  | [] -> 0
+  | (_, a) :: q ->
+    let (hd, tl) = destruct_ttpair b env.tss_env (target_type_of_elem_array_group a) (target_type_of_array_group q) x in
+    array_size_of_elem_array_group b env a hd +
+    array_size_of_array_group b env q tl
+
+(* for struct map groups, the size condition is static, based on the total number of struct rules, but for table map groups, we need to bound the sum of the sizes of all tables in a given map group. *)
+let rec map_size_of_table_map_group
+  (b: name_env)
+  (env: target_spec_size_env b)
+  (t: table_map_group { table_map_group_bounded b t })
+  (x: target_type_sem b env.tss_env (target_type_of_table_map_group t))
+: Tot nat
+= match t with
+  | [] -> 0
+  | a :: q ->
+    let (hd, tl) = destruct_ttpair b env.tss_env (target_type_of_table_map_group_item a) (target_type_of_table_map_group q) x in
+    let (k, v) = a in
+    let hd' : list (target_type_sem b env.tss_env (target_type_of_elem_typ k `ttpair` target_type_of_elem_typ v)) = hd in
+    List.Tot.length hd' + map_size_of_table_map_group b env q tl
+
+(* Summary of serializability conditions *)
+
+noeq
+type wf_target_spec_env (b: name_env) = {
+  wft_env: target_spec_size_env b;
+  wft_serializable: (n: name b) -> (x: wft_env.tss_env n) -> Tot bool;
+}
+
+let rec elem_typ_target_spec_value_serializable
+  (b: name_env)
+  (env: wf_target_spec_env b)
+  (t: elem_typ { elem_typ_bounded b t })
+: Tot (target_type_sem b env.wft_env.tss_env (target_type_of_elem_typ t) -> bool)
+  (decreases t)
+= fun x ->
+  match t with
+  | TDef n -> env.wft_serializable n x
+  | TElemArray s ->
+    array_size_of_elem_array_group b env.wft_env s x < pow2 64 &&
+    elem_array_group_target_spec_value_serializable b env s x
+  | _ -> true
+
+and atom_array_group_target_spec_value_serializable
+  (b: name_env)
+  (env: wf_target_spec_env b)
+  (t: atom_array_group { atom_array_group_bounded b t })
+: Tot (target_type_sem b env.wft_env.tss_env (target_type_of_atom_array_group t) -> bool)
+  (decreases t)
+= fun x ->
+  match t with
+  | TADef s -> env.wft_serializable s x
+  | TAElem t' -> elem_typ_target_spec_value_serializable b env t' x
+
+and elem_array_group_target_spec_value_serializable
+  (b: name_env)
+  (env: wf_target_spec_env b)
+  (t: elem_array_group { elem_array_group_bounded b t })
+: Tot (target_type_sem b env.wft_env.tss_env (target_type_of_elem_array_group t) -> bool)
+  (decreases t)
+= fun x ->
+  match t with
+  | TAAtom t -> atom_array_group_target_spec_value_serializable b env t x
+  | TAZeroOrMore t -> List.Tot.for_all (atom_array_group_target_spec_value_serializable b env t) x
+  | TAOneOrMore t -> List.Tot.for_all (atom_array_group_target_spec_value_serializable b env t) x
+  | TAZeroOrOne t ->
+    let x' : option (target_type_sem b env.wft_env.tss_env (target_type_of_atom_array_group t)) = x in
+    begin match x' with
+    | None -> true
+    | Some y -> atom_array_group_target_spec_value_serializable b env t y
+    end
+
+let rec array_group_target_spec_value_serializable
+  (b: name_env)
+  (env: wf_target_spec_env b)
+  (t: array_group { array_group_bounded b t })
+: Tot (target_type_sem b env.wft_env.tss_env (target_type_of_array_group t) -> bool)
+  (decreases t)
+= fun x ->
+  match t with
+  | [] -> true
+  | (_, a) :: q ->
+    let (hd, tl) = destruct_ttpair b env.wft_env.tss_env (target_type_of_elem_array_group a) (target_type_of_array_group q) x in
+    elem_array_group_target_spec_value_serializable b env a hd &&
+    array_group_target_spec_value_serializable b env q tl
+
+(*
+let table_map_group_item_target_spec_value_serializable
+  (b: name_env)
+  (env: wf_target_spec_env b)
+  (t: table_map_group_item { table_map_group_item_bounded b t })
+  (x: target_type_sem b env.wft_env.tss_env (target_type_of_table_map_group_item t))
+: Tot bool
+= let (k, v) = t in
+  let (hd, tl) = destruct_ttpair bound env (target_type_of_elem_typ k) (target_type_of_elem_typ v) in
+  
+  elem_typ_target_spec_value_serializable b env k 
+  TTArray (target_type_of_elem_typ k `ttpair` target_type_of_elem_typ v)
+
+let rec target_type_of_table_map_group
+  (l: table_map_group)
+: Tot target_type
+= match l with
+  | [] -> TTUnit
+  | a :: q -> target_type_of_table_map_group_item a `ttpair`
+    target_type_of_table_map_group q
+
+let target_type_of_atom_struct_map_group
+  (x: atom_struct_map_group)
+: Tot target_type
+= match x with
+  | TSDef name -> TTDef name
+  | TSEntry _ _ (* key *) value -> target_type_of_elem_typ value
+
+let target_type_of_maybe_atom_struct_map_group
+  (x: maybe_atom_struct_map_group)
+: Tot target_type
+= let (kd, x') = x in
+  let t' = target_type_of_atom_struct_map_group x' in
+  match kd with
+  | TSRequired -> t'
+  | TSOptional -> TTOption t'
+
+let rec target_type_of_elem_struct_map_group
+  (x: elem_struct_map_group)
+: Tot target_type
+  (decreases (List.Tot.length (TStructConcat?._0 x)))
+= match TStructConcat?._0 x with
+  | [] -> TTUnit
+  | a :: q -> target_type_of_maybe_atom_struct_map_group a `ttpair`
+    target_type_of_elem_struct_map_group (TStructConcat q)
+
+let rec target_type_of_struct_map_group
+  (x: struct_map_group)
+: Tot target_type
+  (decreases (List.Tot.length (TStructChoice?._0 x)))
+= match TStructChoice?._0 x with
+  | [] -> TTUnit (* dummy *)
+  | [a] -> target_type_of_elem_struct_map_group a
+  | a :: q -> target_type_of_elem_struct_map_group a `TTUnion`
+    target_type_of_struct_map_group (TStructChoice q)
+
+let target_type_of_elem_map_group
+  (x: elem_map_group)
+: Tot target_type
+= match x with
+  | TMTable (TStructChoice [TStructConcat []]) t -> // table only
+    target_type_of_table_map_group t
+  | TMTable s _ -> // struct only, but ignore the table
+    target_type_of_struct_map_group s
+
+let rec target_type_of_choice_map_group
+  (x: choice_map_group)
+: Tot target_type
+= match x with
+  | [] -> TTUnit (* dummy *)
+  | [a] -> TTDef a
+  | a :: q -> TTDef a `TTUnion` target_type_of_choice_map_group q
+
+let target_type_of_map_group
+  (x: map_group)
+: Tot target_type
+= match x with
+  | TMapElem e -> target_type_of_elem_map_group e
+  | TMapChoice l -> target_type_of_choice_map_group l
+
+let rec target_type_of_choice_typ
+  (l: list elem_typ)
+: Tot target_type
+= match l with
+  | [] -> TTUnit (* dummy *)
+  | [a] -> target_type_of_elem_typ a
+  | a :: q -> target_type_of_elem_typ a `TTUnion`
+    target_type_of_choice_typ q
+
+let target_type_of_typ
+  (t: typ)
+: Tot target_type
+= match t with
+  | TElem t -> target_type_of_elem_typ t
+  | TChoice l -> target_type_of_choice_typ l
+  | TTag _ t -> target_type_of_elem_typ t
+  | TEscapeHatch _ -> TTUnit (* ignore non-realizable types *)
+  | TArray a -> target_type_of_array_group a
+  | TMap m -> target_type_of_map_group m
+
+
+
+
+let parser_spec (source: Spec.typ) (target: Type0) (target_serializable: target -> prop) = (c: CBOR.Spec.raw_data_item { source c }) -> GTot (t: target { target_serializable t })
+
+let serializer_spec (#source: Spec.typ) (#target: Type0) (#target_serializable: target -> prop) (p: parser_spec source target target_serializable) =
+  ((x: target { target_serializable x }) -> GTot (y: CBOR.Spec.raw_data_item { source y /\ p y == x }))
+
+(*
+let map_parser_spec (source: Spec.typ) (target: Type0) = (c: list (CBOR.Spec.raw_data_item & CBOR.Spec.raw_data_item) -> GTot target
+
+
+noeq
+type parser_env
+= {
+  pe_semenv: 
+  pe_type_env: target_spec_env b;
+  pe_env: (x: name_env) -> parser_spec;
+}
