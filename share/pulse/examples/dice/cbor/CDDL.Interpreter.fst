@@ -2111,7 +2111,7 @@ let spec_array_group_splittable_threshold
         spec_array_group_splittable e.e_semenv (e.e_env i)
     ))
 
-#push-options "--z3rlimit 128 --split_queries always --ifuel 4 --fuel 4 --query_stats"
+#push-options "--z3rlimit 128 --split_queries always --ifuel 8 --fuel 8 --query_stats"
 
 #restart-solver
 [@@"opaque_to_smt"]
