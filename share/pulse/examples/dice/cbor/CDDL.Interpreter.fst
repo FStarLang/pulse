@@ -3189,6 +3189,40 @@ let rec map_size_of_table_map_group
     let hd' : list (target_type_sem b env.tss_env (target_type_of_elem_typ k `ttpair` target_type_of_elem_typ v)) = hd in
     List.Tot.length hd' + map_size_of_table_map_group b env q tl
 
+let rec map_size_of_choice_map_group
+  (b: name_env)
+  (env: target_spec_size_env b)
+  (t: choice_map_group { choice_map_group_bounded b t })
+  (x: target_type_sem b env.tss_env (target_type_of_choice_map_group t))
+: Tot nat
+= match t with
+  | [] -> 0
+  | [a] -> env.tss_map_size a x
+  | a :: q ->
+    let x' : either (env.tss_env a) (target_type_sem b env.tss_env (target_type_of_choice_map_group q)) = x in
+    match x' with
+    | Inl v -> env.tss_map_size a v
+    | Inr v -> map_size_of_choice_map_group b env q v
+
+let map_size_of_elem_map_group
+  (b: name_env)
+  (env: target_spec_size_env b)
+  (t: elem_map_group { elem_map_group_bounded b t })
+: Tot (target_type_sem b env.tss_env (target_type_of_elem_map_group t) -> nat)
+= match t with
+  | TMTable (TStructChoice [TStructConcat []]) t ->
+    map_size_of_table_map_group b env t
+  | TMTable _ _ -> fun _ -> 0 // table is ignored, size condition is static on the struct
+
+let map_size_of_map_group
+  (b: name_env)
+  (env: target_spec_size_env b)
+  (t: map_group { map_group_bounded b t })
+: Tot (target_type_sem b env.tss_env (target_type_of_map_group t) -> nat)
+= match t with
+  | TMapElem e -> map_size_of_elem_map_group b env e
+  | TMapChoice c -> map_size_of_choice_map_group b env c
+
 (* Summary of serializability conditions *)
 
 noeq
@@ -3373,10 +3407,13 @@ let map_group_target_spec_value_serializable
   (b: name_env)
   (env: wf_target_spec_env b) 
   (t: map_group { map_group_bounded b t })
-: Tot (target_type_sem b env.wft_env.tss_env (target_type_of_map_group t) -> prop)
-= match t with
-  | TMapElem e -> elem_map_group_target_spec_value_serializable b env e
-  | TMapChoice l -> choice_map_group_target_spec_value_serializable b env l
+  (x: target_type_sem b env.wft_env.tss_env (target_type_of_map_group t))
+: Tot prop
+= map_size_of_map_group b env.wft_env t x < pow2 64 /\
+  begin match t with
+  | TMapElem e -> elem_map_group_target_spec_value_serializable b env e x
+  | TMapChoice l -> choice_map_group_target_spec_value_serializable b env l x
+  end
 
 let rec choice_typ_target_spec_value_serializable
   (b: name_env)
@@ -3405,7 +3442,76 @@ let typ_target_spec_value_serializable
   | TArray a -> array_group_target_spec_value_serializable b env a
   | TMap m -> map_group_target_spec_value_serializable b env m
 
+let serializable_target_spec_typ
+  (b: name_env)
+  (env: wf_target_spec_env b) 
+  (t: typ { typ_bounded b t })
+: Tot Type
+= (x: target_type_sem b env.wft_env.tss_env (target_type_of_typ t) { typ_target_spec_value_serializable b env t x })
+
+let serializable_target_spec_array_group
+  (b: name_env)
+  (env: wf_target_spec_env b) 
+  (t: array_group { array_group_bounded b t })
+: Tot Type
+= (x: target_type_sem b env.wft_env.tss_env (target_type_of_array_group t) { array_group_target_spec_value_serializable b env t x })
+
+let serializable_target_spec_map_group
+  (b: name_env)
+  (env: wf_target_spec_env b) 
+  (t: map_group { map_group_bounded b t })
+: Tot Type
+= (x: target_type_sem b env.wft_env.tss_env (target_type_of_map_group t) { map_group_target_spec_value_serializable b env t x })
+
+let serializable_target_spec
+  (s_ast: wf_ast_env)
+  (s_sz: wf_target_spec_env (s_ast.we_env.e_semenv.se_bound))
+  (n: name s_ast.we_env.e_semenv.se_bound)
+: Tot Type
+= match s_ast.we_env.e_semenv.se_env n with
+  | SEType _ -> serializable_target_spec_typ _ s_sz (s_ast.we_env.e_env n)
+  | SEArrayGroup _ -> serializable_target_spec_array_group _ s_sz (s_ast.we_env.e_env n)
+  | SEMapGroup _ -> serializable_target_spec_map_group _ s_sz (s_ast.we_env.e_env n)
+
+noeq
+type bijection (from to: Type) = {
+  bij_from_to: from -> to;
+  bij_to_from: to -> from;
+  bij_from_to_from: squash (forall (x: to) . bij_from_to (bij_to_from x) == x);
+  bij_to_from_to: squash (forall (x: from) . bij_to_from (bij_from_to x) == x);
+}
+
+let mk_trivial_target_spec_env (b: name_env) (wft_env: target_spec_size_env b) : wf_target_spec_env b = {
+  wft_env = wft_env;
+  wft_serializable = (fun _ _ -> True);
+}
+
+noeq
+type spec_env = {
+  s_ast: wf_ast_env;
+  s_sz: target_spec_size_env (s_ast.we_env.e_semenv.se_bound);
+  s_bij: (n: name s_ast.we_env.e_semenv.se_bound) -> bijection
+    (serializable_target_spec s_ast (mk_trivial_target_spec_env _ s_sz) n)
+    (s_sz.tss_env n);
+  s_array_size_preserved: squash (forall (n: name s_ast.we_env.e_semenv.se_bound { SEArrayGroup? (s_ast.we_env.e_semenv.se_env n) })
+    (x: serializable_target_spec s_ast (mk_trivial_target_spec_env _ s_sz) n) .
+    array_size_of_array_group _ s_sz (s_ast.we_env.e_env n) x ==
+    s_sz.tss_array_size n ((s_bij n).bij_from_to x)
+  );
+  s_map_size_preserved: squash (forall (n: name s_ast.we_env.e_semenv.se_bound { SEMapGroup? (s_ast.we_env.e_semenv.se_env n) })
+    (x: serializable_target_spec s_ast (mk_trivial_target_spec_env _ s_sz) n) .
+    map_size_of_map_group _ s_sz (s_ast.we_env.e_env n) x ==
+    s_sz.tss_map_size n ((s_bij n).bij_from_to x)
+  );
+}
+
 let parser_spec (source: Spec.typ) (target: Type0) = (c: CBOR.Spec.raw_data_item { source c }) -> GTot target
 
 let serializer_spec (#source: Spec.typ) (#target: Type0) (p: parser_spec source target) =
   ((x: target) -> GTot (y: CBOR.Spec.raw_data_item { source y /\ p y == x }))
+
+let parse_spec_bij (#source: Spec.typ) (#target1 #target2: Type0) (p: parser_spec source target1) (bij: bijection target1 target2) : parser_spec source target2 =
+  (fun c -> bij.bij_from_to (p c))
+
+let serialize_spec_bij (#source: Spec.typ) (#target1 #target2: Type0) (#p: parser_spec source target1) (s: serializer_spec p) (bij: bijection target1 target2) : serializer_spec (parse_spec_bij p bij) =
+  (fun x -> s (bij.bij_to_from x))
