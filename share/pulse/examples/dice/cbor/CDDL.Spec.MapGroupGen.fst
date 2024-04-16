@@ -2071,6 +2071,20 @@ let map_group_zero_or_one_bound_match_item_filter
     map_group_zero_or_one_match_item_filter key value p
 
 #restart-solver
+let map_group_zero_or_one_map_group_match_item_no_cut_nonempty
+  (key value: typ)
+  (l: cbor_map)
+: Lemma
+  (~ (map_group_zero_or_one (map_group_match_item false key value) l == MapGroupResult FStar.GSet.empty))
+= let MapGroupResult s = map_group_match_item false key value l in
+  let MapGroupResult s' = map_group_zero_or_one (map_group_match_item false key value) l in
+  match gset_is_empty s with
+  | None -> assert (FStar.GSet.mem (ghost_map_empty, l) s')
+  | _ -> ()
+
+#push-options "--z3rlimit 16"
+
+#restart-solver
 let map_group_zero_or_more_match_item_filter (key value: typ) : Lemma
   (ensures
     map_group_zero_or_more (map_group_match_item false key value) == map_group_filter (notp (FStar.Ghost.Pull.pull (matches_map_group_entry key value)))
@@ -2082,17 +2096,19 @@ let map_group_zero_or_more_match_item_filter (key value: typ) : Lemma
     (fun l prf ->
       map_group_zero_or_more_zero_or_one_eq (map_group_match_item false key value);
       map_group_zero_or_more_eq (map_group_zero_or_one (map_group_match_item false key value)) l;
-      assert (~ (map_group_zero_or_one (map_group_match_item false key value) l == MapGroupResult FStar.GSet.empty));
+      map_group_zero_or_one_map_group_match_item_no_cut_nonempty key value l;
       Classical.forall_intro prf    
     )
     (fun l prf l' ->
       map_group_zero_or_more_zero_or_one_eq (map_group_match_item false key value);
       map_group_zero_or_more_eq (map_group_zero_or_one (map_group_match_item false key value)) l;
-      assert (~ (map_group_zero_or_one (map_group_match_item false key value) l == MapGroupResult FStar.GSet.empty));
+      map_group_zero_or_one_map_group_match_item_no_cut_nonempty key value l;
       Classical.forall_intro prf;
       bound_map_group_ext l (map_group_zero_or_more (map_group_match_item false key value)) (map_group_filter f);
       map_group_zero_or_one_bound_match_item_filter key value l
     )
+
+#pop-options
 
 #restart-solver
 let apply_map_group_det_zero_or_more_match_item

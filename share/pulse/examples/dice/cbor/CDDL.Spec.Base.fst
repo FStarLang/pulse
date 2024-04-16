@@ -63,3 +63,28 @@ let t_choice_simpl
 : Lemma
   ((t `t_choice` t) `typ_equiv` t)
 = ()
+
+
+noeq
+type bijection (from to: Type) = {
+  bij_from_to: from -> to;
+  bij_to_from: to -> from;
+  bij_from_to_from: squash (forall (x: to) . bij_from_to (bij_to_from x) == x);
+  bij_to_from_to: squash (forall (x: from) . bij_to_from (bij_from_to x) == x);
+}
+
+let parser_spec (source:typ) (target: Type0) = (c: CBOR.Spec.raw_data_item { source c }) -> GTot target
+
+let serializer_spec (#source:typ) (#target: Type0) (p: parser_spec source target) =
+  ((x: target) -> GTot (y: CBOR.Spec.raw_data_item { source y /\ p y == x }))
+
+let parse_spec_bij (#source:typ) (#target1 #target2: Type0) (p: parser_spec source target1) (bij: bijection target1 target2) : parser_spec source target2 =
+  (fun c -> bij.bij_from_to (p c))
+
+let serialize_spec_bij (#source:typ) (#target1 #target2: Type0) (#p: parser_spec source target1) (s: serializer_spec p) (bij: bijection target1 target2) : serializer_spec (parse_spec_bij p bij) =
+  (fun x -> s (bij.bij_to_from x))
+
+let parser_spec_literal (x: CBOR.Spec.raw_data_item) : Tot (parser_spec (t_literal x) unit) =
+  fun _ -> ()
+
+let serializer_spec_literal (x: CBOR.Spec.raw_data_item) : Tot (serializer_spec (parser_spec_literal x)) = (fun _ -> x)
