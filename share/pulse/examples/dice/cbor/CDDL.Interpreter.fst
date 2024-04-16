@@ -3442,26 +3442,28 @@ let typ_target_spec_value_serializable
   | TArray a -> array_group_target_spec_value_serializable b env a
   | TMap m -> map_group_target_spec_value_serializable b env m
 
+let mk_refinement (#t: Type) (p: t -> prop) = (x: t { p x })
+
 let serializable_target_spec_typ
   (b: name_env)
   (env: wf_target_spec_env b) 
   (t: typ { typ_bounded b t })
 : Tot Type
-= (x: target_type_sem b env.wft_env.tss_env (target_type_of_typ t) { typ_target_spec_value_serializable b env t x })
+= mk_refinement (typ_target_spec_value_serializable b env t)
 
 let serializable_target_spec_array_group
   (b: name_env)
   (env: wf_target_spec_env b) 
   (t: array_group { array_group_bounded b t })
 : Tot Type
-= (x: target_type_sem b env.wft_env.tss_env (target_type_of_array_group t) { array_group_target_spec_value_serializable b env t x })
+= mk_refinement (array_group_target_spec_value_serializable b env t)
 
 let serializable_target_spec_map_group
   (b: name_env)
   (env: wf_target_spec_env b) 
   (t: map_group { map_group_bounded b t })
 : Tot Type
-= (x: target_type_sem b env.wft_env.tss_env (target_type_of_map_group t) { map_group_target_spec_value_serializable b env t x })
+= mk_refinement (map_group_target_spec_value_serializable b env t)
 
 let serializable_target_spec
   (s_ast: wf_ast_env)
@@ -3515,3 +3517,269 @@ let parse_spec_bij (#source: Spec.typ) (#target1 #target2: Type0) (p: parser_spe
 
 let serialize_spec_bij (#source: Spec.typ) (#target1 #target2: Type0) (#p: parser_spec source target1) (s: serializer_spec p) (bij: bijection target1 target2) : serializer_spec (parse_spec_bij p bij) =
   (fun x -> s (bij.bij_to_from x))
+
+let parser_spec_literal (x: CBOR.Spec.raw_data_item) : Tot (parser_spec (Spec.t_literal x) unit) =
+  fun _ -> ()
+
+let serializer_spec_literal (x: CBOR.Spec.raw_data_item) : Tot (serializer_spec (parser_spec_literal x)) = (fun _ -> x)
+
+let parser_spec_bool : parser_spec Spec.t_bool bool =
+  (fun x -> let CBOR.Spec.Simple v = x in
+    v = Spec.simple_value_true
+  )
+
+let serializer_spec_bool : serializer_spec parser_spec_bool =
+  (fun x -> CBOR.Spec.Simple (if x then Spec.simple_value_true else Spec.simple_value_false))
+
+let parser_spec_bstr : parser_spec Spec.bstr string64 =
+  (fun x -> let CBOR.Spec.String _ v = x in v)
+
+let serializer_spec_bstr : serializer_spec parser_spec_bstr =
+  (fun x -> CBOR.Spec.String CBOR.Spec.cbor_major_type_byte_string x)
+
+let parser_spec_tstr : parser_spec Spec.tstr string64 =
+  (fun x -> let CBOR.Spec.String _ v = x in v)
+
+let serializer_spec_tstr : serializer_spec parser_spec_tstr =
+  (fun x -> CBOR.Spec.String CBOR.Spec.cbor_major_type_text_string x)
+
+let array_group_parser_spec_arg
+  (source: Spec.array_group3 None)
+  (#target: Type0)
+  (target_size: target -> nat)
+: Tot Type0
+= (x: list CBOR.Spec.raw_data_item {
+   match source x with
+   | Some (_, []) -> True
+   | _ -> False
+  })
+
+let array_group_parser_spec_ret
+  (source: Spec.array_group3 None)
+  (#target: Type0)
+  (target_size: target -> nat)
+  (x: array_group_parser_spec_arg source target_size)
+: Tot Type0
+= (y: target { 
+    target_size y == List.Tot.length x
+  })
+
+let array_group_parser_spec
+  (source: Spec.array_group3 None)
+  (#target: Type0)
+  (target_size: target -> nat)
+: Type0
+= (x: array_group_parser_spec_arg source target_size) -> GTot (array_group_parser_spec_ret source target_size x)
+
+let array_group_serializer_spec
+  (#source: Spec.array_group3 None)
+  (#target: Type0)
+  (#target_size: target -> nat)
+  (p: array_group_parser_spec source target_size)
+: Type0
+= (x: target) -> GTot (y: array_group_parser_spec_arg source target_size {
+    p y == x
+  })
+
+let array_group_parser_spec_bij
+  (#source: Spec.array_group3 None)
+  (#target1: Type0)
+  (#target_size1: target1 -> nat)
+  (f: array_group_parser_spec source target_size1)
+  (#target2: Type0)
+  (target_size2: target2 -> nat)
+  (bij: bijection target1 target2 {
+    forall x2 . target_size2 x2 == target_size1 (bij.bij_to_from x2)
+  })
+: Tot (array_group_parser_spec source target_size2)
+= fun x -> bij.bij_from_to (f x)
+
+let array_group_serializer_spec_bij
+  (#source: Spec.array_group3 None)
+  (#target1: Type0)
+  (#target_size1: target1 -> nat)
+  (#f: array_group_parser_spec source target_size1)
+  (s: array_group_serializer_spec f)
+  (#target2: Type0)
+  (target_size2: target2 -> nat)
+  (bij: bijection target1 target2 {
+    forall x2 . target_size2 x2 == target_size1 (bij.bij_to_from x2)
+  })
+: Tot (array_group_serializer_spec (array_group_parser_spec_bij f target_size2 bij))
+= fun x -> s (bij.bij_to_from x)
+
+let array_group_parser_spec_item
+  (#ty: Spec.typ)
+  (#target: Type)
+  (p: parser_spec ty target)
+  (target_size: target -> nat {
+    forall x . target_size x == 1
+  })
+: Tot (array_group_parser_spec (Spec.array_group3_item ty) target_size)
+= fun x -> let [hd] = x in p hd
+
+let array_group_serializer_spec_item
+  (#ty: Spec.typ)
+  (#target: Type)
+  (#p: parser_spec ty target)
+  (s: serializer_spec p)
+  (target_size: target -> nat {
+    forall x . target_size x == 1
+  })
+: Tot (array_group_serializer_spec (array_group_parser_spec_item p target_size))
+= fun x -> [s x]
+
+#restart-solver
+let array_group_parser_spec_concat
+  (#source1: Spec.array_group3 None)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: array_group_parser_spec source1 target_size1)
+  (#source2: Spec.array_group3 None)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: array_group_parser_spec source2 target_size2 {
+    Spec.array_group3_concat_unique_weak source1 source2
+  })
+  (target_size: (target1 & target2) -> nat {
+    forall x . target_size x == target_size1 (fst x) + target_size2 (snd x)
+  })
+: Tot (array_group_parser_spec (Spec.array_group3_concat source1 source2) target_size)
+= fun x ->
+  let Some (x1, x2) = source1 x in
+  assert (source1 x1 == Some (x1, []));
+  List.Tot.append_length x1 x2;
+  (p1 x1, p2 x2)
+
+let array_group_serializer_spec_concat
+  (#source1: Spec.array_group3 None)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (#p1: array_group_parser_spec source1 target_size1)
+  (s1: array_group_serializer_spec p1)
+  (#source2: Spec.array_group3 None)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (#p2: array_group_parser_spec source2 target_size2)
+  (s2: array_group_serializer_spec p2 {
+    Spec.array_group3_concat_unique_weak source1 source2
+  })
+  (target_size: (target1 & target2) -> nat {
+    forall x . target_size x == target_size1 (fst x) + target_size2 (snd x)
+  })
+: Tot (array_group_serializer_spec (array_group_parser_spec_concat p1 p2 target_size))
+= fun x ->
+    let (x1, x2) = x in
+    let l1 = s1 x1 in
+    let l2 = s2 x2 in
+    l1 `List.Tot.append` l2
+
+let spec_array_group3_concat_unique_weak
+  (#b: _) (a: Spec.array_group3 b)
+: Lemma
+  (requires (
+    Spec.array_group3_concat_unique_strong a a
+  ))
+  (ensures (
+    Spec.array_group3_concat_unique_weak a (Spec.array_group3_zero_or_more a)
+  ))
+= Spec.array_group3_concat_unique_weak_intro a (Spec.array_group3_zero_or_more a)
+    (fun l ->
+      let Some (l1, l2) = a l in
+      match a l2 with
+      | None -> ()
+      | Some (l3, l4) -> if Nil? l3 then () else
+        assert (Some? (Spec.array_group3_concat a (Spec.array_group3_zero_or_more a) l2))
+    )
+    (fun l1 l2 -> ())
+
+#push-options "--ifuel 8"
+
+let rec array_group_parser_spec_zero_or_more'
+  (#source: Spec.array_group3 None)
+  (#target: Type)
+  (#target_size: target -> nat)
+  (p: array_group_parser_spec source target_size {
+    Spec.array_group3_concat_unique_strong source source
+  })
+  (target_size' : list target -> nat {
+    forall (l: list target) . target_size' l == (if Nil? l then 0 else target_size (List.Tot.hd l) + target_size' (List.Tot.tl l))
+  })
+  (x: array_group_parser_spec_arg (Spec.array_group3_zero_or_more source) target_size')
+: GTot (array_group_parser_spec_ret (Spec.array_group3_zero_or_more source) target_size' x)
+  (decreases (List.Tot.length x))
+= match source x with
+  | None ->
+    assert (x == []);
+    let res : list target = [] in
+    assert (Nil? res);
+    assert (target_size' res == 0);
+    res
+  | Some (l1, l2) ->
+    if Nil? l1
+    then []
+    else begin
+      spec_array_group3_concat_unique_weak source;
+      let q = array_group_parser_spec_zero_or_more' p target_size' l2 in
+      List.Tot.append_length l1 l2;
+      p l1 :: q
+    end
+
+let array_group_parser_spec_zero_or_more
+  (#source: Spec.array_group3 None)
+  (#target: Type)
+  (#target_size: target -> nat)
+  (p: array_group_parser_spec source target_size {
+    Spec.array_group3_concat_unique_strong source source
+  })
+  (target_size' : list target -> nat {
+    forall (l: list target) . target_size' l == (if Nil? l then 0 else target_size (List.Tot.hd l) + target_size' (List.Tot.tl l))
+  })
+: Tot (array_group_parser_spec (Spec.array_group3_zero_or_more source) target_size')
+= array_group_parser_spec_zero_or_more' p target_size'
+
+let nonempty_array_group3 : Type0 =
+  (a: Spec.array_group3 None {
+    forall l . match a l with
+    | Some (consumed, _) -> Cons? consumed
+    | _ -> True
+  })
+
+let rec array_group_serializer_spec_zero_or_more'
+  (#source: nonempty_array_group3)
+  (#target: Type)
+  (#target_size: target -> nat)
+  (#p: array_group_parser_spec source target_size)
+  (s: array_group_serializer_spec p {
+    Spec.array_group3_concat_unique_strong source source
+  })
+  (target_size' : list target -> nat {
+    forall (l: list target) . target_size' l == (if Nil? l then 0 else target_size (List.Tot.hd l) + target_size' (List.Tot.tl l))
+  })
+  (x: list target)
+: GTot (y: array_group_parser_spec_arg (Spec.array_group3_zero_or_more source) target_size' {
+    array_group_parser_spec_zero_or_more p target_size' y == x
+  })
+  (decreases x)
+= match x with
+  | [] -> []
+  | a :: q ->
+    spec_array_group3_concat_unique_weak source;
+    let l1 = s a in
+    let l2 = array_group_serializer_spec_zero_or_more' s target_size' q in
+    let res = l1 `List.Tot.append` l2 in
+    res
+
+let array_group_serializer_spec_zero_or_more
+  (#source: nonempty_array_group3)
+  (#target: Type)
+  (#target_size: target -> nat)
+  (#p: array_group_parser_spec source target_size)
+  (s: array_group_serializer_spec p {
+    Spec.array_group3_concat_unique_strong source source
+  })
+  (target_size' : list target -> nat {
+    forall (l: list target) . target_size' l == (if Nil? l then 0 else target_size (List.Tot.hd l) + target_size' (List.Tot.tl l))
+  })
+: Tot (array_group_serializer_spec (array_group_parser_spec_zero_or_more p target_size'))
+= array_group_serializer_spec_zero_or_more' s target_size'
