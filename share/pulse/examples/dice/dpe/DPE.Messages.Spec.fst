@@ -553,7 +553,7 @@ let certify_key_input_args_group =
   default_args_group
 )))))
 
-#push-options "--z3rlimit 32"
+#push-options "--z3rlimit 64"
 let _ : squash (certify_key_input_args_group `Cddl.map_group_equiv` default_args_group) =
   Cddl.map_group_ignore_restricted_entries_no_one_equiv certify_key_input_args_group
 #pop-options
