@@ -716,3 +716,46 @@ let array_group_serializer_spec_zero_or_more
   })
 : Tot (array_group_serializer_spec (array_group_parser_spec_zero_or_more p target_size'))
 = array_group_serializer_spec_zero_or_more' s target_size'
+
+let array_group_parser_spec_choice
+  (#source1: array_group3 None)
+  (#target1: Type0)
+  (#target_size1: target1 -> nat)
+  (p1: array_group_parser_spec source1 target_size1)
+  (#source2: array_group3 None)
+  (#target2: Type0)
+  (#target_size2: target2 -> nat)
+  (p2: array_group_parser_spec source2 target_size2)
+  (target_size: (target1 `either` target2) -> nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+: Tot (array_group_parser_spec (source1 `array_group3_choice` source2) target_size)
+= fun x ->
+    if Some? (source1 x)
+    then Inl (p1 x)
+    else Inr (p2 x)
+
+let array_group_serializer_spec_choice
+  (#source1: array_group3 None)
+  (#target1: Type0)
+  (#target_size1: target1 -> nat)
+  (#p1: array_group_parser_spec source1 target_size1)
+  (s1: array_group_serializer_spec p1)
+  (#source2: array_group3 None)
+  (#target2: Type0)
+  (#target_size2: target2 -> nat)
+  (#p2: array_group_parser_spec source2 target_size2)
+  (s2: array_group_serializer_spec p2 { source1 `array_group3_disjoint` source2 }) // disjointness needed to avoid the CBOR object serialized from one case to be parsed into the other case
+  (target_size: (target1 `either` target2) -> nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+: Tot (array_group_serializer_spec (array_group_parser_spec_choice p1 p2 target_size))
+= fun x -> match x with
+  | Inl y -> s1 y
+  | Inr y -> s2 y

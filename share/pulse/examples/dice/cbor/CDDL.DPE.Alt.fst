@@ -379,7 +379,7 @@ let import_session_input_args_group =
   default_args_group
 ))))
 
-#push-options "--z3rlimit 16"
+#push-options "--z3rlimit 32"
 #restart-solver
 
 let _ : squash (import_session_input_args_group == default_args_group) = ()

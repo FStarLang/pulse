@@ -88,3 +88,30 @@ let parser_spec_literal (x: CBOR.Spec.raw_data_item) : Tot (parser_spec (t_liter
   fun _ -> ()
 
 let serializer_spec_literal (x: CBOR.Spec.raw_data_item) : Tot (serializer_spec (parser_spec_literal x)) = (fun _ -> x)
+
+let parser_spec_choice
+  (#source1: typ)
+  (#target1: Type0)
+  (p1: parser_spec source1 target1)
+  (#source2: typ)
+  (#target2: Type0)
+  (p2: parser_spec source2 target2)
+: Tot (parser_spec (source1 `t_choice` source2) (target1 `either` target2))
+= fun x ->
+    if source1 x
+    then Inl (p1 x)
+    else Inr (p2 x)
+
+let serializer_spec_choice
+  (#source1: typ)
+  (#target1: Type0)
+  (#p1: parser_spec source1 target1)
+  (s1: serializer_spec p1)
+  (#source2: typ)
+  (#target2: Type0)
+  (#p2: parser_spec source2 target2)
+  (s2: serializer_spec p2 { source1 `typ_disjoint` source2 }) // disjointness needed to avoid the CBOR object serialized from one case to be parsed into the other case
+: Tot (serializer_spec (parser_spec_choice p1 p2))
+= fun x -> match x with
+  | Inl y -> s1 y
+  | Inr y -> s2 y
