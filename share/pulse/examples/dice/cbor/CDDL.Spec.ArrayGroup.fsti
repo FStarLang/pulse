@@ -740,6 +740,51 @@ let array_group_serializer_spec_zero_or_more
 : Tot (array_group_serializer_spec (array_group_parser_spec_zero_or_more p target_size'))
 = array_group_serializer_spec_zero_or_more' s target_size'
 
+let nelist (a: Type) : Type0 = (l: list a { Cons? l })
+
+let array_group_parser_spec_one_or_more
+  (#source: array_group3 None)
+  (#target: Type)
+  (#target_size: target -> nat)
+  (p: array_group_parser_spec source target_size {
+    array_group3_concat_unique_strong source source
+  })
+  (target_size1 : list target -> nat {
+    forall (l: list target) . target_size1 l == (if Nil? l then 0 else target_size (List.Tot.hd l) + target_size1 (List.Tot.tl l))
+  })
+  (target_size2 : nelist target -> nat {
+    forall (l: nelist target) . target_size2 l == target_size1 l
+  })
+: Tot (array_group_parser_spec (array_group3_one_or_more source) target_size2)
+= fun x ->
+  array_group3_concat_unique_weak_zero_or_more_right source source;
+  let Some (l1, l2) = source x in
+  List.Tot.append_length l1 l2;
+  p l1 :: array_group_parser_spec_zero_or_more p target_size1 l2
+
+let array_group_serializer_spec_one_or_more
+  (#source: nonempty_array_group3)
+  (#target: Type)
+  (#target_size: target -> nat)
+  (#p: array_group_parser_spec source target_size)
+  (s: array_group_serializer_spec p {
+    array_group3_concat_unique_strong source source
+  })
+  (target_size1 : list target -> nat {
+    forall (l: list target) . target_size1 l == (if Nil? l then 0 else target_size (List.Tot.hd l) + target_size1 (List.Tot.tl l))
+  })
+  (target_size2 : nelist target -> nat {
+    forall (l: nelist target) . target_size2 l == target_size1 l
+  })
+: Tot (array_group_serializer_spec (array_group_parser_spec_one_or_more p target_size1 target_size2))
+= fun x ->
+  array_group3_concat_unique_weak_zero_or_more_right source source;
+  let hd :: tl = x in
+  let l1 = s hd in
+  let l2 = array_group_serializer_spec_zero_or_more s target_size1 tl in
+  List.Tot.append_length l1 l2;
+  l1 `List.Tot.append` l2
+
 let array_group_parser_spec_choice
   (#source1: array_group3 None)
   (#target1: Type0)
@@ -782,3 +827,38 @@ let array_group_serializer_spec_choice
 = fun x -> match x with
   | Inl y -> s1 y
   | Inr y -> s2 y
+
+let array_group_parser_spec_zero_or_one
+  (#source: array_group3 None)
+  (#target: Type)
+  (#target_size: target -> nat)
+  (p: array_group_parser_spec source target_size)
+  (target_size': option target -> nat {
+    forall x . target_size' x == begin match x with
+    | None -> 0
+    | Some x -> target_size x
+    end
+  })
+: Tot (array_group_parser_spec (array_group3_zero_or_one source) target_size')
+= fun x ->
+    if Some? (source x)
+    then Some (p x)
+    else None
+
+let array_group_serializer_spec_zero_or_one
+  (#source: nonempty_array_group3) // needed because the empty case must map to None only
+  (#target: Type)
+  (#target_size: target -> nat)
+  (#p: array_group_parser_spec source target_size)
+  (s: array_group_serializer_spec p)
+  (target_size': option target -> nat {
+    forall x . target_size' x == begin match x with
+    | None -> 0
+    | Some x -> target_size x
+    end
+  })
+: Tot (array_group_serializer_spec (array_group_parser_spec_zero_or_one p target_size'))
+= fun x ->
+    match x with
+    | None -> []
+    | Some y -> s y

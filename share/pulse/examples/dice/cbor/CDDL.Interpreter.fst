@@ -2111,7 +2111,7 @@ let spec_array_group_splittable_threshold
         spec_array_group_splittable e.e_semenv (e.e_env i)
     ))
 
-#push-options "--z3rlimit 128 --split_queries always --ifuel 8 --fuel 8 --query_stats"
+#push-options "--z3rlimit 256 --split_queries always --ifuel 8 --fuel 8 --query_stats"
 
 #restart-solver
 [@@"opaque_to_smt"]
@@ -2765,8 +2765,6 @@ let rec target_type_bounded
   | TTEscapeHatch _
   | TTString -> true
 
-let nelist (a: Type) : Type0 = (l: list a { Cons? l })
-
 let cbor_with (t: Spec.typ) : Type0 = (c: CBOR.Spec.raw_data_item { t c })
 
 module U8 = FStar.UInt8
@@ -2785,7 +2783,7 @@ let rec target_type_sem
   | TTPair t1 t2 -> target_type_sem bound env t1 & target_type_sem bound env t2
   | TTUnion t1 t2 -> target_type_sem bound env t1 `either` target_type_sem bound env t2
   | TTArray a -> list (target_type_sem bound env a)
-  | TTNonemptyArray a -> nelist (target_type_sem bound env a)
+  | TTNonemptyArray a -> Spec.nelist (target_type_sem bound env a)
   | TTOption a -> option (target_type_sem bound env a)
   | TTSimple -> CBOR.Spec.simple_value
   | TTUInt64 -> U64.t
