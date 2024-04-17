@@ -519,6 +519,29 @@ let array_group_serializer_spec
     p y == x
   })
 
+let array_group_target_serializable
+  (#target: Type0)
+  (target_size: target -> nat)
+: Tot Type0
+= (x: target { target_size x < pow2 64 })
+
+let parser_spec_array_group
+  (#source: array_group3 None)
+  (#target: Type0)
+  (#target_size: target -> nat)
+  (p: array_group_parser_spec source target_size)
+: Tot (parser_spec (t_array3 source) (array_group_target_serializable target_size))
+= fun x -> let Cbor.Array a = x in p a
+
+let serializer_spec_array_group
+  (#source: array_group3 None)
+  (#target: Type0)
+  (#target_size: target -> nat)
+  (#p: array_group_parser_spec source target_size)
+  (s: array_group_serializer_spec p)
+: Tot (serializer_spec (parser_spec_array_group p))
+= fun x -> Cbor.Array (s x)
+
 let array_group_parser_spec_bij
   (#source: array_group3 None)
   (#target1: Type0)
