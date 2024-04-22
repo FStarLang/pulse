@@ -71,6 +71,12 @@ val apply_ghost_map_union (#key #value: Type) (m1 m2: ghost_map key value) (k: k
   end)
   [SMTPat (apply_ghost_map (ghost_map_union m1 m2) k)]
 
+let ghost_map_union_assoc (#key #value: Type) (m1 m2 m3: ghost_map key value) : Lemma
+  (ghost_map_union (ghost_map_union m1 m2) m3 == ghost_map_union m1 (ghost_map_union m2 m3))
+= ghost_map_ext
+    (ghost_map_union (ghost_map_union m1 m2) m3)
+    (ghost_map_union m1 (ghost_map_union m2 m3))
+
 let ghost_map_union_empty_l (#key #value: Type) (m: ghost_map key value) : Lemma
   (ghost_map_union ghost_map_empty m == m)
   [SMTPat (ghost_map_union ghost_map_empty m)]
@@ -90,7 +96,7 @@ let ghost_map_disjoint_mem_union' (#key #value: Type) (m1 m2: ghost_map key valu
   (ensures forall xv . ghost_map_mem xv (m1 `ghost_map_union` m2) <==> ghost_map_mem xv m1 \/ ghost_map_mem xv m2)
 = ()
 
-val ghost_map_disjoint_union (#key #value: Type) (m1 m2: ghost_map key value) : Lemma
+val ghost_map_disjoint_union_comm (#key #value: Type) (m1 m2: ghost_map key value) : Lemma
   (requires ghost_map_disjoint m1 m2)
   (ensures m1 `ghost_map_union` m2 == m2 `ghost_map_union` m1)
 
@@ -194,6 +200,15 @@ let ghost_map_filter_for_all
   (ensures ghost_map_filter f m == m)
 = ghost_map_equiv (ghost_map_filter f m) m
 
+let ghost_map_filter_for_all'
+  (#key #value: Type)
+  (f: (key & value) -> GTot bool)
+  (m: ghost_map key value)
+  (sq: squash (forall x . ghost_map_mem x m ==> f x))
+: Lemma
+  (ensures ghost_map_filter f m == m)
+= ghost_map_filter_for_all f m
+
 let ghost_map_filter_ext
   (#key #value: Type)
   (f1 f2: (key & value) -> GTot bool)
@@ -213,6 +228,15 @@ let ghost_map_disjoint_union_filter
 = ghost_map_ext
     (ghost_map_filter f (ghost_map_union m1 m2))
     (ghost_map_filter f m1 `ghost_map_union` ghost_map_filter f m2)
+
+let ghost_map_disjoint_union_filter'
+  (#key #value: Type)
+  (f: (key & value) -> GTot bool)
+  (m1 m2: ghost_map key value)
+  (sq: squash (ghost_map_disjoint m1 m2))
+: Lemma
+  (ensures (ghost_map_filter f (ghost_map_union m1 m2) == ghost_map_filter f m1 `ghost_map_union` ghost_map_filter f m2))
+= ghost_map_disjoint_union_filter f m1 m2
 
 val ghost_map_of_list
   (#key #value: Type)
@@ -509,6 +533,431 @@ val t_map_eq
 
 
 let det_map_group = (m: map_group { forall l . ~ (MapGroupNonDet? (apply_map_group_det m l)) })
+
+let ghost_map_split
+  (#key #value: Type)
+  (f: (key & value) -> GTot bool)
+  (m: ghost_map key value)
+: Lemma (
+    let mtrue = ghost_map_filter f m in
+    let mfalse = ghost_map_filter (notp_g f) m in
+    mtrue `ghost_map_disjoint` mfalse /\
+    mtrue `ghost_map_union` mfalse == m
+  )
+= let mtrue = ghost_map_filter f m in
+  let mfalse = ghost_map_filter (notp_g f) m in
+  assert (mtrue `ghost_map_disjoint` mfalse);
+  ghost_map_ext (mtrue `ghost_map_union` mfalse) m
+
+let ghost_map_disjoint_from_footprint
+  (m: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+  (f: typ)
+: Tot prop
+= forall x . ghost_map_mem x m ==> ~ (f (fst x))
+
+let map_group_footprint
+  (g: map_group)
+  (f: typ)
+: Tot prop
+= forall m m' . (ghost_map_disjoint m m' /\ ghost_map_disjoint_from_footprint m' f) ==>
+  begin match apply_map_group_det g m, apply_map_group_det g (m `ghost_map_union` m') with
+  | MapGroupCutFail, MapGroupCutFail
+  | MapGroupFail, MapGroupFail -> True
+  | MapGroupDet _ r, MapGroupDet _ r' -> r' == r `ghost_map_union` m'
+  | _ -> False
+  end
+
+#restart-solver
+let map_group_footprint_elim
+  (g: map_group)
+  (f: typ)
+  (m m' : ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+: Lemma
+  (requires
+    map_group_footprint g f /\
+    ghost_map_disjoint m m' /\
+    ghost_map_disjoint_from_footprint m' f
+  )
+  (ensures
+  begin match apply_map_group_det g m, apply_map_group_det g (m `ghost_map_union` m') with
+  | MapGroupCutFail, MapGroupCutFail
+  | MapGroupFail, MapGroupFail -> True
+  | MapGroupDet _ r, MapGroupDet _ r' -> r' == r `ghost_map_union` m'
+  | _ -> False
+  end
+  )
+= ()
+
+#restart-solver
+let map_group_footprint_intro
+  (g: map_group)
+  (f: typ)
+  (prf: (m: _) -> (m' : ghost_map Cbor.raw_data_item Cbor.raw_data_item) ->
+    Lemma
+    (requires
+      ghost_map_disjoint m m' /\
+      ghost_map_disjoint_from_footprint m' f
+    )
+    (ensures
+    begin match apply_map_group_det g m, apply_map_group_det g (m `ghost_map_union` m') with
+    | MapGroupCutFail, MapGroupCutFail
+    | MapGroupFail, MapGroupFail -> True
+    | MapGroupDet _ r, MapGroupDet _ r' -> r' == r `ghost_map_union` m'
+    | _ -> False
+    end
+    )
+  )
+: Lemma
+  (map_group_footprint g f)
+= Classical.forall_intro_2 (fun m -> Classical.move_requires (prf m))
+
+#restart-solver
+let ghost_map_disjoint_union_simpl_l
+  (#key #value: Type)
+  (g g1 g2: ghost_map key value)
+: Lemma
+  (requires
+    g `ghost_map_disjoint` g1 /\
+    g `ghost_map_disjoint` g2 /\
+    g `ghost_map_union` g1 == g `ghost_map_union` g2
+  )
+  (ensures g1 == g2)
+= assert (forall x . ghost_map_mem x g1 <==> (ghost_map_mem x (g `ghost_map_union` g1) /\ ~ (ghost_map_mem x g)));
+  ghost_map_equiv g1 g2
+
+#restart-solver
+let ghost_map_disjoint_union_simpl_r
+  (#key #value: Type)
+  (g1 g2 g: ghost_map key value)
+: Lemma
+  (requires
+    g1 `ghost_map_disjoint` g /\
+    g2 `ghost_map_disjoint` g /\
+    g1 `ghost_map_union` g == g2 `ghost_map_union` g
+  )
+  (ensures g1 == g2)
+= ghost_map_disjoint_union_comm g1 g;
+  ghost_map_disjoint_union_comm g2 g;
+  ghost_map_disjoint_union_simpl_l g g1 g2
+
+#restart-solver
+let map_group_footprint_consumed
+  (g: map_group)
+  (f: typ)
+  (m m': _)
+: Lemma
+  (requires
+    map_group_footprint g f /\
+    ghost_map_disjoint m m' /\
+    ghost_map_disjoint_from_footprint m' f /\
+    (MapGroupDet? (apply_map_group_det g m) \/ MapGroupDet? (apply_map_group_det g (m `ghost_map_union` m')))
+  )
+  (ensures (
+    match apply_map_group_det g m, apply_map_group_det g (m `ghost_map_union` m') with
+    | MapGroupDet c _, MapGroupDet c' _ -> c == c'
+    | _ -> False
+  ))
+  [SMTPat (map_group_footprint g f); SMTPat (apply_map_group_det g (m `ghost_map_union` m'))]
+= let MapGroupDet c r = apply_map_group_det g m in
+  let MapGroupDet c' r' = apply_map_group_det g (m `ghost_map_union` m') in
+  ghost_map_union_assoc c r m';
+  ghost_map_disjoint_union_simpl_r c c' r'
+
+#restart-solver
+let map_group_footprint_is_consumed
+  (g: map_group)
+  (f: typ)
+  (m: _)
+: Lemma
+  (requires
+    map_group_footprint g f
+  )
+  (ensures (
+    MapGroupDet? (apply_map_group_det g m) <==> MapGroupDet? (apply_map_group_det g (ghost_map_filter (matches_map_group_entry f any) m))
+  ))
+= ghost_map_split (matches_map_group_entry f any) m
+
+let map_group_footprint_consumed_disjoint
+  (g: map_group)
+  (f f': typ)
+  (m: _)
+: Lemma
+  (requires
+    map_group_footprint g f /\
+    f `typ_disjoint` f' /\
+    MapGroupDet? (apply_map_group_det g m)
+  )
+  (ensures (
+    match apply_map_group_det g m with
+    | MapGroupDet c _ ->
+      ghost_map_disjoint_from_footprint c f'
+    | _ -> False
+  ))
+= ghost_map_split (matches_map_group_entry f any) m;
+  map_group_footprint_consumed g f (ghost_map_filter (matches_map_group_entry f any) m) (ghost_map_filter (notp_g (matches_map_group_entry f any)) m)
+
+#restart-solver
+let map_group_footprint_concat
+  (g1 g2: map_group)
+  (f1 f2: typ)
+: Lemma
+  (requires (
+    map_group_footprint g1 f1 /\
+    map_group_footprint g2 f2
+  ))
+  (ensures (
+    map_group_footprint (map_group_concat g1 g2) (t_choice f1 f2)
+  ))
+= ()
+
+#restart-solver
+let map_group_footprint_choice
+  (g1 g2: map_group)
+  (f1 f2: typ)
+: Lemma
+  (requires (
+    map_group_footprint g1 f1 /\
+    map_group_footprint g2 f2
+  ))
+  (ensures (
+    map_group_footprint (map_group_choice g1 g2) (t_choice f1 f2)
+  ))
+= ()
+
+#restart-solver
+let map_group_footprint_zero_or_one
+  (g1: map_group)
+  (f1: typ)
+: Lemma
+  (requires (
+    map_group_footprint g1 f1
+  ))
+  (ensures (
+    map_group_footprint (map_group_zero_or_one g1) f1
+  ))
+= ()
+
+#restart-solver
+let map_group_footprint_consumes_all
+  (g1: map_group)
+  (f1: typ)
+  (m1: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+: Lemma
+  (requires (
+    map_group_footprint g1 f1 /\
+    apply_map_group_det g1 m1 == MapGroupDet m1 ghost_map_empty
+  ))
+  (ensures (
+    ghost_map_filter (matches_map_group_entry f1 any) m1 == m1 /\
+    ghost_map_filter (notp_g (matches_map_group_entry f1 any)) m1 == ghost_map_empty
+  ))
+= let phi1 = matches_map_group_entry f1 any in
+  ghost_map_split phi1 m1;
+  map_group_footprint_elim g1 f1 (ghost_map_filter phi1 m1) (ghost_map_filter (notp_g phi1) m1); 
+  map_group_footprint_consumed g1 f1 (ghost_map_filter phi1 m1) (ghost_map_filter (notp_g phi1) m1);
+  let MapGroupDet c1 r1 = apply_map_group_det g1 (ghost_map_filter phi1 m1) in
+  let MapGroupDet c' r' = apply_map_group_det g1 (ghost_map_filter phi1 m1 `ghost_map_union` ghost_map_filter (notp_g phi1) m1) in
+  assert (ghost_map_empty == r1 `ghost_map_union` ghost_map_filter (notp_g phi1) m1);
+  ghost_map_ext ghost_map_empty (ghost_map_filter (notp_g phi1) m1);
+  ()
+
+#restart-solver
+let map_group_footprint_concat_consumes_all
+  (g1 g2: map_group)
+  (f1 f2: typ)
+  (m1 m2: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+: Lemma
+  (requires (
+    map_group_footprint g1 f1 /\
+    map_group_footprint g2 f2 /\
+    apply_map_group_det g1 m1 == MapGroupDet m1 ghost_map_empty /\
+    apply_map_group_det g2 m2 == MapGroupDet m2 ghost_map_empty /\
+    typ_disjoint f1 f2
+  ))
+  (ensures (
+    m1 `ghost_map_disjoint` m2 /\
+    apply_map_group_det (g1 `map_group_concat` g2) (m1 `ghost_map_union` m2) == MapGroupDet (m1 `ghost_map_union` m2) ghost_map_empty
+  ))
+= map_group_footprint_consumes_all g1 f1 m1;
+  map_group_footprint_consumes_all g2 f2 m2;
+  ()
+
+#restart-solver
+let map_group_footprint_match_item_for
+  (cut: bool)
+  (key: Cbor.raw_data_item)
+  (value: typ)
+: Lemma
+  (ensures (
+    map_group_footprint (map_group_match_item_for cut key value) (t_literal key)
+  ))
+= let g = map_group_match_item_for cut key value in
+  map_group_footprint_intro
+    g
+    (t_literal key)
+    (fun m m' ->
+       assert (~ (ghost_map_defined key m'));
+       match apply_map_group_det g m, apply_map_group_det g (m `ghost_map_union` m') with
+       | MapGroupDet _ r, MapGroupDet _ r' ->
+         ghost_map_ext r' (r `ghost_map_union` m')
+       | _ -> ()
+    )
+
+#restart-solver
+let map_group_footprint_filter
+  (phi: _ -> GTot bool)
+  (f: typ)
+: Lemma
+  (requires
+    forall (x: (Cbor.raw_data_item & Cbor.raw_data_item)) . notp_g phi x ==> f (fst x)
+  )
+  (ensures (
+    map_group_footprint (map_group_filter phi) f
+  ))
+= let g = map_group_filter phi in
+  map_group_footprint_intro
+    g
+    f
+    (fun m m' ->
+      let MapGroupDet _ r = apply_map_group_det g m in
+      let MapGroupDet _ r' = apply_map_group_det g (m `ghost_map_union` m') in
+      ghost_map_disjoint_union_filter phi m m';
+      ghost_map_filter_for_all phi m';
+      assert (r' == r `ghost_map_union` m')
+    )
+
+let restrict_map_group
+  (g g': map_group)
+: Tot prop
+= forall m .
+  begin match apply_map_group_det g m, apply_map_group_det g' m with
+  | MapGroupCutFail, MapGroupCutFail
+  | MapGroupFail, MapGroupFail -> True
+  | MapGroupDet c r, MapGroupDet c' r' -> (forall x . ghost_map_mem x c' ==> ghost_map_mem x c)
+  | _ -> False
+  end
+
+let ghost_map_included
+  (#key #value: Type)
+  (m1 m2: ghost_map key value)
+: Tot prop
+= forall x . ghost_map_mem x m1 ==> ghost_map_mem x m2
+
+let restrict_map_group_intro
+  (g g': map_group)
+  (prf1: (m: _) -> Lemma
+    begin match apply_map_group_det g m, apply_map_group_det g' m with
+    | MapGroupCutFail, MapGroupCutFail
+    | MapGroupFail, MapGroupFail -> True
+    | MapGroupDet c r, MapGroupDet c' r' -> ghost_map_included c' c
+    | _ -> False
+    end
+  )
+: Lemma
+  (restrict_map_group g g')
+= Classical.forall_intro prf1
+
+let restrict_map_group_refl
+  (g: det_map_group)
+: Lemma
+  (restrict_map_group g g)
+= ()
+
+let restrict_map_group_filter
+  (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> GTot bool)
+: Lemma
+  (restrict_map_group (map_group_filter f) map_group_nop)
+= ()
+
+let restrict_map_group_zero_or_one_no_cut
+  (g: det_map_group)
+: Lemma
+  (requires (forall m . ~ (MapGroupCutFail? (apply_map_group_det g m))))
+  (ensures (restrict_map_group (map_group_zero_or_one g) map_group_nop))
+= ()
+
+let restrict_map_group_choice
+  (g1 g1' g2 g2': map_group)
+: Lemma
+  (requires (
+    restrict_map_group g1 g1' /\
+    restrict_map_group g2 g2'
+  ))
+  (ensures (
+    restrict_map_group (g1 `map_group_choice` g2) (g1' `map_group_choice` g2')
+  ))
+= ()
+
+let typ_included (f1 f2: typ) : Tot prop =
+  forall x . f1 x ==> f2 x
+
+let map_group_footprint_weaken
+  (g: map_group)
+  (f f': typ)
+: Lemma
+  (requires
+    map_group_footprint g f /\
+    f `typ_included` f'
+  )
+  (ensures
+    map_group_footprint g f'
+  )
+= ()
+
+val ghost_map_sub
+  (#key #value: Type)
+  (m1 m2: ghost_map key value)
+: Pure (ghost_map key value)
+    (requires ghost_map_included m2 m1)
+    (ensures fun m3 ->
+      m2 `ghost_map_disjoint` m3 /\
+      m2 `ghost_map_union` m3 == m1
+    )
+
+#restart-solver
+let restrict_map_group_concat
+  (g1: map_group)
+  (f1: typ)
+  (g1': map_group)
+  (g2: map_group)
+  (g2': map_group)
+  (f2': typ)
+: Lemma
+  (requires (
+    restrict_map_group g1 g1' /\
+    map_group_footprint g1 f1 /\
+    map_group_footprint g1' f1 /\
+    restrict_map_group g2 g2' /\
+    map_group_footprint g2' f2' /\
+    typ_disjoint f1 f2'
+  ))
+  (ensures (
+    restrict_map_group (g1 `map_group_concat` g2) (g1' `map_group_concat` g2')
+  ))
+= restrict_map_group_intro
+    (g1 `map_group_concat` g2)
+    (g1' `map_group_concat` g2')
+    (fun m ->
+      match apply_map_group_det g1 m with
+      | MapGroupDet c1 r1 ->
+        let MapGroupDet c1' r1' = apply_map_group_det g1' m in
+        let d1 = c1 `ghost_map_sub` c1' in
+        ghost_map_union_assoc c1' d1 r1;
+        ghost_map_disjoint_union_simpl_l c1' (d1 `ghost_map_union` r1) r1';
+        ghost_map_disjoint_union_comm d1 r1;
+        assert (r1' == r1 `ghost_map_union` d1);
+        map_group_footprint_consumed_disjoint g1 f1 f2' m;
+        assert (ghost_map_disjoint_from_footprint d1 f2');
+        map_group_footprint_elim g2' f2' r1 d1;
+        begin match apply_map_group_det g2 r1 with
+        | MapGroupDet c2 r2 ->
+          let MapGroupDet c2' r2' = apply_map_group_det g2' r1 in
+          assert (c2' `ghost_map_included` c2);
+          assert ((c1' `ghost_map_union` c2') `ghost_map_included` (c1 `ghost_map_union` c2))
+        | _ -> ()
+        end
+      | _ -> ()
+    )
 
 let map_group_parser_spec_arg
   (source: det_map_group)
