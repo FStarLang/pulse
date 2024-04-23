@@ -388,9 +388,9 @@ let cbor_read_with_typ_success_post
   (c: cbor_read_t)
 : Tot vprop
 = exists* v rem.
-    raw_data_item_match full_perm c.cbor_read_payload v **
+    raw_data_item_match 1.0R c.cbor_read_payload v **
     A.pts_to c.cbor_read_remainder #p rem **
-    ((raw_data_item_match full_perm c.cbor_read_payload v ** A.pts_to c.cbor_read_remainder #p rem) @==>
+    ((raw_data_item_match 1.0R c.cbor_read_payload v ** A.pts_to c.cbor_read_remainder #p rem) @==>
       A.pts_to a #p va) **
     pure (cbor_read_with_typ_success_postcond t va c v rem)
 
@@ -472,11 +472,11 @@ ensures cbor_read_with_typ_post t a p va res
             rewrite (cbor_read_with_typ_success_post t a p va res) as (cbor_read_with_typ_post t a p va res);
             res
         } else {
-            with v . assert (raw_data_item_match full_perm res.cbor_read_payload v);
+            with v . assert (raw_data_item_match 1.0R res.cbor_read_payload v);
             with vrem . assert (A.pts_to res.cbor_read_remainder #p vrem);
             cbor_read_with_typ_error_postcond_intro_typ_fail t va res v vrem;
             elim_stick0 ()
-                #(raw_data_item_match full_perm res.cbor_read_payload v ** A.pts_to res.cbor_read_remainder #p vrem);
+                #(raw_data_item_match 1.0R res.cbor_read_payload v ** A.pts_to res.cbor_read_remainder #p vrem);
             fold (cbor_read_with_typ_error_post t a p va);
             let res = mk_cbor_read_error res;
             rewrite (cbor_read_with_typ_error_post t a p va) as (cbor_read_with_typ_post t a p va res);
@@ -538,9 +538,9 @@ let cbor_read_deterministically_encoded_with_typ_success_post
   (res: cbor_read_t)
 : Tot vprop
 =   exists* v rem.
-        raw_data_item_match full_perm res.cbor_read_payload v **
+        raw_data_item_match 1.0R res.cbor_read_payload v **
         A.pts_to res.cbor_read_remainder #p rem **
-        ((raw_data_item_match full_perm res.cbor_read_payload v ** A.pts_to res.cbor_read_remainder #p rem) @==>
+        ((raw_data_item_match 1.0R res.cbor_read_payload v ** A.pts_to res.cbor_read_remainder #p rem) @==>
         A.pts_to a #p va) **
         pure (cbor_read_deterministically_encoded_with_typ_success_postcond t va res v rem)
 
@@ -591,11 +591,11 @@ ensures cbor_read_deterministically_encoded_with_typ_post t a p va res
             fold (cbor_read_deterministically_encoded_with_typ_post t a p va res);
             res
         } else {
-            with v . assert (raw_data_item_match full_perm res.cbor_read_payload v);
+            with v . assert (raw_data_item_match 1.0R res.cbor_read_payload v);
             with vrem . assert (A.pts_to res.cbor_read_remainder #p vrem);
             cbor_read_deterministically_encoded_with_typ_error_postcond_intro_typ_fail t va res v vrem;
             elim_stick0 ()
-                #(raw_data_item_match full_perm res.cbor_read_payload v ** A.pts_to res.cbor_read_remainder #p vrem);
+                #(raw_data_item_match 1.0R res.cbor_read_payload v ** A.pts_to res.cbor_read_remainder #p vrem);
             let res = mk_cbor_read_error res;
             fold (cbor_read_deterministically_encoded_with_typ_error_post t a p va);
             fold (cbor_read_deterministically_encoded_with_typ_post t a p va res);

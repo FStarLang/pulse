@@ -23,12 +23,6 @@ module U32 = FStar.UInt32
 module G = FStar.Ghost
 module Set = FStar.Set
 module T = FStar.Tactics.V2
-(* Common alias *)
-let one_half =
-  half_perm full_perm
-
-val double_one_half ()
-  : Lemma (sum_perm one_half one_half == full_perm)
 
 (* This attribute can be used on the indexes of a vprop
    to instruct the checker to call the SMT solver to relate
@@ -611,10 +605,16 @@ val elim_false (a:Type) (p:a -> vprop)
 ////////////////////////////////////////////////////////
 //Core PCM references
 ////////////////////////////////////////////////////////
-val pcm_ref
-    (#[@@@unused] a:Type u#a)
-    ([@@@unused] p:FStar.PCM.pcm a)
+val core_pcm_ref : Type0
+val null_core_pcm_ref : core_pcm_ref
+val is_null_core_pcm_ref (p:core_pcm_ref)
+  : b:bool { b <==> p == null_core_pcm_ref }
+
+let pcm_ref
+    (#a:Type u#a)
+    (p:FStar.PCM.pcm a)
 : Type0
+= core_pcm_ref
 
 val pcm_pts_to
     (#a:Type u#1)
@@ -631,16 +631,18 @@ val is_small_pcm_pts_to
 : Lemma (is_small (pcm_pts_to r v))
         [SMTPat (is_small (pcm_pts_to r v))]
 
-val pcm_ref_null
+let pcm_ref_null
     (#a:Type)
     (p:FStar.PCM.pcm a)
 : pcm_ref p
+= null_core_pcm_ref
 
-val is_pcm_ref_null
+let is_pcm_ref_null
     (#a:Type)
     (#p:FStar.PCM.pcm a)
     (r:pcm_ref p)
 : b:bool { b <==> r == pcm_ref_null p }
+= is_null_core_pcm_ref r
 
 val pts_to_not_null
     (#a:Type)
@@ -705,12 +707,14 @@ val gather
     (fun _ -> pcm_pts_to r (op pcm v0 v1))
 
 /////////////////////////////////////////////////////////////////////////
-
 [@@erasable]
-val ghost_pcm_ref
-    (#[@@@unused] a:Type u#a)
-    ([@@@unused] p:FStar.PCM.pcm a)
+val core_ghost_pcm_ref : Type0
+
+let ghost_pcm_ref
+    (#a:Type u#a)
+    (p:FStar.PCM.pcm a)
 : Type0
+= core_ghost_pcm_ref
 
 instance val non_informative_ghost_pcm_ref
   (a:Type u#a) (p:FStar.PCM.pcm a)
