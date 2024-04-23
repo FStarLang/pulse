@@ -371,6 +371,101 @@ let restrict_map_group_concat
       | _ -> ()
     )
 
+let map_group_choice_compatible
+  (left right: map_group)
+: Tot prop
+= forall x . match apply_map_group_det right x with
+  | MapGroupDet _ rem -> rem == ghost_map_empty ==> MapGroupFail? (apply_map_group_det left x)
+  | _ -> True
+
+#restart-solver
+let map_group_choice_compatible_intro
+  (left right: map_group)
+  (prf: (x: _) -> Lemma
+    (requires begin match apply_map_group_det right x with
+     | MapGroupDet _ rem -> rem == ghost_map_empty
+     | _ -> False
+    end)
+    (ensures MapGroupFail? (apply_map_group_det left x))
+  )
+: Lemma
+  (map_group_choice_compatible left right)
+= Classical.forall_intro (Classical.move_requires prf)
+
+let map_group_choice_cut_compatible
+  (left right: map_group)
+: Tot prop
+= forall x . match apply_map_group_det right x with
+  | MapGroupDet _ rem -> rem == ghost_map_empty ==> ~ (MapGroupCutFail? (apply_map_group_det left x))
+  | _ -> True
+
+#restart-solver
+let map_group_choice_cut_compatible_intro
+  (left right: map_group)
+  (prf: (x: _) -> Lemma
+    (requires begin match apply_map_group_det right x with
+     | MapGroupDet _ rem -> rem == ghost_map_empty
+     | _ -> False
+    end)
+    (ensures ~ (MapGroupCutFail? (apply_map_group_det left x)))
+  )
+: Lemma
+  (map_group_choice_cut_compatible left right)
+= Classical.forall_intro (Classical.move_requires prf)
+
+let map_group_choice_det_compatible
+  (left right: map_group)
+: Tot prop
+= forall x . MapGroupDet? (apply_map_group_det right x) ==> begin
+    let res = apply_map_group_det left x in
+    ~ (MapGroupDet? res \/ MapGroupNonDet? res)
+  end
+
+#restart-solver
+let map_group_choice_det_compatible_intro
+  (left right: map_group)
+  (prf: (x: _) -> Lemma
+    (requires MapGroupDet? (apply_map_group_det right x))
+    (ensures (let res = apply_map_group_det left x in
+    ~ (MapGroupDet? res \/ MapGroupNonDet? res)
+    ))
+  )
+: Lemma
+  (map_group_choice_det_compatible left right)
+= Classical.forall_intro (Classical.move_requires prf)
+
+let map_group_choice_compatible_cut_det
+  (left right: map_group)
+: Lemma
+  (requires (
+    map_group_choice_cut_compatible left right /\
+    map_group_choice_det_compatible left right
+  ))
+  (ensures (
+    map_group_choice_compatible left right
+  ))
+= ()
+
+#restart-solver
+let map_group_choice_cut_compatible_match_item_for
+  (key: Cbor.raw_data_item)
+  (value: typ)
+  (right: map_group)
+  (fp: typ)
+: Lemma
+  (requires (
+    t_literal key `typ_disjoint` fp /\
+    map_group_footprint right fp
+  ))
+  (ensures (
+    map_group_choice_cut_compatible (map_group_match_item_for true key value) right
+  ))
+= map_group_choice_cut_compatible_intro (map_group_match_item_for true key value) right (fun x ->
+    let phi = matches_map_group_entry fp any in
+    ghost_map_split phi x;
+    map_group_footprint_elim right fp (ghost_map_filter phi x) (ghost_map_filter (notp_g phi) x)
+  )
+
 (*
 let map_group_parser_spec_arg
   (source: det_map_group)
