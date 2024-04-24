@@ -639,6 +639,7 @@ let ghost_map_in_footprint
 : Tot prop
 = forall x . ghost_map_mem x m ==> (f (fst x))
 
+unfold
 let map_group_parser_spec_arg_common
   (source: det_map_group)
   (source_fp: typ)
@@ -650,6 +651,7 @@ let map_group_parser_spec_arg_common
     map_group_footprint source source_fp /\
     ghost_map_in_footprint m source_fp
 
+unfold
 let map_group_parser_spec_arg_prop
   (source: det_map_group)
   (source_fp: typ)
@@ -685,6 +687,7 @@ let map_group_parser_spec
 : Type0
 = (x: map_group_parser_spec_arg source source_fp) -> GTot (map_group_parser_spec_ret source source_fp target_size x)
 
+unfold
 let map_group_serializer_spec_arg_prop
   (source: det_map_group)
   (source_fp: typ)
@@ -728,6 +731,7 @@ val list_no_repeats_filter
   )
   [SMTPat (List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l)))]
 
+(*
 val parser_spec_map_group
   (source0: det_map_group)
   (#source: det_map_group)
@@ -759,8 +763,8 @@ val parser_spec_map_group_eq
     parser_spec_map_group source0 p x == p x'
   ))
   [SMTPat (parser_spec_map_group source0 p x)]
+*)
 
-(*
 #restart-solver
 let parser_spec_map_group
   (source0: det_map_group)
@@ -779,7 +783,6 @@ let parser_spec_map_group
     ghost_map_split (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp any)) (ghost_map_of_list a);
     let res = p a' in
     res
-*)
 
 let rec list_forall_memP_filter
   (#t: Type)
@@ -815,33 +818,33 @@ let serializer_spec_map_group
   assert (parser_spec_map_group source0 p res == z);
   res
 
-(*
 let map_group_parser_spec_bij
   (#source: det_map_group)
+  (#source_fp: typ)
   (#target1: Type0)
   (#target_size1: target1 -> nat)
-  (f: map_group_parser_spec source target_size1)
+  (f: map_group_parser_spec source source_fp target_size1)
   (#target2: Type0)
   (target_size2: target2 -> nat)
   (bij: bijection target1 target2 {
     forall x2 . target_size2 x2 == target_size1 (bij.bij_to_from x2)
   })
-: Tot (map_group_parser_spec source target_size2)
+: Tot (map_group_parser_spec source source_fp target_size2)
 = fun x -> bij.bij_from_to (f x)
 
 let map_group_serializer_spec_bij
   (#source: det_map_group)
+  (#source_fp: typ)
   (#target1: Type0)
   (#target_size1: target1 -> nat)
-  (#f: map_group_parser_spec source target_size1)
-  (#target_guard: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop)
-  (s: map_group_serializer_spec f target_guard)
+  (#f: map_group_parser_spec source source_fp target_size1)
+  (s: map_group_serializer_spec f)
   (#target2: Type0)
   (target_size2: target2 -> nat)
   (bij: bijection target1 target2 {
     forall x2 . target_size2 x2 == target_size1 (bij.bij_to_from x2)
   })
-: Tot (map_group_serializer_spec (map_group_parser_spec_bij f target_size2 bij) target_guard)
+: Tot (map_group_serializer_spec (map_group_parser_spec_bij f target_size2 bij))
 = fun x -> s (bij.bij_to_from x)
 
 let map_group_parser_spec_match_item_for
@@ -853,10 +856,11 @@ let map_group_parser_spec_match_item_for
   (target_size: target -> nat {
     forall x . target_size x == 1
   })
-: Tot (map_group_parser_spec (map_group_match_item_for cut k ty) target_size)
+: Tot (map_group_parser_spec (map_group_match_item_for cut k ty) (t_literal k) target_size)
 = fun x ->
-  ghost_map_length_of_list x;
   let Some v = Cbor.list_ghost_assoc k x in
+  ghost_map_equiv (ghost_map_of_list x) (ghost_map_of_list [k, v]);
+  ghost_map_length_of_list [k, v];
   p v
 
 let map_group_serializer_spec_match_item_for
@@ -869,11 +873,9 @@ let map_group_serializer_spec_match_item_for
   (target_size: target -> nat {
     forall x . target_size x == 1
   })
-  (target_guard: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop {
-    forall v . ty v ==> target_guard (k, v)
-  })
-: Tot (map_group_serializer_spec (map_group_parser_spec_match_item_for cut k p target_size) target_guard)
+: Tot (map_group_serializer_spec (map_group_parser_spec_match_item_for cut k p target_size))
 = fun x ->
+  map_group_footprint_match_item_for cut k ty;
   let v = s x in
   let res = [k, v] in
   let mres = ghost_map_of_list res in
@@ -882,361 +884,189 @@ let map_group_serializer_spec_match_item_for
   ghost_map_equiv rem ghost_map_empty;
   res
 
-let map_group_parser_spec_concat_shrinkable
-  (g: map_group)
-: Tot prop
-= forall x . match apply_map_group_det g x with
-  | MapGroupDet consumed rem ->
-    forall rem1 rem2 . (
-      rem1 `ghost_map_disjoint` rem2 /\
-      rem1 `ghost_map_union` rem2 == rem
-    ) ==>
-    apply_map_group_det g (consumed `ghost_map_union` rem1) == MapGroupDet consumed rem1
-  | MapGroupFail -> // necessary for compatibility with `//` . NOTE: This does not hold for things like (?((k1=>t1)(k2=>t2)))(k1=>t'), so we will need some independence conditions, see below.
-    forall x1 x2 . x == x1 `ghost_map_union` x2 ==>
-    (MapGroupFail? (apply_map_group_det g x1) \/ MapGroupCutFail? (apply_map_group_det g x1))
-  | _ -> True
+val map_group_parser_spec_concat
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1)
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2)
+  (target_size: (target1 & target2) -> nat {
+    map_group_footprint source1 source_fp1 /\
+    map_group_footprint source2 source_fp2 /\
+    typ_disjoint source_fp1 source_fp2 /\
+    (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
+  })
+: Tot (map_group_parser_spec (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
 
-#restart-solver
-let map_group_parser_spec_concat_shrinkable_intro
-  (g: map_group)
-  (prf: (x: _) -> (rem1: _) -> (rem2: _) -> Lemma
-    (requires (
-      match apply_map_group_det g x with
-      | MapGroupDet consumed rem ->
-        rem1 `ghost_map_disjoint` rem2 /\
-        rem1 `ghost_map_union` rem2 == rem /\
-        consumed `ghost_map_disjoint` rem1 /\
-        consumed `ghost_map_disjoint` rem2
-      | _ -> False
-    ))
-    (ensures (
-      match apply_map_group_det g x with
-      | MapGroupDet consumed _ ->
-        apply_map_group_det g (consumed `ghost_map_union` rem1) == MapGroupDet consumed rem1
-      | _ -> True
-    ))
-  )
-  (prf2: (x1: _) -> (x2: _) -> Lemma
-    (requires MapGroupFail? (apply_map_group_det g (x1 `ghost_map_union` x2)))
-    (ensures MapGroupFail? (apply_map_group_det g x1) \/ MapGroupCutFail? (apply_map_group_det g x1))
-  )
-(*
-  (prf3: (x1: _) -> (x2: _) -> Lemma
-    (requires MapGroupCutFail? (apply_map_group_det g x1))
-    (ensures MapGroupCutFail? (apply_map_group_det g (x1 `ghost_map_union` x2)))
-  )
-*)  
+val map_group_parser_spec_concat_eq
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1)
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2)
+  (target_size: (target1 & target2) -> nat {
+    map_group_footprint source1 source_fp1 /\
+    map_group_footprint source2 source_fp2 /\
+    typ_disjoint source_fp1 source_fp2 /\
+    (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
+  })
+  (l: map_group_parser_spec_arg (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2))
 : Lemma
-  (map_group_parser_spec_concat_shrinkable g)
-= Classical.forall_intro_3 (fun rem1 rem2 -> Classical.move_requires (prf rem1 rem2));
-  Classical.forall_intro_2 (fun x1 -> Classical.move_requires (prf2 x1));
-//  Classical.forall_intro_2 (fun x1 -> Classical.move_requires (prf3 x1));
-  ()
-
-let map_group_parser_spec_concat_shrinkable_match_item_for
-  (cut: bool)
-  (k: Cbor.raw_data_item)
-  (ty: typ)
-: Lemma
-  (map_group_parser_spec_concat_shrinkable
-    (map_group_match_item_for cut k ty)
-  )
-= map_group_parser_spec_concat_shrinkable_intro (map_group_match_item_for cut k ty) (fun x rem1 rem2 ->
-    let MapGroupDet consumed rem = apply_map_group_det (map_group_match_item_for cut k ty) x in
-    let Some v = apply_ghost_map x k in
-    assert (consumed == ghost_map_singleton k v);
-    assert (apply_ghost_map consumed k == Some v);
-    assert (apply_ghost_map (consumed `ghost_map_union` rem1) k == Some v);
-    ghost_map_disjoint_union_filter (notp_g (matches_map_group_entry (t_literal k) ty)) rem1 rem2;
-    ghost_map_disjoint_union_filter (notp_g (matches_map_group_entry (t_literal k) ty)) consumed rem1;
-    ghost_map_equiv
-      (ghost_map_filter (notp_g (matches_map_group_entry (t_literal k) ty)) consumed)
-      ghost_map_empty;
-    ghost_map_filter_implies
-      (notp_g (matches_map_group_entry (t_literal k) ty))
-      (notp_g (matches_map_group_entry (t_literal k) ty))
-      rem1;
-    assert (ghost_map_filter (notp_g (matches_map_group_entry (t_literal k) ty)) (consumed `ghost_map_union` rem1) == ghost_map_filter (notp_g (matches_map_group_entry (t_literal k) ty)) consumed `ghost_map_union` ghost_map_filter (notp_g (matches_map_group_entry (t_literal k) ty)) rem1);
-    assert (ghost_map_filter (notp_g (matches_map_group_entry (t_literal k) ty)) consumed == ghost_map_empty);
-    ghost_map_filter_for_all (notp_g (matches_map_group_entry (t_literal k) ty)) rem1;
-    assert (ghost_map_filter (notp_g (matches_map_group_entry (t_literal k) ty)) rem1 == rem1);
-    assert (ghost_map_filter (notp_g (matches_map_group_entry (t_literal k) ty)) (consumed `ghost_map_union` rem1) == ghost_map_empty `ghost_map_union` rem1);
-    assert (apply_map_group_det (map_group_match_item_for cut k ty) (consumed `ghost_map_union` rem1) == MapGroupDet consumed rem1);
-    ()
-  )
-  (fun x1 x2 -> ())
-//  (fun x1 x2 -> ())
-
-let map_group_parser_spec_concat_shrinkable_elim
-  (g: map_group)
-  (x: _)
-  (rem1: _)
-  (rem2: _)
-: Lemma
-    (requires (
-      map_group_parser_spec_concat_shrinkable g /\
-      begin match apply_map_group_det g x with
-      | MapGroupDet consumed rem ->
-        rem1 `ghost_map_disjoint` rem2 /\
-        rem1 `ghost_map_union` rem2 == rem
-      | _ -> False
-      end
-    ))
-    (ensures (
-      match apply_map_group_det g x with
-      | MapGroupDet consumed _ ->
-        consumed `ghost_map_disjoint` rem1 /\
-        consumed `ghost_map_disjoint` rem2 /\
-        apply_map_group_det g (consumed `ghost_map_union` rem1) == MapGroupDet consumed rem1
-      | _ -> True
-    ))
-= ()
-
-let map_group_parser_spec_concat_shrinkable_elim_weak
-  (g: map_group)
-  (x: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
-: Lemma
-  (requires map_group_parser_spec_concat_shrinkable g /\
-    MapGroupDet? (apply_map_group_det g x)
-  )
-  (ensures (match apply_map_group_det g x with
-  | MapGroupDet consumed rem ->
-    apply_map_group_det g consumed == MapGroupDet consumed ghost_map_empty
-  | _ -> True
+  (exists (f1: _ -> bool) (f2: _ -> bool) .
+    (forall x . f1 x == matches_map_group_entry source_fp1 any x) /\
+    (forall x . f2 x == matches_map_group_entry source_fp2 any x) /\ (
+    let l1 = List.Tot.filter f1 l in
+    let l2 = List.Tot.filter f2 l in
+    map_group_parser_spec_arg_prop source1 source_fp1 l1 /\
+    map_group_parser_spec_arg_prop source2 source_fp2 l2 /\
+    map_group_parser_spec_concat p1 p2 target_size l == (p1 l1, p2 l2)
   ))
-= let MapGroupDet _ rem = apply_map_group_det g x in
-  map_group_parser_spec_concat_shrinkable_elim g x ghost_map_empty rem
+  [SMTPat (map_group_parser_spec_concat p1 p2 target_size l)]
 
-val list_extract_from_ghost_map
-  (#key #value: Type)
-  (l: list (key & value) {
-    List.Tot.no_repeats_p (List.Tot.map fst l)
-  })
-  (g': ghost_map key value { forall x . ghost_map_mem x g' ==> ghost_map_mem x (ghost_map_of_list l) })
-: GTot (l' : list (key & value) {
-    List.Tot.no_repeats_p (List.Tot.map fst l') /\
-    ghost_map_of_list l' == g'
-  })
-
+(*
+#restart-solver
 let map_group_parser_spec_concat
   (#source1: det_map_group)
+  (#source_fp1: typ)
   (#target1: Type)
   (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 target_size1 {
-    map_group_parser_spec_concat_shrinkable source1
-  })
+  (p1: map_group_parser_spec source1 source_fp1 target_size1)
   (#source2: det_map_group)
+  (#source_fp2: typ)
   (#target2: Type)
   (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 target_size2)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2)
   (target_size: (target1 & target2) -> nat {
-    forall x . target_size x == target_size1 (fst x) + target_size2 (snd x)
+    map_group_footprint source1 source_fp1 /\
+    map_group_footprint source2 source_fp2 /\
+    typ_disjoint source_fp1 source_fp2 /\
+    (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
   })
-: Tot (map_group_parser_spec (map_group_concat source1 source2) target_size)
+: Tot (map_group_parser_spec (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
 = fun l ->
-  let MapGroupDet consumed1 rem1 = apply_map_group_det source1 (ghost_map_of_list l) in
-  let l1 = list_extract_from_ghost_map l consumed1 in
-  map_group_parser_spec_concat_shrinkable_elim_weak source1 (ghost_map_of_list l);
-  let res1 = p1 l1 in
-  let l2 = list_extract_from_ghost_map l rem1 in
-  let res2 = p2 l2 in
-  List.Tot.append_length l1 l2;
-  ghost_map_length_of_list l1;
-  ghost_map_length_of_list l2;
-  ghost_map_length_disjoint_union consumed1 rem1;
-  (res1, res2)
+  ghost_map_equiv
+    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l));
+  map_group_footprint_is_consumed source1 source_fp1 (ghost_map_of_list l);
+  let res1 = p1 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l) in
+  let MapGroupDet c1 r1 = apply_map_group_det source1 (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l)) in
+  ghost_map_disjoint_union_comm r1 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  ghost_map_split (matches_map_group_entry source_fp1 any) (ghost_map_of_list l);
+  let MapGroupDet c1' r1' = apply_map_group_det source1 (ghost_map_of_list l) in
+  ghost_map_equiv
+    (ghost_map_filter (notp_g (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  map_group_footprint_consumed source1 source_fp1 (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l)) (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  ghost_map_union_assoc c1 r1 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  assert (r1' == r1 `ghost_map_union` ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  map_group_footprint_consumed source2 source_fp2 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l)) r1;
+  ghost_map_equiv
+    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  let res2 = p2 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l) in
+  ghost_map_length_disjoint_union
+    (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l))
+    (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l));
+  let res = (res1, res2) in
+  res
+*)
 
-let map_group_parser_spec_concat_extensible
-  (g1: map_group)
-  (target_guard2: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop)
-: Tot prop
-= map_group_parser_spec_concat_shrinkable g1 /\ (
-  forall l1 l2 .
-    (forall x2 . ghost_map_mem x2 l2 ==> target_guard2 x2) ==>
-    begin match apply_map_group_det g1 l1 with
-    | MapGroupDet _ rem1 ->
-      rem1 == ghost_map_empty ==> (
-        ghost_map_disjoint l1 l2 /\
-        apply_map_group_det g1 (l1 `ghost_map_union` l2) == MapGroupDet l1 l2
-      )
-    | MapGroupCutFail ->
-      MapGroupCutFail? (apply_map_group_det g1 (l1 `ghost_map_union` l2))
-    | MapGroupFail ->
-      MapGroupFail? (apply_map_group_det g1 (l1 `ghost_map_union` l2))
-    | _ -> True
-    end
-  )
+let orp (#t: Type) (p1 p2: t -> bool) (x: t) : bool =
+  p1 x || p2 x
 
-let map_group_parser_spec_concat_extensible_intro
-  (g1: map_group)
-  (target_guard2: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop)
-  (prf: (l1: _) -> (l2: _) -> Lemma
-    (requires (
-      (forall x2 . ghost_map_mem x2 l2 ==> target_guard2 x2) /\
-      begin match apply_map_group_det g1 l1 with
-      | MapGroupDet _ rem1 ->
-        rem1 == ghost_map_empty /\
-        (forall x2 . ghost_map_mem x2 l2 ==> target_guard2 x2)
-      | MapGroupNonDet -> False
-      | _ -> True
-      end
-    ))
-    (ensures (
-      let res = apply_map_group_det g1 (l1 `ghost_map_union` l2) in
-      begin match apply_map_group_det g1 l1 with
-      | MapGroupDet _ _ ->
-        ghost_map_disjoint l1 l2 /\
-        res == MapGroupDet l1 l2
-      | MapGroupCutFail -> MapGroupCutFail? res
-      | MapGroupFail -> MapGroupFail? res
-      | _ -> True
-      end
-    ))
-  )
+let rec list_filter_append
+  (#t: Type)
+  (f: t -> bool)
+  (l1 l2: list t)
 : Lemma
-  (requires map_group_parser_spec_concat_shrinkable g1)
-  (ensures map_group_parser_spec_concat_extensible g1 target_guard2)
-= Classical.forall_intro_2 (fun l1 -> Classical.move_requires (prf l1))
+  (ensures List.Tot.filter f (l1 `List.Tot.append` l2) == List.Tot.filter f l1 `List.Tot.append` List.Tot.filter f l2)
+  (decreases l1)
+= match l1 with
+  | [] -> ()
+  | _ :: q -> list_filter_append f q l2
 
-let map_group_parser_spec_concat_extensible_match_item_for
-  (cut: bool)
-  (k: Cbor.raw_data_item)
-  (ty: typ)
-  (target_guard: (Cbor.raw_data_item & Cbor.raw_data_item) -> prop)
+let rec list_filter_for_none
+  (#t: Type)
+  (f: t -> bool)
+  (l: list t)
 : Lemma
-  (requires
-    (forall x . target_guard x ==> (~ (fst x == k)))
-  )
-  (ensures map_group_parser_spec_concat_extensible
-    (map_group_match_item_for cut k ty) target_guard
-  )
-= map_group_parser_spec_concat_shrinkable_match_item_for cut k ty;
-  map_group_parser_spec_concat_extensible_intro
-    (map_group_match_item_for cut k ty)
-    target_guard
-    (fun l1 l2 ->
-      match apply_ghost_map l1 k with
-      | Some v ->
-        if ty v
-        then begin
-          assert (l1 == ghost_map_singleton k v);
-          assert (ghost_map_disjoint l1 l2);
-          assert (MapGroupDet?(apply_map_group_det
-            (map_group_match_item_for cut k ty)
-            (l1 `ghost_map_union` l2)));
-          let MapGroupDet l1' l2' = apply_map_group_det
-            (map_group_match_item_for cut k ty)
-            (l1 `ghost_map_union` l2) in
-          assert (l1 == l1');
-          ghost_map_disjoint_union_filter (notp_g (matches_map_group_entry (t_literal k) ty)) l1 l2;
-          ghost_map_ext (ghost_map_filter (notp_g (matches_map_group_entry (t_literal k) ty)) l1) ghost_map_empty;
-          ghost_map_filter_for_all (notp_g (matches_map_group_entry (t_literal k) ty)) l2;
-          assert (l2 == l2')
-        end else begin
-          ()
-        end
-      | _ ->
-        assert (~ (ghost_map_defined k l2))
-    )
+  (requires (forall x . List.Tot.memP x l ==> ~ (f x)))
+  (ensures List.Tot.filter f l == [])
+= match l with
+  | [] -> ()
+  | _ :: q -> list_filter_for_none f q
 
-val list_extract_from_ghost_map_append_l
-  (#key #value: Type)
-  (l1: list (key & value) {
-    List.Tot.no_repeats_p (List.Tot.map fst l1)
-  })
-  (l2: list (key & value) {
-    List.Tot.no_repeats_p (List.Tot.map fst l2)
-  })
-: Lemma
-  (requires
-    ghost_map_disjoint (ghost_map_of_list l1) (ghost_map_of_list l2)
-  )
-  (ensures
-    List.Tot.no_repeats_p (List.Tot.map fst (l1 `List.Tot.append` l2)) /\
-    (forall x . ghost_map_mem x (ghost_map_of_list l1) ==> ghost_map_mem x (ghost_map_of_list (l1 `List.Tot.append` l2))) /\
-    list_extract_from_ghost_map
-      (l1 `List.Tot.append` l2)
-      (ghost_map_of_list l1)
-    == l1
-  )
-
-val list_extract_from_ghost_map_append_r
-  (#key #value: Type)
-  (l1: list (key & value) {
-    List.Tot.no_repeats_p (List.Tot.map fst l1)
-  })
-  (l2: list (key & value) {
-    List.Tot.no_repeats_p (List.Tot.map fst l2)
-  })
-: Lemma
-  (requires
-    ghost_map_disjoint (ghost_map_of_list l1) (ghost_map_of_list l2)
-  )
-  (ensures
-    List.Tot.no_repeats_p (List.Tot.map fst (l1 `List.Tot.append` l2)) /\
-    (forall x . ghost_map_mem x (ghost_map_of_list l2) ==> ghost_map_mem x (ghost_map_of_list (l1 `List.Tot.append` l2))) /\
-    list_extract_from_ghost_map
-      (l1 `List.Tot.append` l2)
-      (ghost_map_of_list l2)
-    == l2
-  )
-
-let map_group_parser_spec_concat_extensible_elim
-  (g1: map_group)
-  (target_guard2: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop {
-    map_group_parser_spec_concat_extensible g1 target_guard2
-  })
-  (l1: _)
-  (consumed1: _ {
-    apply_map_group_det g1 l1 == MapGroupDet consumed1 ghost_map_empty
-  })
-  (l2: _)
-  (sq: squash (forall x2 . ghost_map_mem x2 l2 ==> target_guard2 x2))
-: Lemma (
-    ghost_map_disjoint l1 l2 /\
-    apply_map_group_det g1 (l1 `ghost_map_union` l2) == MapGroupDet l1 l2
-  )
-= ()
-
+#restart-solver
 let map_group_serializer_spec_concat
   (#source1: det_map_group)
+  (#source_fp1: typ)
   (#target1: Type)
   (#target_size1: target1 -> nat)
-  (#p1: map_group_parser_spec source1 target_size1)
-  (#target_guard1: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop)
-  (s1: map_group_serializer_spec p1 target_guard1)
+  (#p1: map_group_parser_spec source1 source_fp1 target_size1)
+  (s1: map_group_serializer_spec p1)
   (#source2: det_map_group)
+  (#source_fp2: typ)
   (#target2: Type)
   (#target_size2: target2 -> nat)
-  (#p2: map_group_parser_spec source2 target_size2)
-  (#target_guard2: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop)
-  (s2: map_group_serializer_spec p2 target_guard2 {
-    map_group_parser_spec_concat_extensible source1 target_guard2
-  })
+  (#p2: map_group_parser_spec source2 source_fp2 target_size2)
+  (s2: map_group_serializer_spec p2)
   (target_size: (target1 & target2) -> nat {
-    forall x . target_size x == target_size1 (fst x) + target_size2 (snd x)
+    map_group_footprint source1 source_fp1 /\
+    map_group_footprint source2 source_fp2 /\
+    typ_disjoint source_fp1 source_fp2 /\
+    (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
   })
-  (target_guard: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop {
-    forall x . (target_guard1 x \/ target_guard2 x) ==> target_guard x
-  })
-: Tot (map_group_serializer_spec (map_group_parser_spec_concat p1 p2 target_size) target_guard)
+: Tot (map_group_serializer_spec (map_group_parser_spec_concat p1 p2 target_size))
 = fun x ->
+    map_group_footprint_concat source1 source2 source_fp1 source_fp2;
     let (x1, x2) = x in
     let l1 = s1 x1 in
     let l2 = s2 x2 in
-    List.Tot.append_length l1 l2;
-    ghost_map_of_list_append l1 l2;
     let res = l1 `List.Tot.append` l2 in
-    let MapGroupDet consumed1 _ = apply_map_group_det source1 (ghost_map_of_list l1) in
-    Classical.forall_intro (ghost_map_of_list_mem l2);
-    let sq : squash (forall x2 . ghost_map_mem x2 (ghost_map_of_list l2) ==> target_guard2 x2) = () in
-    map_group_parser_spec_concat_extensible_elim source1 target_guard2 (ghost_map_of_list l1) consumed1 (ghost_map_of_list l2) sq;
-    list_extract_from_ghost_map_append_l l1 l2;
-    list_extract_from_ghost_map_append_r l1 l2;
-    Classical.forall_intro (List.Tot.append_memP l1 l2);
+    map_group_footprint_concat_consumes_all source1 source2 source_fp1 source_fp2 (ghost_map_of_list l1) (ghost_map_of_list l2);
+    List.Tot.append_length l1 l2;
+    assert (ghost_map_in_footprint (ghost_map_of_list l1) (source_fp1 `t_choice` source_fp2));
+    assert (ghost_map_in_footprint (ghost_map_of_list l2) (source_fp1 `t_choice` source_fp2));
+    assert (ghost_map_in_footprint (ghost_map_of_list l1 `ghost_map_union` ghost_map_of_list l2) (source_fp1 `t_choice` source_fp2));
+    ghost_map_of_list_append l1 l2;
+    ghost_map_length_of_list (l1 `List.Tot.append` l2);
+    assert (map_group_serializer_spec_arg_prop (source1 `map_group_concat` source2) (source_fp1 `t_choice` source_fp2) res);
+    let prf
+      (f1 : _ -> bool) (f2 : _ -> bool)
+    : Lemma
+      (requires (
+        (forall x . f1 x == matches_map_group_entry source_fp1 any x) /\
+        (forall x . f2 x == matches_map_group_entry source_fp2 any x)
+      ))
+      (ensures (
+        (forall x . (f1 `orp` f2) x == matches_map_group_entry (source_fp1 `t_choice` source_fp2) any x) /\
+        l1 == List.Tot.filter f1 res /\
+        l2 == List.Tot.filter f2 res
+      ))
+    = assert (forall x . (f1 `orp` f2) x == matches_map_group_entry (source_fp1 `t_choice` source_fp2) any x);
+      list_filter_append f1 l1 l2;
+      list_forall_memP_filter f1 l1;
+      list_filter_for_none f1 l2;
+      List.Tot.append_l_nil l1;
+      list_filter_for_none f2 l1;
+      list_forall_memP_filter f2 l2;
+      list_filter_append f2 l1 l2
+    in
+    Classical.forall_intro_2 (fun f1 -> Classical.move_requires (prf f1));
+    assert (map_group_parser_spec_concat p1 p2 target_size res == x);
     res
 
+(*
 let rec map_group_parser_spec_zero_or_more'
   (#source: det_map_group)
   (#target: Type)

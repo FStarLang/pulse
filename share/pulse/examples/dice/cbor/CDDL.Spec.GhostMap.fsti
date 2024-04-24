@@ -252,8 +252,7 @@ val ghost_map_length_of_list
   (#key #value: Type)
   (l: list (key & value))
 : Lemma
-  (requires List.Tot.no_repeats_p (List.Tot.map fst l))
-  (ensures ghost_map_length (ghost_map_of_list l) == List.Tot.length l)
+  (ensures ghost_map_length (ghost_map_of_list l) == List.Tot.length l <==> List.Tot.no_repeats_p (List.Tot.map fst l))
   [SMTPat (ghost_map_length (ghost_map_of_list l))]
 
 let andp_g (#t: Type) (p1 p2: t -> GTot bool) (x: t) : GTot bool =
