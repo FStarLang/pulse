@@ -15,6 +15,25 @@ let notp
 : Tot bool
 = not (p x)
 
+let rec list_length_filter
+  (#t: Type)
+  (f: t -> bool)
+  (l: list t)
+: Lemma
+  (List.Tot.length (List.Tot.filter f l) <= List.Tot.length l)
+  [SMTPat (List.Tot.length (List.Tot.filter f l))]
+= match l with
+  | [] -> ()
+  | _ :: q -> list_length_filter f q
+
+let rec list_memP_filter (#t: Type) (f: t -> bool) (l: list t) (x: t) : Lemma
+  (ensures List.Tot.memP x (List.Tot.filter f l) <==> List.Tot.memP x l /\ f x)
+  (decreases l)
+  [SMTPat (List.Tot.memP x (List.Tot.filter f l))]
+= match l with
+  | [] -> ()
+  | _ :: q -> list_memP_filter f q x
+
 [@@erasable]
 val ghost_map (key value: Type0) : Type0
 
@@ -219,6 +238,7 @@ val ghost_map_of_list_mem
   (x: (key & value))
 : Lemma
   (ghost_map_mem x (ghost_map_of_list l) <==> List.Tot.memP x l)
+  [SMTPat (ghost_map_mem x (ghost_map_of_list l))]
 
 val ghost_map_filter_of_list
   (#key #value: Type)
@@ -226,6 +246,7 @@ val ghost_map_filter_of_list
   (l: list (key & value) { List.Tot.no_repeats_p (List.Tot.map fst l) })
 : Lemma
   (ghost_map_filter f (ghost_map_of_list l) == ghost_map_of_list (List.Tot.filter f l))
+  [SMTPat (ghost_map_filter f (ghost_map_of_list l))]
 
 val ghost_map_length_of_list
   (#key #value: Type)

@@ -633,49 +633,80 @@ let map_group_choice_compatible_match_item_for_same
   ))
 = ()
 
-(*
+let ghost_map_in_footprint
+  (m: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+  (f: typ)
+: Tot prop
+= forall x . ghost_map_mem x m ==> (f (fst x))
+
+let map_group_parser_spec_arg_common
+  (source: det_map_group)
+  (source_fp: typ)
+  (x: list (Cbor.raw_data_item & Cbor.raw_data_item)) // list needed because I need to preserve the order of elements when parsing a table
+: Tot prop
+= 
+    let m = ghost_map_of_list x in
+    List.Tot.no_repeats_p (List.Tot.map fst x) /\
+    map_group_footprint source source_fp /\
+    ghost_map_in_footprint m source_fp
+
+let map_group_parser_spec_arg_prop
+  (source: det_map_group)
+  (source_fp: typ)
+  (x: list (Cbor.raw_data_item & Cbor.raw_data_item)) // list needed because I need to preserve the order of elements when parsing a table
+: Tot prop
+= map_group_parser_spec_arg_common source source_fp x /\
+  MapGroupDet? (apply_map_group_det source (ghost_map_of_list x))
+
 let map_group_parser_spec_arg
   (source: det_map_group)
-  (#target: Type0)
-  (target_size: target -> nat)
+  (source_fp: typ)
 : Tot Type0
-= (x: list (Cbor.raw_data_item & Cbor.raw_data_item) { // list needed because I need to preserve the order of elements when parsing a table
-    List.Tot.no_repeats_p (List.Tot.map fst x) /\
-    begin match apply_map_group_det source (ghost_map_of_list x) with
-    | MapGroupDet _ rem -> rem == ghost_map_empty
-    | _ -> False
-    end
+= (x: list (Cbor.raw_data_item & Cbor.raw_data_item) {
+    map_group_parser_spec_arg_prop source source_fp x
   })
 
 let map_group_parser_spec_ret
   (source: det_map_group)
+  (source_fp: typ)
   (#target: Type0)
   (target_size: target -> nat)
-  (x: map_group_parser_spec_arg source target_size)
+  (x: map_group_parser_spec_arg source source_fp)
 : Tot Type0
 = (y: target { 
-    target_size y == List.Tot.length x
+    target_size y == List.Tot.length x // everything is parsed, because extensibility tables were already excluded by restricting the source map group
   })
 
 let map_group_parser_spec
   (source: det_map_group)
+  (source_fp: typ)
   (#target: Type0)
   (target_size: target -> nat)
 : Type0
-= (x: map_group_parser_spec_arg source target_size) -> GTot (map_group_parser_spec_ret source target_size x)
+= (x: map_group_parser_spec_arg source source_fp) -> GTot (map_group_parser_spec_ret source source_fp target_size x)
 
+let map_group_serializer_spec_arg_prop
+  (source: det_map_group)
+  (source_fp: typ)
+  (x: list (Cbor.raw_data_item & Cbor.raw_data_item)) // list needed because I need to preserve the order of elements when parsing a table
+: Tot prop
+= map_group_parser_spec_arg_common source source_fp x /\
+  begin match apply_map_group_det source (ghost_map_of_list x) with
+  | MapGroupDet _ res -> res == ghost_map_empty // everything is consumed
+  | _ -> False
+  end
+
+#restart-solver
 let map_group_serializer_spec
   (#source: det_map_group)
+  (#source_fp: typ)
   (#target: Type0)
   (#target_size: target -> nat)
-  (p: map_group_parser_spec source target_size)
-  (target_guard: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop) // to take cuts into account. This implies that it is the responsibility of the designer of the target type to make sure entries violating cuts are not introduced.
+  (p: map_group_parser_spec source source_fp target_size)
 : Type0
-= (x: target) -> GTot (y: list (Cbor.raw_data_item & Cbor.raw_data_item) {
-    List.Tot.no_repeats_p (List.Tot.map fst y) /\
-    matches_map_group source y /\
-    p y == x /\
-    (forall z . List.Tot.memP z y ==> target_guard z)
+= (x: target) -> GTot (y: list _ {
+    map_group_serializer_spec_arg_prop source source_fp y /\
+    p y == x
   })
 
 let map_group_target_serializable
@@ -684,27 +715,107 @@ let map_group_target_serializable
 : Tot Type0
 = (x: target { target_size x < pow2 64 })
 
-let parser_spec_map_group
+val list_no_repeats_filter
+  (#key #value: Type)
+  (f: (key & value) -> bool)
+  (l: list (key & value))
+: Lemma
+  (requires
+    List.Tot.no_repeats_p (List.Tot.map fst l)
+  )
+  (ensures
+    List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l))
+  )
+  [SMTPat (List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l)))]
+
+val parser_spec_map_group
+  (source0: det_map_group)
   (#source: det_map_group)
+  (#source_fp: typ)
   (#target: Type0)
   (#target_size: target -> nat)
-  (p: map_group_parser_spec source target_size)
-: Tot (parser_spec (t_map source) (map_group_target_serializable target_size))
+  (p: map_group_parser_spec source source_fp target_size {
+    restrict_map_group source0 source /\
+    map_group_footprint source source_fp
+  })
+: Tot (parser_spec (t_map source0) (map_group_target_serializable target_size))
+
+val parser_spec_map_group_eq
+  (source0: det_map_group)
+  (#source: det_map_group)
+  (#source_fp: typ)
+  (#target: Type0)
+  (#target_size: target -> nat)
+  (p: map_group_parser_spec source source_fp target_size {
+    restrict_map_group source0 source /\
+    map_group_footprint source source_fp
+  })
+  (x: CBOR.Spec.raw_data_item { t_map source0 x })
+: Lemma
+  (exists (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool) .
+    (forall x . Ghost.reveal f x == matches_map_group_entry source_fp any x) /\
+    (let x' = List.Tot.filter f (Cbor.Map?.v x) in
+    map_group_parser_spec_arg_prop source source_fp x' /\
+    parser_spec_map_group source0 p x == p x'
+  ))
+  [SMTPat (parser_spec_map_group source0 p x)]
+
+(*
+#restart-solver
+let parser_spec_map_group
+  (source0: det_map_group)
+  (#source: det_map_group)
+  (#source_fp: typ)
+  (#target: Type0)
+  (#target_size: target -> nat)
+  (p: map_group_parser_spec source source_fp target_size {
+    restrict_map_group source0 source /\
+    map_group_footprint source source_fp
+  })
+: Tot (parser_spec (t_map source0) (map_group_target_serializable target_size))
 = fun x ->
     let Cbor.Map a = x in
-    let res = p a in
+    let a' = List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp any)) a in
+    ghost_map_split (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp any)) (ghost_map_of_list a);
+    let res = p a' in
     res
+*)
 
+let rec list_forall_memP_filter
+  (#t: Type)
+  (f: t -> bool)
+  (l: list t)
+: Lemma
+  (requires (forall x . List.Tot.memP x l ==> f x))
+  (ensures (List.Tot.filter f l == l))
+= match l with
+  | [] -> ()
+  | _ :: q -> list_forall_memP_filter f q
+
+#restart-solver
 let serializer_spec_map_group
+  (source0: det_map_group)
   (#source: det_map_group)
+  (#source_fp: typ)
   (#target: Type0)
   (#target_size: target -> nat)
-  (#p: map_group_parser_spec source target_size)
-  (#target_guard: (Cbor.raw_data_item & Cbor.raw_data_item) -> Tot prop)
-  (s: map_group_serializer_spec p target_guard)
-: Tot (serializer_spec (parser_spec_map_group p))
-= fun x -> Cbor.Map (s x)
+  (#p: map_group_parser_spec source source_fp target_size)
+  (s: map_group_serializer_spec p {
+    restrict_map_group source0 source /\
+    map_group_footprint source source_fp
+  })
+: Tot (serializer_spec (parser_spec_map_group source0 p))
+= fun z ->
+  let l = s z in
+  let MapGroupDet _ rem = apply_map_group_det source0 (ghost_map_of_list l) in
+  ghost_map_equiv rem ghost_map_empty;
+  let res = Cbor.Map l in
+  assert (t_map source0 res);
+  Classical.forall_intro (fun f -> Classical.move_requires (list_forall_memP_filter #(Cbor.raw_data_item & Cbor.raw_data_item) f) l);
+  assert (parser_spec_map_group source0 p res == z);
+  res
 
+(*
 let map_group_parser_spec_bij
   (#source: det_map_group)
   (#target1: Type0)

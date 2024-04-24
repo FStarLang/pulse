@@ -72,23 +72,6 @@ let ghost_neq_equiv (#t: Type) (l2: t) (l1: t) : Lemma
 //  [SMTPat (Ghost.reveal (ghost_neq l2) l1)]
 = ()
 
-let rec list_length_filter
-  (#t: Type)
-  (f: t -> bool)
-  (l: list t)
-: Lemma
-  (List.Tot.length (List.Tot.filter f l) <= List.Tot.length l)
-= match l with
-  | [] -> ()
-  | _ :: q -> list_length_filter f q
-
-let rec list_memP_filter (#t: Type) (f: t -> bool) (l: list t) (x: t) : Lemma
-  (ensures List.Tot.memP x (List.Tot.filter f l) <==> List.Tot.memP x l /\ f x)
-  (decreases l)
-= match l with
-  | [] -> ()
-  | _ :: q -> list_memP_filter f q x
-
 let rec list_filter_eq_length
   (#t: Type)
   (f: t -> bool)
