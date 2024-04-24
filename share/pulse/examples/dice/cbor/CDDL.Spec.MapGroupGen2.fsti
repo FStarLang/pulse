@@ -676,7 +676,7 @@ let map_group_parser_spec_ret
   (x: map_group_parser_spec_arg source source_fp)
 : Tot Type0
 = (y: target { 
-    target_size y == List.Tot.length x // everything is parsed, because extensibility tables were already excluded by restricting the source map group
+    target_size y <= List.Tot.length x // not everything is parsed, especially for choice
   })
 
 let map_group_parser_spec
@@ -709,6 +709,7 @@ let map_group_serializer_spec
 : Type0
 = (x: target) -> GTot (y: list _ {
     map_group_serializer_spec_arg_prop source source_fp y /\
+    target_size x == List.Tot.length y /\
     p y == x
   })
 
@@ -884,6 +885,7 @@ let map_group_serializer_spec_match_item_for
   ghost_map_equiv rem ghost_map_empty;
   res
 
+(*
 val map_group_parser_spec_concat
   (#source1: det_map_group)
   (#source_fp1: typ)
@@ -902,8 +904,68 @@ val map_group_parser_spec_concat
     (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
   })
 : Tot (map_group_parser_spec (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
+*)
 
-val map_group_parser_spec_concat_eq
+#restart-solver
+let map_group_parser_spec_concat
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1)
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2)
+  (target_size: (target1 & target2) -> nat {
+    map_group_footprint source1 source_fp1 /\
+    map_group_footprint source2 source_fp2 /\
+    typ_disjoint source_fp1 source_fp2 /\
+    (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
+  })
+: Pure (map_group_parser_spec (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
+    (requires True)
+    (ensures (fun p ->
+      (exists (f1: _ -> bool) (f2: _ -> bool) .
+        (forall x . f1 x == matches_map_group_entry source_fp1 any x) /\
+        (forall x . f2 x == matches_map_group_entry source_fp2 any x) /\ (
+        forall l .
+        let l1 = List.Tot.filter f1 l in
+        let l2 = List.Tot.filter f2 l in
+        map_group_parser_spec_arg_prop source1 source_fp1 l1 /\
+        map_group_parser_spec_arg_prop source2 source_fp2 l2 /\
+        p l == (p1 l1, p2 l2)
+      ))
+    ))
+= fun l ->
+  ghost_map_equiv
+    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l));
+  map_group_footprint_is_consumed source1 source_fp1 (ghost_map_of_list l);
+  let res1 = p1 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l) in
+  let MapGroupDet c1 r1 = apply_map_group_det source1 (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l)) in
+  ghost_map_disjoint_union_comm r1 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  ghost_map_split (matches_map_group_entry source_fp1 any) (ghost_map_of_list l);
+  let MapGroupDet c1' r1' = apply_map_group_det source1 (ghost_map_of_list l) in
+  ghost_map_equiv
+    (ghost_map_filter (notp_g (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  map_group_footprint_consumed source1 source_fp1 (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l)) (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  ghost_map_union_assoc c1 r1 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  assert (r1' == r1 `ghost_map_union` ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  map_group_footprint_consumed source2 source_fp2 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l)) r1;
+  ghost_map_equiv
+    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  let res2 = p2 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l) in
+  ghost_map_length_disjoint_union
+    (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l))
+    (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l));
+  let res = (res1, res2) in
+  res
+
+let map_group_parser_spec_concat_eq
   (#source1: det_map_group)
   (#source_fp1: typ)
   (#target1: Type)
@@ -932,54 +994,7 @@ val map_group_parser_spec_concat_eq
     map_group_parser_spec_concat p1 p2 target_size l == (p1 l1, p2 l2)
   ))
   [SMTPat (map_group_parser_spec_concat p1 p2 target_size l)]
-
-(*
-#restart-solver
-let map_group_parser_spec_concat
-  (#source1: det_map_group)
-  (#source_fp1: typ)
-  (#target1: Type)
-  (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 source_fp1 target_size1)
-  (#source2: det_map_group)
-  (#source_fp2: typ)
-  (#target2: Type)
-  (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 source_fp2 target_size2)
-  (target_size: (target1 & target2) -> nat {
-    map_group_footprint source1 source_fp1 /\
-    map_group_footprint source2 source_fp2 /\
-    typ_disjoint source_fp1 source_fp2 /\
-    (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
-  })
-: Tot (map_group_parser_spec (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
-= fun l ->
-  ghost_map_equiv
-    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
-    (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l));
-  map_group_footprint_is_consumed source1 source_fp1 (ghost_map_of_list l);
-  let res1 = p1 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l) in
-  let MapGroupDet c1 r1 = apply_map_group_det source1 (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l)) in
-  ghost_map_disjoint_union_comm r1 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
-  ghost_map_split (matches_map_group_entry source_fp1 any) (ghost_map_of_list l);
-  let MapGroupDet c1' r1' = apply_map_group_det source1 (ghost_map_of_list l) in
-  ghost_map_equiv
-    (ghost_map_filter (notp_g (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
-    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
-  map_group_footprint_consumed source1 source_fp1 (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l)) (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
-  ghost_map_union_assoc c1 r1 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
-  assert (r1' == r1 `ghost_map_union` ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
-  map_group_footprint_consumed source2 source_fp2 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l)) r1;
-  ghost_map_equiv
-    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) (ghost_map_of_list l))
-    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
-  let res2 = p2 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l) in
-  ghost_map_length_disjoint_union
-    (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l))
-    (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l));
-  let res = (res1, res2) in
-  res
-*)
+= ()
 
 let orp (#t: Type) (p1 p2: t -> bool) (x: t) : bool =
   p1 x || p2 x
@@ -1065,6 +1080,35 @@ let map_group_serializer_spec_concat
     Classical.forall_intro_2 (fun f1 -> Classical.move_requires (prf f1));
     assert (map_group_parser_spec_concat p1 p2 target_size res == x);
     res
+
+(*
+= fun l ->
+  ghost_map_equiv
+    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l));
+  map_group_footprint_is_consumed source1 source_fp1 (ghost_map_of_list l);
+  let res1 = p1 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l) in
+  let MapGroupDet c1 r1 = apply_map_group_det source1 (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l)) in
+  ghost_map_disjoint_union_comm r1 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  ghost_map_split (matches_map_group_entry source_fp1 any) (ghost_map_of_list l);
+  let MapGroupDet c1' r1' = apply_map_group_det source1 (ghost_map_of_list l) in
+  ghost_map_equiv
+    (ghost_map_filter (notp_g (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  map_group_footprint_consumed source1 source_fp1 (ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l)) (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  ghost_map_union_assoc c1 r1 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  assert (r1' == r1 `ghost_map_union` ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  map_group_footprint_consumed source2 source_fp2 (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l)) r1;
+  ghost_map_equiv
+    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  let res2 = p2 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l) in
+  ghost_map_length_disjoint_union
+    (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l))
+    (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l));
+  let res = (res1, res2) in
+  res
+
 
 (*
 let rec map_group_parser_spec_zero_or_more'
