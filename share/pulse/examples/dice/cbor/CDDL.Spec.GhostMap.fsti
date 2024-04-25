@@ -34,6 +34,16 @@ let rec list_memP_filter (#t: Type) (f: t -> bool) (l: list t) (x: t) : Lemma
   | [] -> ()
   | _ :: q -> list_memP_filter f q x
 
+let list_memP_map
+  (#a #b: Type)
+  (f: a -> Tot b)
+  (l: list a)
+  (y: b)
+: Lemma
+  (ensures (List.Tot.memP y (List.Tot.map f l) <==> (exists (x : a) . List.Tot.memP x l /\ f x == y)))
+= Classical.move_requires (List.Tot.memP_map_elim f y) l;
+  Classical.forall_intro (fun x -> Classical.move_requires (List.Tot.memP_map_intro f x) l)
+
 [@@erasable]
 val ghost_map (key value: Type0) : Type0
 
@@ -115,6 +125,7 @@ let ghost_map_disjoint_mem_union' (#key #value: Type) (m1 m2: ghost_map key valu
 val ghost_map_disjoint_union_comm (#key #value: Type) (m1 m2: ghost_map key value) : Lemma
   (requires ghost_map_disjoint m1 m2)
   (ensures m1 `ghost_map_union` m2 == m2 `ghost_map_union` m1)
+  [SMTPat (m1 `ghost_map_union` m2)]
 
 val ghost_map_length (#key #value: Type) (m: ghost_map key value) : GTot nat
 

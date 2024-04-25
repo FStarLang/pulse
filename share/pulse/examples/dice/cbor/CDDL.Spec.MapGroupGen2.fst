@@ -1,8 +1,122 @@
 module CDDL.Spec.MapGroupGen2
 
-let map_group_footprint_concat_consumes_all_recip = admit ()
+#push-options "--z3rlimit 32"
 
-let list_no_repeats_filter = admit ()
+#restart-solver
+let restrict_map_group_concat
+  (g1: map_group)
+  (f1: typ)
+  (g1': map_group)
+  (g2: map_group)
+  (g2': map_group)
+  (f2': typ)
+: Lemma
+  (requires (
+    restrict_map_group g1 g1' /\
+    map_group_footprint g1 f1 /\
+    map_group_footprint g1' f1 /\
+    restrict_map_group g2 g2' /\
+    map_group_footprint g2' f2' /\
+    typ_disjoint f1 f2'
+  ))
+  (ensures (
+    restrict_map_group (g1 `map_group_concat` g2) (g1' `map_group_concat` g2')
+  ))
+= restrict_map_group_intro
+    (g1 `map_group_concat` g2)
+    (g1' `map_group_concat` g2')
+    (fun m ->
+      match apply_map_group_det g1 m with
+      | MapGroupDet c1 r1 ->
+        let MapGroupDet c1' r1' = apply_map_group_det g1' m in
+        let d1 = c1 `ghost_map_sub` c1' in
+        ghost_map_union_assoc c1' d1 r1;
+        ghost_map_disjoint_union_simpl_l c1' (d1 `ghost_map_union` r1) r1';
+        ghost_map_disjoint_union_comm d1 r1;
+        assert (r1' == r1 `ghost_map_union` d1);
+        map_group_footprint_consumed_disjoint g1 f1 f2' m;
+        assert (ghost_map_disjoint_from_footprint d1 f2');
+        map_group_footprint_elim g2' f2' r1 d1;
+        begin match apply_map_group_det g2 r1 with
+        | MapGroupDet c2 r2 ->
+          let MapGroupDet c2' r2' = apply_map_group_det g2' r1 in
+          assert (c2' `ghost_map_included` c2);
+          assert ((c1' `ghost_map_union` c2') `ghost_map_included` (c1 `ghost_map_union` c2))
+        | _ -> ()
+        end
+      | _ -> ()
+    )
+
+let map_group_choice_compatible_match_item_for
+  (cut: bool)
+  (key: Cbor.raw_data_item)
+  (value: typ)
+  (right: map_group)
+  (fp: typ)
+: Lemma
+  (requires (
+    t_literal key `typ_disjoint` fp /\
+    map_group_footprint right fp
+  ))
+  (ensures (
+    map_group_choice_compatible (map_group_match_item_for cut key value) right
+  ))
+= map_group_choice_compatible_intro (map_group_match_item_for cut key value) right (fun x ->
+    let phi = matches_map_group_entry fp any in
+    ghost_map_split phi x;
+    map_group_footprint_elim right fp (ghost_map_filter phi x) (ghost_map_filter (notp_g phi) x)
+  )
+
+#pop-options
+
+#push-options "--z3rlimit 32"
+
+#restart-solver
+let map_group_footprint_concat_consumes_all_recip
+  (g1 g2: map_group)
+  (f1 f2: typ)
+  (m: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+: Ghost (ghost_map Cbor.raw_data_item Cbor.raw_data_item & ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+  (requires (
+    map_group_footprint g1 f1 /\
+    map_group_footprint g2 f2 /\
+    typ_disjoint f1 f2 /\
+    map_group_consumes_all (g1 `map_group_concat` g2) m
+  ))
+  (ensures (fun (m1, m2) ->
+    m1 `ghost_map_disjoint` m2 /\
+    apply_map_group_det g1 m1 == MapGroupDet m1 ghost_map_empty /\
+    apply_map_group_det g2 m2 == MapGroupDet m2 ghost_map_empty /\
+    m1 `ghost_map_union` m2 == m
+  ))
+= ghost_map_split (matches_map_group_entry f1 any) m;
+  let m1 = ghost_map_filter (matches_map_group_entry f1 any) m in
+  let m1' = ghost_map_filter (notp_g (matches_map_group_entry f1 any)) m in
+  map_group_footprint_elim g1 f1 m1 m1';
+  let MapGroupDet _ r1 = apply_map_group_det g1 m1 in
+  let MapGroupDet _ r1' = apply_map_group_det g1 m in
+  assert (r1' == r1 `ghost_map_union` m1');
+  ghost_map_disjoint_union_comm r1 m1';
+  ghost_map_split (matches_map_group_entry f2 any) m1';
+  let m2 = ghost_map_filter (matches_map_group_entry f2 any) m1' in
+  let m2' = ghost_map_filter (notp_g (matches_map_group_entry f2 any)) m1' in
+  ghost_map_union_assoc m2 m2' r1;
+  ghost_map_disjoint_mem_union' m2' r1 ();
+  assert (ghost_map_included r1 m1);
+  assert (ghost_map_disjoint_from_footprint m1 f2);
+  assert (ghost_map_disjoint_from_footprint r1 f2);
+  assert (ghost_map_disjoint_from_footprint m2' f2);
+  map_group_footprint_elim g2 f2 m2 (m2' `ghost_map_union` r1);
+  let MapGroupDet _ r2 = apply_map_group_det g2 m2 in
+  let MapGroupDet _ r2' = apply_map_group_det g2 r1' in
+  assert (r2' == ghost_map_empty);
+  assert (r2' == r2 `ghost_map_union` (m2' `ghost_map_union` r1));
+  ghost_map_equiv r2 ghost_map_empty;
+  ghost_map_equiv m2' ghost_map_empty;
+  ghost_map_equiv r1 ghost_map_empty;
+  (m1, m2)
+
+#pop-options
 
 #restart-solver
 let parser_spec_map_group'
@@ -45,6 +159,8 @@ let parser_spec_map_group_eq
     map_group_parser_spec_arg_prop source source_fp x' /\
     parser_spec_map_group source0 p x == p x'
   ))
+
+#push-options "--z3rlimit 32"
 
 #restart-solver
 let map_group_parser_spec_concat'
@@ -105,6 +221,8 @@ let map_group_parser_spec_concat'
     (ghost_map_of_list (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l));
   let res = (res1, res2) in
   res
+
+#pop-options
 
 let map_group_parser_spec_concat
   (#source1: det_map_group)

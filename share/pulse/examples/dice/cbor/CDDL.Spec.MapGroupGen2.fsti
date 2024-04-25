@@ -326,8 +326,7 @@ let map_group_footprint_weaken
   )
 = ()
 
-#restart-solver
-let restrict_map_group_concat
+val restrict_map_group_concat
   (g1: map_group)
   (f1: typ)
   (g1': map_group)
@@ -346,30 +345,6 @@ let restrict_map_group_concat
   (ensures (
     restrict_map_group (g1 `map_group_concat` g2) (g1' `map_group_concat` g2')
   ))
-= restrict_map_group_intro
-    (g1 `map_group_concat` g2)
-    (g1' `map_group_concat` g2')
-    (fun m ->
-      match apply_map_group_det g1 m with
-      | MapGroupDet c1 r1 ->
-        let MapGroupDet c1' r1' = apply_map_group_det g1' m in
-        let d1 = c1 `ghost_map_sub` c1' in
-        ghost_map_union_assoc c1' d1 r1;
-        ghost_map_disjoint_union_simpl_l c1' (d1 `ghost_map_union` r1) r1';
-        ghost_map_disjoint_union_comm d1 r1;
-        assert (r1' == r1 `ghost_map_union` d1);
-        map_group_footprint_consumed_disjoint g1 f1 f2' m;
-        assert (ghost_map_disjoint_from_footprint d1 f2');
-        map_group_footprint_elim g2' f2' r1 d1;
-        begin match apply_map_group_det g2 r1 with
-        | MapGroupDet c2 r2 ->
-          let MapGroupDet c2' r2' = apply_map_group_det g2' r1 in
-          assert (c2' `ghost_map_included` c2);
-          assert ((c1' `ghost_map_union` c2') `ghost_map_included` (c1 `ghost_map_union` c2))
-        | _ -> ()
-        end
-      | _ -> ()
-    )
 
 let map_group_choice_compatible
   (left right: map_group)
@@ -393,7 +368,7 @@ let map_group_choice_compatible_intro
 = Classical.forall_intro (Classical.move_requires prf)
 
 #restart-solver
-let map_group_choice_compatible_match_item_for
+val map_group_choice_compatible_match_item_for
   (cut: bool)
   (key: Cbor.raw_data_item)
   (value: typ)
@@ -407,11 +382,6 @@ let map_group_choice_compatible_match_item_for
   (ensures (
     map_group_choice_compatible (map_group_match_item_for cut key value) right
   ))
-= map_group_choice_compatible_intro (map_group_match_item_for cut key value) right (fun x ->
-    let phi = matches_map_group_entry fp any in
-    ghost_map_split phi x;
-    map_group_footprint_elim right fp (ghost_map_filter phi x) (ghost_map_filter (notp_g phi) x)
-  )
 
 let map_group_choice_compatible_no_cut
   (left right: map_group)
@@ -538,12 +508,11 @@ let map_group_choice_compatible_list_choice_right
   ))
 = ()
 
-#restart-solver
 val map_group_footprint_concat_consumes_all_recip
   (g1 g2: map_group)
   (f1 f2: typ)
   (m: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
-: Pure (ghost_map Cbor.raw_data_item Cbor.raw_data_item & ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+: Ghost (ghost_map Cbor.raw_data_item Cbor.raw_data_item & ghost_map Cbor.raw_data_item Cbor.raw_data_item)
   (requires (
     map_group_footprint g1 f1 /\
     map_group_footprint g2 f2 /\
@@ -719,7 +688,41 @@ let map_group_target_serializable
 : Tot Type0
 = (x: target { target_size x < pow2 64 })
 
-val list_no_repeats_filter
+let rec list_forall_memP_filter
+  (#t: Type)
+  (f: t -> bool)
+  (l: list t)
+: Lemma
+  (requires (forall x . List.Tot.memP x l ==> f x))
+  (ensures (List.Tot.filter f l == l))
+= match l with
+  | [] -> ()
+  | _ :: q -> list_forall_memP_filter f q
+
+let rec list_filter_append
+  (#t: Type)
+  (f: t -> bool)
+  (l1 l2: list t)
+: Lemma
+  (ensures List.Tot.filter f (l1 `List.Tot.append` l2) == List.Tot.filter f l1 `List.Tot.append` List.Tot.filter f l2)
+  (decreases l1)
+= match l1 with
+  | [] -> ()
+  | _ :: q -> list_filter_append f q l2
+
+let rec list_filter_for_none
+  (#t: Type)
+  (f: t -> bool)
+  (l: list t)
+: Lemma
+  (requires (forall x . List.Tot.memP x l ==> ~ (f x)))
+  (ensures List.Tot.filter f l == [])
+= match l with
+  | [] -> ()
+  | _ :: q -> list_filter_for_none f q
+
+#restart-solver
+let rec list_no_repeats_filter
   (#key #value: Type)
   (f: (key & value) -> bool)
   (l: list (key & value))
@@ -731,6 +734,12 @@ val list_no_repeats_filter
     List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l))
   )
   [SMTPat (List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l)))]
+= match l with
+  | [] -> ()
+  | (k, v) :: q ->
+    list_no_repeats_filter f q;
+    Classical.forall_intro (list_memP_map fst (List.Tot.filter f q));
+    Classical.forall_intro (list_memP_map fst q)
 
 val parser_spec_map_group
   (source0: det_map_group)
@@ -763,17 +772,6 @@ val parser_spec_map_group_eq
     parser_spec_map_group source0 p x == p x'
   ))
   [SMTPat (parser_spec_map_group source0 p x)]
-
-let rec list_forall_memP_filter
-  (#t: Type)
-  (f: t -> bool)
-  (l: list t)
-: Lemma
-  (requires (forall x . List.Tot.memP x l ==> f x))
-  (ensures (List.Tot.filter f l == l))
-= match l with
-  | [] -> ()
-  | _ :: q -> list_forall_memP_filter f q
 
 #restart-solver
 let serializer_spec_map_group
@@ -916,28 +914,6 @@ val map_group_parser_spec_concat_eq
 
 let orp (#t: Type) (p1 p2: t -> bool) (x: t) : bool =
   p1 x || p2 x
-
-let rec list_filter_append
-  (#t: Type)
-  (f: t -> bool)
-  (l1 l2: list t)
-: Lemma
-  (ensures List.Tot.filter f (l1 `List.Tot.append` l2) == List.Tot.filter f l1 `List.Tot.append` List.Tot.filter f l2)
-  (decreases l1)
-= match l1 with
-  | [] -> ()
-  | _ :: q -> list_filter_append f q l2
-
-let rec list_filter_for_none
-  (#t: Type)
-  (f: t -> bool)
-  (l: list t)
-: Lemma
-  (requires (forall x . List.Tot.memP x l ==> ~ (f x)))
-  (ensures List.Tot.filter f l == [])
-= match l with
-  | [] -> ()
-  | _ :: q -> list_filter_for_none f q
 
 #restart-solver
 let map_group_serializer_spec_concat

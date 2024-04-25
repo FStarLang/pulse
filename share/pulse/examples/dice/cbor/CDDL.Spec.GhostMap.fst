@@ -38,16 +38,6 @@ let ghost_map_pred
 : Tot prop
 = g == ghost_map_of_list' l
 
-let list_memP_map
-  (#a #b: Type)
-  (f: a -> Tot b)
-  (l: list a)
-  (y: b)
-: Lemma
-  (ensures (List.Tot.memP y (List.Tot.map f l) <==> (exists (x : a) . List.Tot.memP x l /\ f x == y)))
-= Classical.move_requires (List.Tot.memP_map_elim f y) l;
-  Classical.forall_intro (fun x -> Classical.move_requires (List.Tot.memP_map_intro f x) l)
-
 let rec list_memP_extract
   (#t: Type)
   (x: t)
