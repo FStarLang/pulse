@@ -110,26 +110,6 @@ let map_group_footprint_is_consumed
 = ghost_map_split (matches_map_group_entry f any) m
 
 #restart-solver
-let rec list_no_repeats_filter
-  (#key #value: Type)
-  (f: (key & value) -> bool)
-  (l: list (key & value))
-: Lemma
-  (requires
-    List.Tot.no_repeats_p (List.Tot.map fst l)
-  )
-  (ensures
-    List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l))
-  )
-  [SMTPat (List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l)))]
-= match l with
-  | [] -> ()
-  | (k, v) :: q ->
-    list_no_repeats_filter f q;
-    Classical.forall_intro (list_memP_map fst (List.Tot.filter f q));
-    Classical.forall_intro (list_memP_map fst q)
-
-#restart-solver
 let map_group_footprint_is_consumed_ghost_map_of_list
   (g: map_group)
   (f: typ)
