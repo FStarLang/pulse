@@ -285,3 +285,141 @@ let map_group_parser_spec_concat_eq
     map_group_parser_spec_arg_prop source2 source_fp2 l2 /\
     map_group_parser_spec_concat p1 p2 target_size l == (p1 l1, p2 l2)
   ))
+
+#push-options "--z3rlimit 32"
+
+#restart-solver
+let map_group_parser_spec_choice'
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 {
+    map_group_footprint source1 source_fp1
+  })
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 {
+    map_group_footprint source2 source_fp2
+  })
+  (target_size: (target1 `either` target2) -> nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+  (l: map_group_parser_spec_arg (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2))
+: Ghost (map_group_parser_spec_ret (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2) target_size l)
+    (requires True)
+    (ensures (fun l' ->
+        let f1 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any) in
+        let f2 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any) in
+        (forall x . f1 x == matches_map_group_entry source_fp1 any x) /\
+        (forall x . f2 x == matches_map_group_entry source_fp2 any x) /\ (
+        let l1 = List.Tot.filter f1 l in
+        let l2 = List.Tot.filter f2 l in
+        let test = MapGroupDet? (apply_map_group_det source1 (ghost_map_of_list l1)) in
+        ghost_map_of_list l1 == ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l) /\
+        ghost_map_of_list l2 == ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l) /\
+        (test ==> (
+          map_group_parser_spec_arg_prop source1 source_fp1 l1 /\
+          (l' <: (target1 `either` target2)) == Inl (p1 l1)
+        )) /\
+        (~ test ==> (
+          map_group_parser_spec_arg_prop source2 source_fp2 l2 /\
+          (l' <: (target1 `either` target2)) == Inr (p2 l2)
+        ))
+    )))
+= let m1 = ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l) in
+  ghost_map_equiv
+    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l))
+    m1;
+  ghost_map_split (matches_map_group_entry source_fp1 any) (ghost_map_of_list l);
+  map_group_footprint_elim source1 source_fp1 m1 (ghost_map_filter (notp_g (matches_map_group_entry source_fp1 any)) (ghost_map_of_list l));
+  ghost_map_equiv
+    (ghost_map_filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) (ghost_map_of_list l))
+    (ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l));
+  match apply_map_group_det source1 m1 with
+  | MapGroupDet _ _ -> Inl (p1 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any)) l))
+  | _ ->
+    begin
+      map_group_footprint_is_consumed source2 source_fp2 (ghost_map_of_list l);
+      Inr (p2 (List.Tot.filter (FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any)) l))
+    end
+
+#pop-options
+
+let map_group_parser_spec_choice
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 {
+    map_group_footprint source1 source_fp1
+  })
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 {
+    map_group_footprint source2 source_fp2
+  })
+  (target_size: (target1 `either` target2) -> nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+: Tot (map_group_parser_spec (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
+= fun x -> map_group_parser_spec_choice' p1 p2 target_size x
+
+#push-options "--z3rlimit 32"
+
+#restart-solver
+let map_group_parser_spec_choice_eq
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 {
+    map_group_footprint source1 source_fp1
+  })
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 {
+    map_group_footprint source2 source_fp2
+  })
+  (target_size: (target1 `either` target2) -> nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+  (l: map_group_parser_spec_arg (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2))
+=
+        let l' = map_group_parser_spec_choice p1 p2 target_size l in
+        let f1 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any) in
+        let f2 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any) in
+    assert (
+        (forall x . f1 x == matches_map_group_entry source_fp1 any x) /\
+        (forall x . f2 x == matches_map_group_entry source_fp2 any x) /\ (
+        let l1 = List.Tot.filter f1 l in
+        let l2 = List.Tot.filter f2 l in
+        let test = MapGroupDet? (apply_map_group_det source1 (ghost_map_of_list l1)) in
+        ghost_map_of_list l1 == ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l) /\
+        ghost_map_of_list l2 == ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l) /\
+        (test ==> (
+          map_group_parser_spec_arg_prop source1 source_fp1 l1 /\
+          (l' <: (target1 `either` target2)) == Inl (p1 l1)
+        )) /\
+        (~ test ==> (
+          map_group_parser_spec_arg_prop source2 source_fp2 l2 /\
+          (l' <: (target1 `either` target2)) == Inr (p2 l2)
+        ))
+    ))
+
+#pop-options

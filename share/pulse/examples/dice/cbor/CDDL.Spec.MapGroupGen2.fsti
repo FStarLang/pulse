@@ -101,9 +101,72 @@ let map_group_footprint_is_consumed
     map_group_footprint g f
   )
   (ensures (
-    MapGroupDet? (apply_map_group_det g m) <==> MapGroupDet? (apply_map_group_det g (ghost_map_filter (matches_map_group_entry f any) m))
+    match apply_map_group_det g m, apply_map_group_det g (ghost_map_filter (matches_map_group_entry f any) m) with
+    | MapGroupDet _ _, MapGroupDet _ _
+    | MapGroupFail, MapGroupFail
+    | MapGroupCutFail, MapGroupCutFail -> True
+    | _ -> False
   ))
 = ghost_map_split (matches_map_group_entry f any) m
+
+#restart-solver
+let rec list_no_repeats_filter
+  (#key #value: Type)
+  (f: (key & value) -> bool)
+  (l: list (key & value))
+: Lemma
+  (requires
+    List.Tot.no_repeats_p (List.Tot.map fst l)
+  )
+  (ensures
+    List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l))
+  )
+  [SMTPat (List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l)))]
+= match l with
+  | [] -> ()
+  | (k, v) :: q ->
+    list_no_repeats_filter f q;
+    Classical.forall_intro (list_memP_map fst (List.Tot.filter f q));
+    Classical.forall_intro (list_memP_map fst q)
+
+#restart-solver
+let map_group_footprint_is_consumed_ghost_map_of_list
+  (g: map_group)
+  (f: typ)
+  (m: _)
+: Lemma
+  (requires
+    map_group_footprint g f /\
+    List.Tot.no_repeats_p (List.Tot.map fst m)
+  )
+  (ensures (
+    forall (f': _ -> bool) .
+    (forall x . f' x == matches_map_group_entry f any x) ==>
+    begin match apply_map_group_det g (ghost_map_of_list m), apply_map_group_det g (ghost_map_of_list (List.Tot.filter f' m)) with
+    | MapGroupDet _ _, MapGroupDet _ _
+    | MapGroupFail, MapGroupFail
+    | MapGroupCutFail, MapGroupCutFail -> True
+    | _ -> False
+    end
+  ))
+= let prf
+      (f': _ -> bool)
+  : Lemma
+    (requires (forall x . f' x == matches_map_group_entry f any x))
+    (ensures 
+      begin match apply_map_group_det g (ghost_map_of_list m), apply_map_group_det g (ghost_map_of_list (List.Tot.filter f' m)) with
+      | MapGroupDet _ _, MapGroupDet _ _
+      | MapGroupFail, MapGroupFail
+      | MapGroupCutFail, MapGroupCutFail -> True
+      | _ -> False
+      end
+    )
+  = ghost_map_equiv
+      (ghost_map_filter f' (ghost_map_of_list m))
+      (ghost_map_filter (matches_map_group_entry f any) (ghost_map_of_list m));
+    map_group_footprint_is_consumed g f (ghost_map_of_list m)
+  in
+  Classical.forall_intro (Classical.move_requires prf)
 
 let map_group_footprint_consumed_disjoint
   (g: map_group)
@@ -721,26 +784,6 @@ let rec list_filter_for_none
   | [] -> ()
   | _ :: q -> list_filter_for_none f q
 
-#restart-solver
-let rec list_no_repeats_filter
-  (#key #value: Type)
-  (f: (key & value) -> bool)
-  (l: list (key & value))
-: Lemma
-  (requires
-    List.Tot.no_repeats_p (List.Tot.map fst l)
-  )
-  (ensures
-    List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l))
-  )
-  [SMTPat (List.Tot.no_repeats_p (List.Tot.map fst (List.Tot.filter f l)))]
-= match l with
-  | [] -> ()
-  | (k, v) :: q ->
-    list_no_repeats_filter f q;
-    Classical.forall_intro (list_memP_map fst (List.Tot.filter f q));
-    Classical.forall_intro (list_memP_map fst q)
-
 val parser_spec_map_group
   (source0: det_map_group)
   (#source: det_map_group)
@@ -975,6 +1018,120 @@ let map_group_serializer_spec_concat
     assert (map_group_parser_spec_concat p1 p2 target_size res == x);
     res
 
+val map_group_parser_spec_choice
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 {
+    map_group_footprint source1 source_fp1
+  })
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 {
+    map_group_footprint source2 source_fp2
+  })
+  (target_size: (target1 `either` target2) -> nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+: Tot (map_group_parser_spec (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
+
+val map_group_parser_spec_choice_eq
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 {
+    map_group_footprint source1 source_fp1
+  })
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 {
+    map_group_footprint source2 source_fp2
+  })
+  (target_size: (target1 `either` target2) -> nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+  (l: map_group_parser_spec_arg (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2))
+: Lemma
+    (requires True)
+    (ensures (
+        let l' = map_group_parser_spec_choice p1 p2 target_size l in
+        exists (f1: _ -> bool) (f2: _ -> bool) .
+        (forall x . f1 x == matches_map_group_entry source_fp1 any x) /\
+        (forall x . f2 x == matches_map_group_entry source_fp2 any x) /\ (
+        let l1 = List.Tot.filter f1 l in
+        let l2 = List.Tot.filter f2 l in
+        let test = MapGroupDet? (apply_map_group_det source1 (ghost_map_of_list l1)) in
+        ghost_map_of_list l1 == ghost_map_filter (matches_map_group_entry source_fp1 any) (ghost_map_of_list l) /\
+        ghost_map_of_list l2 == ghost_map_filter (matches_map_group_entry source_fp2 any) (ghost_map_of_list l) /\
+        (test ==> (
+          map_group_parser_spec_arg_prop source1 source_fp1 l1 /\
+          (l' <: (target1 `either` target2)) == Inl (p1 l1)
+        )) /\
+        (~ test ==> (
+          map_group_parser_spec_arg_prop source2 source_fp2 l2 /\
+          (l' <: (target1 `either` target2)) == Inr (p2 l2)
+        ))
+    )))
+    [SMTPat (map_group_parser_spec_choice p1 p2 target_size l)]
+
+#restart-solver
+let map_group_serializer_spec_choice
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> nat)
+  (#p1: map_group_parser_spec source1 source_fp1 target_size1)
+  (s1: map_group_serializer_spec p1 {
+    map_group_footprint source1 source_fp1
+  })
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> nat)
+  (#p2: map_group_parser_spec source2 source_fp2 target_size2)
+  (s2: map_group_serializer_spec p2 {
+    map_group_footprint source2 source_fp2 /\
+    map_group_choice_compatible source1 source2
+  })
+  (target_size: (target1 `either` target2) -> nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+: Tot (map_group_serializer_spec (map_group_parser_spec_choice p1 p2 target_size))
+= fun x ->
+    let res : list (Cbor.raw_data_item & Cbor.raw_data_item) =
+      match x with
+      | Inl y -> s1 y
+      | Inr y -> s2 y
+    in
+    assert (map_group_serializer_spec_arg_prop (source1 `map_group_choice` source2) (source_fp1 `t_choice` source_fp2) res);
+    assert (target_size x == List.Tot.length res);
+    Classical.forall_intro (fun f -> Classical.move_requires (list_forall_memP_filter f) res);
+    let _ : squash (map_group_parser_spec_choice p1 p2 target_size res == x) =
+      match x with
+      | Inl y -> ()
+      | Inr y ->
+        assert (MapGroupDet? (apply_map_group_det source2 (ghost_map_of_list res)));
+        assert (MapGroupFail? (apply_map_group_det source1 (ghost_map_of_list res)));
+        map_group_footprint_is_consumed_ghost_map_of_list source1 source_fp1 res;
+        assert (map_group_parser_spec_choice p1 p2 target_size res == x)
+    in
+    res
+
 (*
 let rec map_group_parser_spec_zero_or_more'
   (#source: det_map_group)
@@ -1109,49 +1266,6 @@ let map_group_serializer_spec_one_or_more
   let l2 = map_group_serializer_spec_zero_or_more s target_size1 tl in
   List.Tot.append_length l1 l2;
   l1 `List.Tot.append` l2
-
-let map_group_parser_spec_choice
-  (#source1: det_map_group)
-  (#target1: Type0)
-  (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 target_size1)
-  (#source2: det_map_group)
-  (#target2: Type0)
-  (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 target_size2)
-  (target_size: (target1 `either` target2) -> nat {
-    forall x . target_size x == begin match x with
-    | Inl y -> target_size1 y
-    | Inr y -> target_size2 y
-    end
-  })
-: Tot (map_group_parser_spec (source1 `map_group3_choice` source2) target_size)
-= fun x ->
-    if Some? (source1 x)
-    then Inl (p1 x)
-    else Inr (p2 x)
-
-let map_group_serializer_spec_choice
-  (#source1: det_map_group)
-  (#target1: Type0)
-  (#target_size1: target1 -> nat)
-  (#p1: map_group_parser_spec source1 target_size1)
-  (s1: map_group_serializer_spec p1)
-  (#source2: det_map_group)
-  (#target2: Type0)
-  (#target_size2: target2 -> nat)
-  (#p2: map_group_parser_spec source2 target_size2)
-  (s2: map_group_serializer_spec p2 { source1 `map_group3_disjoint` source2 }) // disjointness needed to avoid the CBOR object serialized from one case to be parsed into the other case
-  (target_size: (target1 `either` target2) -> nat {
-    forall x . target_size x == begin match x with
-    | Inl y -> target_size1 y
-    | Inr y -> target_size2 y
-    end
-  })
-: Tot (map_group_serializer_spec (map_group_parser_spec_choice p1 p2 target_size))
-= fun x -> match x with
-  | Inl y -> s1 y
-  | Inr y -> s2 y
 
 let map_group_parser_spec_zero_or_one
   (#source: det_map_group)
