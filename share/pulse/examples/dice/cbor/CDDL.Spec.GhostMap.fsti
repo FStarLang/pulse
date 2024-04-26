@@ -69,16 +69,24 @@ val ghost_map (key value: Type0) : Type0
 
 val apply_ghost_map (#key #value: Type0) (m: ghost_map key value) (k: key) : GTot (option value)
 
+let ghost_map_feq (#key #value: Type) (m1 m2: ghost_map key value) : Tot prop
+= forall x . apply_ghost_map m1 x == apply_ghost_map m2 x
+
 val ghost_map_ext (#key #value: Type0) (m1 m2: ghost_map key value) : Lemma
-  (requires forall x . apply_ghost_map m1 x == apply_ghost_map m2 x)
+  (requires ghost_map_feq m1 m2)
   (ensures m1 == m2)
+  [SMTPat (ghost_map_feq m1 m2)]
 
 let ghost_map_mem (#key #value: Type) (kv: (key & value)) (f: ghost_map key value) : Tot prop =
   apply_ghost_map f (fst kv) == Some (snd kv)
 
+let ghost_map_equal (#key #value: Type) (f1 f2: ghost_map key value) : Tot prop
+= forall kv . ghost_map_mem kv f1 <==> ghost_map_mem kv f2
+
 val ghost_map_equiv (#key #value: Type) (f1 f2: ghost_map key value) : Lemma
-  (requires (forall kv . ghost_map_mem kv f1 <==> ghost_map_mem kv f2))
+  (requires ghost_map_equal f1 f2)
   (ensures f1 == f2)
+  [SMTPat (ghost_map_equal f1 f2)]
 
 let ghost_map_defined (#key #value: Type) (k: key) (f: ghost_map key value) : Tot prop =
   Some? (apply_ghost_map f k)
@@ -152,9 +160,14 @@ let ghost_map_disjoint_union_comm (#key #value: Type) (m1 m2: ghost_map key valu
 
 val ghost_map_length (#key #value: Type) (m: ghost_map key value) : GTot nat
 
-val ghost_map_length_empty (key value: Type) : Lemma
+val ghost_map_length_is_empty (#key #value: Type) (m: ghost_map key value)
+: Lemma
+  (ghost_map_length m == 0 <==> m == ghost_map_empty)
+
+let ghost_map_length_empty (key value: Type) : Lemma
   (ghost_map_length (ghost_map_empty #key #value) == 0)
   [SMTPat (ghost_map_length (ghost_map_empty #key #value))]
+= ghost_map_length_is_empty #key #value ghost_map_empty
 
 val ghost_map_length_singleton (#key #value: Type) (k: key) (v: value) : Lemma
   (ghost_map_length (ghost_map_singleton k v) == 1)

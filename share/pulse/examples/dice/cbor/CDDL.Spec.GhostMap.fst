@@ -350,8 +350,10 @@ let ghost_map_length_intro
 = let l' = ghost_map_elim_strong (ghost_map_of_list' l) in
   ghost_map_length_unique (ghost_map_of_list' l) (List.Tot.length l) (List.Tot.length l') l l'
 
-let ghost_map_length_empty key value =
-  ghost_map_length_intro #key #value []
+let ghost_map_length_is_empty m =
+  let l = ghost_map_elim_strong m in
+  Classical.forall_intro (Classical.move_requires (list_ghost_assoc_memP_strong_curry l));
+  assert (m `ghost_map_equal` ghost_map_empty <==> l == [])
 
 let ghost_map_length_singleton k v =
   ghost_map_length_intro [k, v]

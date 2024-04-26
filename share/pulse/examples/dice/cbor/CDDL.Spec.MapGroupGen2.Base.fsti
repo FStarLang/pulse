@@ -22,13 +22,13 @@ val map_group_nop : map_group
 
 val map_group_end : map_group
 
-val map_group_match_item (cut: bool) (key value: typ) : map_group
-
 let matches_map_group_entry
   (key value: typ)
   (x: (Cbor.raw_data_item & Cbor.raw_data_item))
 : GTot bool
 = key (fst x) && value (snd x)
+
+val map_group_match_item (cut: bool) (key value: typ) : map_group
 
 val map_group_choice (m1 m2: map_group) : map_group
 
@@ -88,7 +88,7 @@ val apply_map_group_det_nop (l: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
   [SMTPat (apply_map_group_det map_group_nop l)]
 
 val apply_map_group_det_end (l: ghost_map Cbor.raw_data_item Cbor.raw_data_item) : Lemma
-  (apply_map_group_det map_group_end ghost_map_empty == MapGroupDet ghost_map_empty l /\
+  (apply_map_group_det map_group_end ghost_map_empty == MapGroupDet ghost_map_empty ghost_map_empty /\
     ((~ (l == ghost_map_empty)) ==> apply_map_group_det map_group_end l == MapGroupFail)
   )
   [SMTPat (apply_map_group_det map_group_end l)]
@@ -178,7 +178,7 @@ let map_group_filter_ext (p1 p2: _ -> GTot bool) : Lemma
     (map_group_filter p1)
     (map_group_filter p2)
   
-val map_group_zero_or_one_match_item_filter (key value: typ) (p: (Cbor.raw_data_item & Cbor.raw_data_item) -> bool) : Lemma
+val map_group_zero_or_one_match_item_filter (key value: typ) (p: (Cbor.raw_data_item & Cbor.raw_data_item) -> GTot bool) : Lemma
   (requires (
     forall x . p x ==> notp_g (matches_map_group_entry key value) x
   ))
