@@ -124,10 +124,14 @@ let parser_spec_map_group'
   (#source: det_map_group)
   (#source_fp: typ)
   (#target: Type0)
-  (#target_size: target -> nat)
-  (p: map_group_parser_spec source source_fp target_size {
+  (#target_size: target -> GTot nat)
+  (#target_prop: target -> prop)
+  (p: map_group_parser_spec source source_fp target_size target_prop {
     restrict_map_group source0 source /\
     map_group_footprint source source_fp
+  })
+  (target_prop' : target -> prop {
+    forall x . target_prop' x <==> (target_prop x /\ target_size x < pow2 64)
   })
   (x: Cbor.raw_data_item { t_map source0 x })
 : Ghost target
@@ -147,17 +151,17 @@ let parser_spec_map_group'
     res
 
 let parser_spec_map_group
-  source0 p
-= fun x -> parser_spec_map_group' source0 p x
+  source0 p target_prop'
+= fun x -> parser_spec_map_group' source0 p target_prop' x
 
 let parser_spec_map_group_eq
-  source0 #source #source_fp p x
+  source0 #source #source_fp p target_prop' x
 = let f = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp any) in
   assert (
     (forall x . Ghost.reveal f x == matches_map_group_entry source_fp any x) /\
     (let x' = List.Tot.filter f (Cbor.Map?.v x) in
     map_group_parser_spec_arg_prop source source_fp x' /\
-    parser_spec_map_group source0 p x == p x'
+    parser_spec_map_group source0 p target_prop' x == p x'
   ))
 
 #push-options "--z3rlimit 32"
@@ -167,21 +171,26 @@ let map_group_parser_spec_concat'
   (#source1: det_map_group)
   (#source_fp1: typ)
   (#target1: Type)
-  (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 source_fp1 target_size1)
+  (#target_size1: target1 -> GTot nat)
+  (#target_prop1: target1 -> prop)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 target_prop1)
   (#source2: det_map_group)
   (#source_fp2: typ)
   (#target2: Type)
-  (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 source_fp2 target_size2)
-  (target_size: (target1 & target2) -> nat {
+  (#target_size2: target2 -> GTot nat)
+  (#target_prop2: target2 -> prop)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 target_prop2)
+  (target_size: (target1 & target2) -> GTot nat {
     map_group_footprint source1 source_fp1 /\
     map_group_footprint source2 source_fp2 /\
     typ_disjoint source_fp1 source_fp2 /\
     (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
   })
+  (target_prop: (target1 & target2) -> prop {
+    forall x . target_prop x <==> (target_prop1 (fst x) /\ target_prop2 (snd x))
+  })
   (l: map_group_parser_spec_arg (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2))
-: Ghost (map_group_parser_spec_ret (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size l)
+: Ghost (map_group_parser_spec_ret (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size target_prop l)
     (requires True)
     (ensures (fun l' ->
         let f1 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any) in
@@ -225,55 +234,33 @@ let map_group_parser_spec_concat'
 #pop-options
 
 let map_group_parser_spec_concat
-  (#source1: det_map_group)
-  (#source_fp1: typ)
-  (#target1: Type)
-  (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 source_fp1 target_size1)
-  (#source2: det_map_group)
-  (#source_fp2: typ)
-  (#target2: Type)
-  (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 source_fp2 target_size2)
-  (target_size: (target1 & target2) -> nat {
-    map_group_footprint source1 source_fp1 /\
-    map_group_footprint source2 source_fp2 /\
-    typ_disjoint source_fp1 source_fp2 /\
-    (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
-  })
-: Tot (map_group_parser_spec (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
-= map_group_parser_spec_concat' p1 p2 target_size
+  p1 p2 target_size target_prop
+= map_group_parser_spec_concat' p1 p2 target_size target_prop
 
 #restart-solver
 let map_group_parser_spec_concat_eq
   (#source1: det_map_group)
   (#source_fp1: typ)
   (#target1: Type)
-  (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 source_fp1 target_size1)
+  (#target_size1: target1 -> GTot nat)
+  (#target_prop1: target1 -> prop)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 target_prop1)
   (#source2: det_map_group)
   (#source_fp2: typ)
   (#target2: Type)
-  (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 source_fp2 target_size2)
-  (target_size: (target1 & target2) -> nat {
+  (#target_size2: target2 -> GTot nat)
+  (#target_prop2: target2 -> prop)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 target_prop2)
+  (target_size: (target1 & target2) -> GTot nat {
     map_group_footprint source1 source_fp1 /\
     map_group_footprint source2 source_fp2 /\
     typ_disjoint source_fp1 source_fp2 /\
     (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
   })
+  (target_prop: (target1 & target2) -> prop {
+    forall x . target_prop x <==> (target_prop1 (fst x) /\ target_prop2 (snd x))
+  })
   (l: map_group_parser_spec_arg (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2))
-: Lemma
-  (exists (f1: _ -> bool) (f2: _ -> bool) .
-    (forall x . f1 x == matches_map_group_entry source_fp1 any x) /\
-    (forall x . f2 x == matches_map_group_entry source_fp2 any x) /\ (
-    let l1 = List.Tot.filter f1 l in
-    let l2 = List.Tot.filter f2 l in
-    map_group_parser_spec_arg_prop source1 source_fp1 l1 /\
-    map_group_parser_spec_arg_prop source2 source_fp2 l2 /\
-    map_group_parser_spec_concat p1 p2 target_size l == (p1 l1, p2 l2)
-  ))
-  [SMTPat (map_group_parser_spec_concat p1 p2 target_size l)]
 = let f1 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any) in
   let f2 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any) in
   assert (
@@ -283,7 +270,7 @@ let map_group_parser_spec_concat_eq
     let l2 = List.Tot.filter f2 l in
     map_group_parser_spec_arg_prop source1 source_fp1 l1 /\
     map_group_parser_spec_arg_prop source2 source_fp2 l2 /\
-    map_group_parser_spec_concat p1 p2 target_size l == (p1 l1, p2 l2)
+    map_group_parser_spec_concat p1 p2 target_size target_prop l == (p1 l1, p2 l2)
   ))
 
 #push-options "--z3rlimit 32"
@@ -293,25 +280,33 @@ let map_group_parser_spec_choice'
   (#source1: det_map_group)
   (#source_fp1: typ)
   (#target1: Type)
-  (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 source_fp1 target_size1 {
+  (#target_size1: target1 -> GTot nat)
+  (#target_prop1: target1 -> prop)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 target_prop1 {
     map_group_footprint source1 source_fp1
   })
   (#source2: det_map_group)
   (#source_fp2: typ)
   (#target2: Type)
-  (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 source_fp2 target_size2 {
+  (#target_size2: target2 -> GTot nat)
+  (#target_prop2: target2 -> prop)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 target_prop2 {
     map_group_footprint source2 source_fp2
   })
-  (target_size: (target1 `either` target2) -> nat {
+  (target_size: (target1 `either` target2) -> GTot nat {
     forall x . target_size x == begin match x with
     | Inl y -> target_size1 y
     | Inr y -> target_size2 y
     end
   })
+  (target_prop: (target1 `either` target2) -> prop {
+    forall x . target_prop x <==> begin match x with
+    | Inl x1 -> target_prop1 x1
+    | Inr x2 -> target_prop2 x2
+    end
+  })  
   (l: map_group_parser_spec_arg (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2))
-: Ghost (map_group_parser_spec_ret (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2) target_size l)
+: Ghost (map_group_parser_spec_ret (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2) target_size target_prop l)
     (requires True)
     (ensures (fun l' ->
         let f1 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any) in
@@ -352,27 +347,7 @@ let map_group_parser_spec_choice'
 #pop-options
 
 let map_group_parser_spec_choice
-  (#source1: det_map_group)
-  (#source_fp1: typ)
-  (#target1: Type)
-  (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 source_fp1 target_size1 {
-    map_group_footprint source1 source_fp1
-  })
-  (#source2: det_map_group)
-  (#source_fp2: typ)
-  (#target2: Type)
-  (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 source_fp2 target_size2 {
-    map_group_footprint source2 source_fp2
-  })
-  (target_size: (target1 `either` target2) -> nat {
-    forall x . target_size x == begin match x with
-    | Inl y -> target_size1 y
-    | Inr y -> target_size2 y
-    end
-  })
-: Tot (map_group_parser_spec (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2) target_size)
+  p1 p2 target_size
 = fun x -> map_group_parser_spec_choice' p1 p2 target_size x
 
 #push-options "--z3rlimit 32"
@@ -382,26 +357,34 @@ let map_group_parser_spec_choice_eq
   (#source1: det_map_group)
   (#source_fp1: typ)
   (#target1: Type)
-  (#target_size1: target1 -> nat)
-  (p1: map_group_parser_spec source1 source_fp1 target_size1 {
+  (#target_size1: target1 -> GTot nat)
+  (#target_prop1: target1 -> prop)
+  (p1: map_group_parser_spec source1 source_fp1 target_size1 target_prop1 {
     map_group_footprint source1 source_fp1
   })
   (#source2: det_map_group)
   (#source_fp2: typ)
   (#target2: Type)
-  (#target_size2: target2 -> nat)
-  (p2: map_group_parser_spec source2 source_fp2 target_size2 {
+  (#target_size2: target2 -> GTot nat)
+  (#target_prop2: target2 -> prop)
+  (p2: map_group_parser_spec source2 source_fp2 target_size2 target_prop2 {
     map_group_footprint source2 source_fp2
   })
-  (target_size: (target1 `either` target2) -> nat {
+  (target_size: (target1 `either` target2) -> GTot nat {
     forall x . target_size x == begin match x with
     | Inl y -> target_size1 y
     | Inr y -> target_size2 y
     end
   })
+  (target_prop: (target1 `either` target2) -> prop {
+    forall x . target_prop x <==> begin match x with
+    | Inl x1 -> target_prop1 x1
+    | Inr x2 -> target_prop2 x2
+    end
+  })  
   (l: map_group_parser_spec_arg (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2))
 =
-        let l' = map_group_parser_spec_choice p1 p2 target_size l in
+        let l' = map_group_parser_spec_choice p1 p2 target_size target_prop l in
         let f1 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp1 any) in
         let f2 = FStar.Ghost.Pull.pull (matches_map_group_entry source_fp2 any) in
     assert (

@@ -73,30 +73,42 @@ type bijection (from to: Type) = {
   bij_to_from_to: squash (forall (x: from) . bij_to_from (bij_from_to x) == x);
 }
 
-let parser_spec (source:typ) (target: Type0) = (c: CBOR.Spec.raw_data_item { source c }) -> GTot target
+let parser_spec (source:typ) (target: Type0) (target_prop: target -> prop) = (c: CBOR.Spec.raw_data_item { source c }) -> GTot (y: target { target_prop y })
 
-let serializer_spec (#source:typ) (#target: Type0) (p: parser_spec source target) =
-  ((x: target) -> GTot (y: CBOR.Spec.raw_data_item { source y /\ p y == x }))
+let serializer_spec (#source:typ) (#target: Type0) (#target_prop: target -> prop) (p: parser_spec source target target_prop) =
+  ((x: target { target_prop x }) -> GTot (y: CBOR.Spec.raw_data_item { source y /\ p y == x }))
 
-let parse_spec_bij (#source:typ) (#target1 #target2: Type0) (p: parser_spec source target1) (bij: bijection target1 target2) : parser_spec source target2 =
+let parse_spec_bij (#source:typ) (#target1 #target2: Type0) (#target1_prop: target1 -> prop) (p: parser_spec source target1 target1_prop) (target2_prop: target2 -> prop) (bij: bijection target1 target2 {
+  forall x . target2_prop x <==> target1_prop (bij.bij_to_from x)
+}) : parser_spec source target2 target2_prop =
   (fun c -> bij.bij_from_to (p c))
 
-let serialize_spec_bij (#source:typ) (#target1 #target2: Type0) (#p: parser_spec source target1) (s: serializer_spec p) (bij: bijection target1 target2) : serializer_spec (parse_spec_bij p bij) =
+let serialize_spec_bij (#source:typ) (#target1 #target2: Type0) (#target1_prop: _ -> prop) (#target2_prop: _ -> prop) (#p: parser_spec source target1 target1_prop) (s: serializer_spec p) (bij: bijection target1 target2 {
+  forall x . target2_prop x <==> target1_prop (bij.bij_to_from x)
+}) : serializer_spec (parse_spec_bij p target2_prop bij) =
   (fun x -> s (bij.bij_to_from x))
 
-let parser_spec_literal (x: CBOR.Spec.raw_data_item) : Tot (parser_spec (t_literal x) unit) =
+let parser_spec_literal (x: CBOR.Spec.raw_data_item) (p: unit -> prop { p () }) : Tot (parser_spec (t_literal x) unit p) =
   fun _ -> ()
 
-let serializer_spec_literal (x: CBOR.Spec.raw_data_item) : Tot (serializer_spec (parser_spec_literal x)) = (fun _ -> x)
+let serializer_spec_literal (x: CBOR.Spec.raw_data_item) (p: unit -> prop { p () }) : Tot (serializer_spec (parser_spec_literal x p)) = (fun _ -> x)
 
 let parser_spec_choice
   (#source1: typ)
   (#target1: Type0)
-  (p1: parser_spec source1 target1)
+  (#target1_prop: _ -> prop)
+  (p1: parser_spec source1 target1 target1_prop)
   (#source2: typ)
   (#target2: Type0)
-  (p2: parser_spec source2 target2)
-: Tot (parser_spec (source1 `t_choice` source2) (target1 `either` target2))
+  (#target2_prop: _ -> prop)
+  (p2: parser_spec source2 target2 target2_prop)
+  (target_prop: (target1 `either` target2) -> prop {
+    forall x . target_prop x <==> begin match x with
+    | Inl x1 -> target1_prop x1
+    | Inr x2 -> target2_prop x2
+    end
+  })
+: Tot (parser_spec (source1 `t_choice` source2) (target1 `either` target2) target_prop)
 = fun x ->
     if source1 x
     then Inl (p1 x)
@@ -105,13 +117,21 @@ let parser_spec_choice
 let serializer_spec_choice
   (#source1: typ)
   (#target1: Type0)
-  (#p1: parser_spec source1 target1)
+  (#target1_prop: _ -> prop)
+  (#p1: parser_spec source1 target1 target1_prop)
   (s1: serializer_spec p1)
   (#source2: typ)
   (#target2: Type0)
-  (#p2: parser_spec source2 target2)
+  (#target2_prop: _ -> prop)
+  (#p2: parser_spec source2 target2 target2_prop)
   (s2: serializer_spec p2 { source1 `typ_disjoint` source2 }) // disjointness needed to avoid the CBOR object serialized from one case to be parsed into the other case
-: Tot (serializer_spec (parser_spec_choice p1 p2))
+  (target_prop: (target1 `either` target2) -> prop {
+    forall x . target_prop x <==> begin match x with
+    | Inl x1 -> target1_prop x1
+    | Inr x2 -> target2_prop x2
+    end
+  })
+: Tot (serializer_spec (parser_spec_choice p1 p2 target_prop))
 = fun x -> match x with
   | Inl y -> s1 y
   | Inr y -> s2 y

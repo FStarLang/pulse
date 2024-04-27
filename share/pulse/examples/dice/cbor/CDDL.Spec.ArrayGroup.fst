@@ -785,20 +785,12 @@ let array_group3_concat_close
 #push-options "--z3rlimit 16"
 #restart-solver
 let array_group_parser_spec_concat
-  (#source1: array_group3 None)
-  (#target1: Type)
-  (#target_size1: target1 -> nat)
-  (p1: array_group_parser_spec source1 target_size1)
+  #source1
+  p1
   (#source2: array_group3 None)
-  (#target2: Type)
-  (#target_size2: target2 -> nat)
-  (p2: array_group_parser_spec source2 target_size2 {
-    array_group3_concat_unique_weak source1 source2
-  })
-  (target_size: (target1 & target2) -> nat {
-    forall x . target_size x == target_size1 (fst x) + target_size2 (snd x)
-  })
-: Tot (array_group_parser_spec (array_group3_concat source1 source2) target_size)
+  p2
+  target_size
+  target_prop
 = fun x ->
   let Some (x1, x2) = source1 x in
   assert (source1 x1 == Some (x1, []));
@@ -808,5 +800,5 @@ let array_group_parser_spec_concat
 #pop-options
 
 let array_group_parser_spec_concat_eq
-  p1 p2 target_size x
+  p1 p2 target_size target_prop x
 = ()

@@ -90,22 +90,22 @@ let bstr_cbor
     ty y == true
   )
 
-let parser_spec_bool : parser_spec t_bool bool =
+let parser_spec_bool (p: bool -> prop { forall x . p x }) : parser_spec t_bool bool p =
   (fun x -> let Cbor.Simple v = x in
     v = simple_value_true
   )
 
-let serializer_spec_bool : serializer_spec parser_spec_bool =
+let serializer_spec_bool (p: bool -> prop { forall x . p x }) : serializer_spec (parser_spec_bool p) =
   (fun x -> Cbor.Simple (if x then simple_value_true else simple_value_false))
 
-let parser_spec_bstr : parser_spec bstr string64 =
+let parser_spec_bstr (p: string64 -> prop { forall x . p x }) : parser_spec bstr string64 p =
   (fun x -> let Cbor.String _ v = x in v)
 
-let serializer_spec_bstr : serializer_spec parser_spec_bstr =
+let serializer_spec_bstr (p: string64 -> prop { forall x . p x }) : serializer_spec (parser_spec_bstr p) =
   (fun x -> Cbor.String Cbor.cbor_major_type_byte_string x)
 
-let parser_spec_tstr : parser_spec tstr string64 =
+let parser_spec_tstr (p: string64 -> prop { forall x . p x }) : parser_spec tstr string64 p =
   (fun x -> let Cbor.String _ v = x in v)
 
-let serializer_spec_tstr : serializer_spec parser_spec_tstr =
+let serializer_spec_tstr (p: string64 -> prop { forall x . p x }) : serializer_spec (parser_spec_tstr p) =
   (fun x -> Cbor.String Cbor.cbor_major_type_text_string x)
