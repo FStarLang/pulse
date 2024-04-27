@@ -1336,7 +1336,6 @@ let apply_map_group_det_zero_or_more_match_item
       ghost_map_filter (notp_g (matches_map_group_entry key value)) l
     )
 
-(*
 #push-options "--z3rlimit 64"
 
 #restart-solver
@@ -1352,7 +1351,6 @@ let map_group_zero_or_more_map_group_match_item_for
     (map_group_zero_or_one (map_group_match_item_for false key value))
     (fun l -> ())
     (fun l ->
-      Classical.move_requires (list_ghost_assoc_none_filter_matches_map_group_entry_for key value) l;
       let MapGroupDet c1 _ = apply_map_group_det (map_group_zero_or_more (map_group_match_item_for false key value)) l in
       let MapGroupDet c2 _ = apply_map_group_det (map_group_zero_or_one (map_group_match_item_for false key value)) l in
       assert (c1 `ghost_map_feq` c2)
@@ -1372,26 +1370,23 @@ let map_group_zero_or_one_choice
   (map_group_zero_or_one (g1 `map_group_choice` g2) == g1 `map_group_choice` map_group_zero_or_one g2)
 = map_group_choice_assoc g1 g2 map_group_nop
 
-let matches_map_group (g: map_group) (m: cbor_map) : GTot bool =
+let matches_map_group (g: map_group) (l: list (Cbor.raw_data_item & Cbor.raw_data_item)) : GTot bool =
+  let m = ghost_map_of_list l in
   MapGroupResult? (g m) &&
   FStar.StrongExcludedMiddle.strong_excluded_middle (exists gm .
-    FStar.GSet.mem (gm, []) (MapGroupResult?._0 (g m))
+    FStar.GSet.mem (gm, ghost_map_empty) (MapGroupResult?._0 (g m))
   )
 
-let matches_map_group_mem (g: map_group) (m: cbor_map) (gm: _) : Lemma
-  (requires (match g m with
-  | MapGroupResult s -> FStar.GSet.mem (gm, []) s
-  | _ -> False
-  ))
-  (ensures gm == ghost_map_of_list m)
-  [SMTPat (FStar.GSet.mem (gm, []) (MapGroupResult?._0 (g m)))]
-= Classical.forall_intro (ghost_map_of_list_mem m);
-  ghost_map_equiv gm (ghost_map_of_list m)
+let matches_map_group_det (g: map_group) m
+= ()
 
-let matches_map_group_det (g: map_group) (m: cbor_map) : Lemma
-  (match apply_map_group_det g m with
-  | MapGroupCutFail
-  | MapGroupFail -> ~ (matches_map_group g m)
-  | MapGroupDet _ m' -> matches_map_group g m <==> m' == []
-  | _ -> True)
+let t_map g = fun x ->
+  match x with
+  | Cbor.Map m ->
+    FStar.StrongExcludedMiddle.strong_excluded_middle (List.Tot.no_repeats_p (List.Tot.map fst m)) &&
+    matches_map_group g m
+  | _ -> false
+
+let t_map_eq
+  g x
 = ()
