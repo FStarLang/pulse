@@ -1,4 +1,4 @@
-module CDDL.Spec.MapGroupGen2.Base
+module CDDL.Spec.MapGroupGen.Base
 include CDDL.Spec.Base
 include CDDL.Spec.GhostMap
 module Cbor = CBOR.Spec

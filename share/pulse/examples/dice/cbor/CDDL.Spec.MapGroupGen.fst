@@ -1,4 +1,4 @@
-module CDDL.Spec.MapGroupGen2
+module CDDL.Spec.MapGroupGen
 
 #push-options "--z3rlimit 32"
 

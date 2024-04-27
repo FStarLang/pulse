@@ -1,5 +1,5 @@
-module CDDL.Spec.MapGroupGen2
-include CDDL.Spec.MapGroupGen2.Base
+module CDDL.Spec.MapGroupGen
+include CDDL.Spec.MapGroupGen.Base
 module Cbor = CBOR.Spec
 module U8 = FStar.UInt8
 module U64 = FStar.UInt64

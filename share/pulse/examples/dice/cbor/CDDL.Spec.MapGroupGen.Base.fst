@@ -1,4 +1,4 @@
-module CDDL.Spec.MapGroupGen2.Base
+module CDDL.Spec.MapGroupGen.Base
 
 module FE = FStar.FunctionalExtensionality
 
