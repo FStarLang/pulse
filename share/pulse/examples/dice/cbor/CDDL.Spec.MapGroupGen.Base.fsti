@@ -40,6 +40,41 @@ val map_group_concat (m1 m2: map_group) : map_group
 val map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
   (map_group_concat m1 (map_group_concat m2 m3) == map_group_concat (map_group_concat m1 m2) m3)
 
+val map_group_is_productive
+  (m: map_group)
+: Tot prop
+
+val map_group_is_productive_match_item
+  (cut: bool)
+  (key value: typ)
+: Lemma
+  (map_group_is_productive (map_group_match_item cut key value))
+  [SMTPat (map_group_is_productive (map_group_match_item cut key value))]
+
+val map_group_is_productive_choice
+  (m1 m2: map_group)
+: Lemma
+  (requires (
+    map_group_is_productive m1 /\
+    map_group_is_productive m2
+  ))
+  (ensures (
+    map_group_is_productive (m1 `map_group_choice` m2)
+  ))
+  [SMTPat (map_group_is_productive (m1 `map_group_choice` m2))]
+
+val map_group_is_productive_concat
+  (m1 m2: map_group)
+: Lemma
+  (requires (
+    map_group_is_productive m1 \/
+    map_group_is_productive m2
+  ))
+  (ensures (
+    map_group_is_productive (m1 `map_group_concat` m2)
+  ))
+  [SMTPat (map_group_is_productive (m1 `map_group_concat` m2))]
+
 val map_group_zero_or_more
   (m: map_group)
 : map_group
@@ -213,6 +248,32 @@ val map_group_zero_or_more_map_group_match_item_for
   (map_group_zero_or_more (map_group_match_item_for false key value) ==
     map_group_zero_or_one (map_group_match_item_for false key value)
   )
+
+let map_group_fail_shorten
+  (g: map_group)
+: Tot prop
+= forall (m1 m2: _) .
+  (ghost_map_disjoint m1 m2 /\ MapGroupFail? (apply_map_group_det g (m1 `ghost_map_union` m2))) ==>
+  MapGroupFail? (apply_map_group_det g m1)
+
+val map_group_fail_shorten_match_item
+  (cut: bool)
+  (key value: typ)
+: Lemma
+  (map_group_fail_shorten (map_group_match_item cut key value))
+  [SMTPat (map_group_fail_shorten (map_group_match_item cut key value))]
+
+val map_group_zero_or_more_choice
+  (g1 g2: map_group)
+: Lemma
+  (requires (
+    map_group_fail_shorten g1 /\
+    map_group_is_productive g1 /\
+    map_group_is_productive g2
+  ))
+  (ensures (
+    map_group_zero_or_more (g1 `map_group_choice` g2) == map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2
+  ))
 
 val matches_map_group (g: map_group) (m: list (Cbor.raw_data_item & Cbor.raw_data_item)) : GTot bool
 

@@ -658,6 +658,89 @@ let bound_map_group_ext
     (fun l l' -> ())
     (fun l l' -> ())
 
+let bound_map_group_ext'
+  (l0: cbor_map)
+  (m1 m2: (l: cbor_map { ghost_map_length l < ghost_map_length l0 }) ->
+  Ghost _
+    (requires True)
+    (ensures fun l' -> map_group_post l l')
+  )
+  (prf: (l: cbor_map { ghost_map_length l < ghost_map_length l0 }) -> Lemma
+    (m1 l == m2 l)
+  )
+: Lemma
+  (ensures bound_map_group l0 m1 == bound_map_group l0 m2)
+= Classical.forall_intro prf;
+  bound_map_group_ext l0 m1 m2
+
+#restart-solver
+let map_group_concat_eq_r
+  (m1 m2 m2': map_group)
+  (l: cbor_map)
+  (prf: (l1: _) -> Lemma
+    (requires (match m1 l with
+    | MapGroupResult s -> FStar.GSet.mem l1 s
+    | _ -> False
+    ))
+    (ensures (m2 (snd l1) == m2' (snd l1)))
+  )
+: Lemma
+  ((m1 `map_group_concat` m2) l == (m1 `map_group_concat` m2') l)
+= Classical.forall_intro (Classical.move_requires prf);
+  begin match (m1 `map_group_concat` m2) l, (m1 `map_group_concat` m2') l with
+  | MapGroupResult s1, MapGroupResult s2 -> assert (s1 `FStar.GSet.equal` s2)
+  | _ -> ()
+  end
+
+let map_group_is_productive
+  (m: map_group)
+: Tot prop
+=
+  forall l . match m l with
+  | MapGroupCutFailure -> True
+  | MapGroupResult s -> forall l' . FStar.GSet.mem l' s ==> ghost_map_length (snd l') < ghost_map_length l
+
+let map_group_is_productive_match_item
+  (cut: bool)
+  (key value: typ)
+: Lemma
+  (map_group_is_productive (map_group_match_item cut key value))
+= ()
+
+let map_group_is_productive_choice
+  (m1 m2: map_group)
+: Lemma
+  (requires (
+    map_group_is_productive m1 /\
+    map_group_is_productive m2
+  ))
+  (ensures (
+    map_group_is_productive (m1 `map_group_choice` m2)
+  ))
+= ()
+
+let map_group_is_productive_concat
+  (m1 m2: map_group)
+: Lemma
+  (requires (
+    map_group_is_productive m1 \/
+    map_group_is_productive m2
+  ))
+  (ensures (
+    map_group_is_productive (m1 `map_group_concat` m2)
+  ))
+= ()
+
+let map_group_is_productive_concat_bound
+  (l0: cbor_map)
+  (m1: map_group { map_group_is_productive m1 })
+  (l1: cbor_map { ghost_map_length l1 <= ghost_map_length l0 })
+  (m2: map_group)
+: Lemma
+  ((m1 `map_group_concat` bound_map_group l0 m2) l1 == (m1 `map_group_concat` m2) l1)
+= map_group_concat_eq_r
+    m1 (bound_map_group l0 m2) m2 l1 (fun _ -> ())
+
 // greedy PEG semantics for `*`
 let rec map_group_zero_or_more'
   (m: map_group)
@@ -1321,21 +1404,6 @@ let map_group_zero_or_more_match_item_filter (key value: typ) : Lemma
 
 #pop-options
 
-#restart-solver
-let apply_map_group_det_zero_or_more_match_item
-  (key value: typ)
-  (l: cbor_map)
-= map_group_zero_or_more_match_item_filter key value;
-  ghost_map_filter_ext
-    (matches_map_group_entry key value)
-    (notp_g (notp_g (matches_map_group_entry key value)))
-    l;
-  apply_map_group_det_eq_singleton (map_group_zero_or_more (map_group_match_item false key value)) l
-    (
-      ghost_map_filter (matches_map_group_entry key value) l,
-      ghost_map_filter (notp_g (matches_map_group_entry key value)) l
-    )
-
 #push-options "--z3rlimit 64"
 
 #restart-solver
@@ -1357,6 +1425,147 @@ let map_group_zero_or_more_map_group_match_item_for
     )
 
 #pop-options
+
+let map_group_fail_shorten_intro
+  (g: map_group)
+  (prf: (m1: _) -> (m2: _) -> Lemma
+    (requires (ghost_map_disjoint m1 m2 /\
+      MapGroupFail? (apply_map_group_det g (m1 `ghost_map_union` m2))
+    ))
+    (ensures MapGroupFail? (apply_map_group_det g m1))
+  )
+: Lemma
+  (map_group_fail_shorten g)
+= Classical.forall_intro_2 (fun m1 -> Classical.move_requires (prf m1))
+
+#restart-solver
+let map_group_fail_shorten_match_item
+  (cut: bool)
+  (key value: typ)
+: Lemma
+  (map_group_fail_shorten (map_group_match_item cut key value))
+= map_group_fail_shorten_intro (map_group_match_item cut key value) (fun m1 m2 ->
+    map_group_match_item_alt_correct key value (m1 `ghost_map_union` m2);
+    map_group_match_item_alt_correct key value m1;
+    let s12 = map_group_match_item_alt key value (m1 `ghost_map_union` m2) in
+    match maybe_indefinite_description_ghost (map_group_match_item_alt_pred key value (m1 `ghost_map_union` m2)) with
+    | None ->
+      assert (forall x . map_group_match_item_alt_pred key value m1 x ==> map_group_match_item_alt_pred key value (m1 `ghost_map_union` m2) x);
+      assert (None? (maybe_indefinite_description_ghost (map_group_match_item_alt_pred key value m1)));
+      ghost_map_disjoint_mem_union' m1 m2 ();
+      assert (forall x . map_group_match_item_cut_failure_witness_pred key (FStar.GSet.singleton (ghost_map_empty, m1)) x ==> begin
+        let (_, entry) = x in
+        map_group_match_item_cut_failure_witness_pred key (FStar.GSet.singleton (ghost_map_empty, m1 `ghost_map_union` m2)) ((ghost_map_empty, m1 `ghost_map_union` m2), entry)
+      end);
+      ()
+    | Some kv ->
+      let s = ghost_map_singleton (fst kv) (snd kv) in
+      assert (FStar.GSet.mem (s, (m1 `ghost_map_union` m2) `ghost_map_sub` s) s12)
+  )
+
+#restart-solver
+let rec map_group_zero_or_more_choice'
+  (g1 g2: map_group)
+  (l: cbor_map)
+: Lemma
+  (requires (
+    map_group_fail_shorten g1 /\
+    map_group_is_productive g1 /\
+    map_group_is_productive g2
+  ))
+  (ensures (
+    map_group_zero_or_more (g1 `map_group_choice` g2) l == (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2) l
+  ))
+  (decreases (ghost_map_length l))
+= let lhs = map_group_zero_or_more (g1 `map_group_choice` g2) l in
+  let rhs = (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2) l in
+  map_group_zero_or_more_eq (g1 `map_group_choice` g2) l;
+  map_group_zero_or_more_eq g1 l;
+  match g1 l with
+  | MapGroupCutFailure -> ()
+  | MapGroupResult s1 ->
+    begin match gset_is_empty s1 with
+    | None ->
+      map_group_concat_eq_l
+        (map_group_zero_or_more g1)
+        map_group_nop
+        (map_group_zero_or_more g2)
+        l;
+      assert (rhs == (map_group_nop `map_group_concat` map_group_zero_or_more g2) l);
+      map_group_concat_nop_l (map_group_zero_or_more g2);
+      assert (rhs == (map_group_zero_or_more g2) l);
+      map_group_zero_or_more_eq g2 l;
+      begin match g2 l with
+      | MapGroupCutFailure -> ()
+      | MapGroupResult s2 ->
+        begin match gset_is_empty s2 with
+        | None ->
+          assert (lhs == map_group_nop l);
+          assert (rhs == map_group_nop l)
+        | Some _ ->
+          map_group_concat_eq_l
+            (g1 `map_group_choice` g2)
+            g2
+            (bound_map_group l (map_group_zero_or_more (g1 `map_group_choice` g2)))
+            l;
+          bound_map_group_ext' l (map_group_zero_or_more (g1 `map_group_choice` g2)) (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2) (fun l' -> map_group_zero_or_more_choice' g1 g2 l');
+          map_group_is_productive_concat_bound l g2 l (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2);
+          map_group_is_productive_concat_bound l g2 l (map_group_zero_or_more g2);
+          map_group_concat_eq_r
+            g2
+            (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2)
+            (map_group_zero_or_more g2)
+            l
+            (fun l' ->
+              map_group_zero_or_more_eq g1 (snd l');
+              map_group_concat_eq_l
+                (map_group_zero_or_more g1)
+                map_group_nop
+                (map_group_zero_or_more g2)
+                (snd l');
+              ()
+            );
+          ()
+        end
+      end
+    | _ ->
+      map_group_concat_eq_l
+        (g1 `map_group_choice` g2)
+        g1
+        (bound_map_group l (map_group_zero_or_more (g1 `map_group_choice` g2)))
+        l;
+      bound_map_group_ext' l (map_group_zero_or_more (g1 `map_group_choice` g2)) (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2) (fun l' -> map_group_zero_or_more_choice' g1 g2 l');
+      map_group_is_productive_concat_bound l g1 l (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2);
+      assert (lhs == (g1 `map_group_concat` (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2)) l);
+      map_group_concat_eq_l
+        (map_group_zero_or_more g1)
+        (g1 `map_group_concat` bound_map_group l (map_group_zero_or_more g1))
+        (map_group_zero_or_more g2)
+        l;
+      map_group_is_productive_concat_bound l g1 l (map_group_zero_or_more g1);
+      map_group_concat_eq_l
+        (g1 `map_group_concat` bound_map_group l (map_group_zero_or_more g1))
+        (g1 `map_group_concat` map_group_zero_or_more g1)
+        (map_group_zero_or_more g2)
+        l;
+      map_group_concat_assoc g1 (map_group_zero_or_more g1) (map_group_zero_or_more g2);
+      assert (rhs == (g1 `map_group_concat` (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2)) l)
+    end    
+
+let map_group_zero_or_more_choice
+  (g1 g2: map_group)
+: Lemma
+  (requires (
+    map_group_fail_shorten g1 /\
+    map_group_is_productive g1 /\
+    map_group_is_productive g2
+  ))
+  (ensures (
+    map_group_zero_or_more (g1 `map_group_choice` g2) == map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2
+  ))
+= Classical.forall_intro (Classical.move_requires (map_group_zero_or_more_choice' g1 g2));
+  assert (map_group_zero_or_more (g1 `map_group_choice` g2) `FE.feq_g` (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2)
+  )
 
 let map_group_choice_assoc
   (g1 g2 g3: map_group)
