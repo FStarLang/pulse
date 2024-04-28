@@ -30,6 +30,15 @@ let matches_map_group_entry
 
 val map_group_match_item (cut: bool) (key value: typ) : map_group
 
+val map_group_match_item_ext (cut: bool) (key value: typ) (key' value' : typ) : Lemma
+  (requires (
+    typ_equiv key key' /\
+    typ_equiv value value'
+  ))
+  (ensures (
+    map_group_match_item cut key value == map_group_match_item cut key' value'
+  ))
+
 val map_group_choice (m1 m2: map_group) : map_group
 
 let map_group_zero_or_one (m: map_group) : map_group =

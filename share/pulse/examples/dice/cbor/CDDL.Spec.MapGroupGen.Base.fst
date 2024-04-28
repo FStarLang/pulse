@@ -167,6 +167,13 @@ let map_group_match_item (cut: bool) (key value: typ) : map_group =
       else MapGroupResult s
     )
 
+let map_group_match_item_ext
+  cut key value key' value'
+= assert (forall l l' x . map_group_match_item_witness_pred key value l l' x <==> map_group_match_item_witness_pred key' value' l l' x);
+  assert (forall s l' . map_group_match_item_cut_failure_witness_pred key s l' <==> map_group_match_item_cut_failure_witness_pred key' s l');
+  assert (forall x . map_group_match_item' key value x `FStar.GSet.equal` map_group_match_item' key' value' x);
+  assert (map_group_match_item cut key value `FE.feq_g` map_group_match_item cut key' value')
+
 let gset_map_witness_pred (#t1 #t2: Type) (f: t1 -> GTot t2) (s: FStar.GSet.set t1) x2 x1 : GTot prop =
   x2 == f x1 /\ FStar.GSet.mem x1 s
 
