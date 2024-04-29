@@ -41,6 +41,15 @@ val map_group_match_item_ext (cut: bool) (key value: typ) (key' value' : typ) : 
 
 val map_group_choice (m1 m2: map_group) : map_group
 
+val map_group_choice_assoc
+  (g1 g2 g3: map_group)
+: Lemma
+  ((g1 `map_group_choice` g2) `map_group_choice` g3 == g1 `map_group_choice` (g2 `map_group_choice` g3))
+  [SMTPatOr [
+//    [SMTPat (map_group_choice g1 (map_group_choice g2 g3))];
+    [SMTPat (map_group_choice (map_group_choice g1 g2) g3)]
+  ]]
+
 let map_group_zero_or_one (m: map_group) : map_group =
   map_group_choice m map_group_nop
 
@@ -48,6 +57,10 @@ val map_group_concat (m1 m2: map_group) : map_group
 
 val map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
   (map_group_concat m1 (map_group_concat m2 m3) == map_group_concat (map_group_concat m1 m2) m3)
+  [SMTPatOr [
+//    [SMTPat (map_group_concat m1 (map_group_concat m2 m3))];
+    [SMTPat (map_group_concat (map_group_concat m1 m2) m3)]
+  ]]
 
 val map_group_is_productive
   (m: map_group)
@@ -251,11 +264,12 @@ let map_group_zero_or_more_match_item_choice_left
     )
 
 val map_group_zero_or_more_map_group_match_item_for
+  (cut: bool)
   (key: Cbor.raw_data_item)
   (value: typ)
 : Lemma
-  (map_group_zero_or_more (map_group_match_item_for false key value) ==
-    map_group_zero_or_one (map_group_match_item_for false key value)
+  (map_group_zero_or_more (map_group_match_item_for cut key value) ==
+    map_group_zero_or_one (map_group_match_item_for cut key value)
   )
 
 let map_group_fail_shorten

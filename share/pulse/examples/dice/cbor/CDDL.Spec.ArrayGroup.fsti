@@ -138,7 +138,7 @@ val array_group3_concat_assoc
   (array_group3_concat a1 (array_group3_concat a2 a3) `array_group3_equiv`
     array_group3_concat (array_group3_concat a1 a2) a3)
   [SMTPatOr [
-    [SMTPat (array_group3_concat a1 (array_group3_concat a2 a3))];
+//    [SMTPat (array_group3_concat a1 (array_group3_concat a2 a3))];
     [SMTPat (array_group3_concat (array_group3_concat a1 a2) a3)]
   ]]
 

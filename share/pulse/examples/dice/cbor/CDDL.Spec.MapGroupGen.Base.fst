@@ -292,6 +292,12 @@ let map_group_choice (m1 m2: map_group) : map_group =
       else MapGroupResult res1
   )
 
+let map_group_choice_assoc
+  (g1 g2 g3: map_group)
+: Lemma
+  ((g1 `map_group_choice` g2) `map_group_choice` g3 == g1 `map_group_choice` (g2 `map_group_choice` g3))
+= assert (((g1 `map_group_choice` g2) `map_group_choice` g3) `map_group_equiv` (g1 `map_group_choice` (g2 `map_group_choice` g3)))
+
 let map_group_concat_witness_pred
   (m1 m2: map_group)
   (l: cbor_map)
@@ -1270,6 +1276,8 @@ let map_group_zero_or_one_match_item_filter_matched
   ghost_map_disjoint_union_filter p s l';
   ghost_map_equiv ghost_map_empty (ghost_map_filter p s)
 
+#push-options "--z3rlimit 128"
+
 #restart-solver
 let map_group_zero_or_one_match_item_filter
   key value p
@@ -1298,8 +1306,6 @@ let map_group_zero_or_one_match_item_filter
         map_group_zero_or_one_match_item_filter_matched key value p l kv (snd l1);
         assert (map_group_concat_witness_pred (map_group_zero_or_one (map_group_match_item false key value)) (map_group_filter p) l l' (l1, (ghost_map_filter (notp_g p) (snd l1), ghost_map_filter p (snd l1))))
     )
-
-#push-options "--z3rlimit 32"
 
 #restart-solver
 let map_group_concat_bound_map_group_elim
@@ -1411,27 +1417,82 @@ let map_group_zero_or_more_match_item_filter (key value: typ) : Lemma
 
 #pop-options
 
-#push-options "--z3rlimit 64"
+let eq_trans
+  (#t: Type)
+  (x1 x2 x3: t)
+  (sq12: squash (x1 == x2))
+  (sq23: squash (x2 == x3))
+: Tot (squash (x1 == x3))
+= ()
+
+let apply_map_group_det_ext
+  (m1 m2: map_group)
+  (l: cbor_map)
+: Lemma
+  (requires (m1 l == m2 l))
+  (ensures (apply_map_group_det m1 l == apply_map_group_det m2 l))
+= ()
+
+#restart-solver
+let rec map_group_zero_or_more_det
+  (g: map_group)
+  (l: cbor_map)
+: Lemma
+  (requires (forall l . ~ (MapGroupNonDet? (apply_map_group_det g l))))
+  (ensures (~ (MapGroupNonDet? (apply_map_group_det (map_group_zero_or_more g) l))))
+  (decreases (ghost_map_length l))
+= map_group_zero_or_more_eq g l;
+  match apply_map_group_det g l with
+  | MapGroupDet consumed rem ->
+    ghost_map_length_is_empty consumed;
+    if ghost_map_length consumed = 0
+    then begin
+      assert (rem == l);
+      map_group_concat_eq_r g (bound_map_group l (map_group_zero_or_more g)) map_group_nop l (fun l' -> ());
+      assert (map_group_zero_or_more g l == map_group_concat g map_group_nop l);
+      map_group_concat_nop_r g;
+      assert (map_group_zero_or_more g l == g l);
+      apply_map_group_det_ext (map_group_zero_or_more g) g l
+    end
+    else begin
+      assert (ghost_map_length rem < ghost_map_length l);
+      map_group_concat_eq_r g (bound_map_group l (map_group_zero_or_more g)) (map_group_zero_or_more g) l (fun l' -> ());
+      apply_map_group_det_ext (map_group_zero_or_more g) (map_group_concat g (map_group_zero_or_more g)) l;
+      map_group_zero_or_more_det g rem
+    end
+  | _ -> ()
 
 #restart-solver
 let map_group_zero_or_more_map_group_match_item_for
+  (cut: bool)
   (key: Cbor.raw_data_item)
   (value: typ)
 : Lemma
-  (map_group_zero_or_more (map_group_match_item_for false key value) ==
-    map_group_zero_or_one (map_group_match_item_for false key value)
+  (map_group_zero_or_more (map_group_match_item_for cut key value) ==
+    map_group_zero_or_one (map_group_match_item_for cut key value)
   )
-= apply_map_group_det_map_group_equiv0
-    (map_group_zero_or_more (map_group_match_item_for false key value))
-    (map_group_zero_or_one (map_group_match_item_for false key value))
-    (fun l -> ())
+= let g = map_group_match_item_for cut key value in
+  apply_map_group_det_map_group_equiv0
+    (map_group_zero_or_more g)
+    (map_group_zero_or_one g)
+    (fun l -> map_group_zero_or_more_det g l)
     (fun l ->
-      let MapGroupDet c1 _ = apply_map_group_det (map_group_zero_or_more (map_group_match_item_for false key value)) l in
-      let MapGroupDet c2 _ = apply_map_group_det (map_group_zero_or_one (map_group_match_item_for false key value)) l in
-      assert (c1 `ghost_map_feq` c2)
+      map_group_zero_or_more_eq g l;
+      match apply_map_group_det g l with
+      | MapGroupCutFail -> ()
+      | MapGroupFail -> ()
+      | MapGroupDet consumed rem ->
+        assert (ghost_map_length rem < ghost_map_length l);
+        map_group_concat_eq_r g (bound_map_group l (map_group_zero_or_more g)) map_group_nop l (fun l' ->
+          map_group_zero_or_more_eq g (snd l');
+          map_group_match_item_for_eq_gen cut key value (snd l');
+          assert (apply_ghost_map (snd l') key == None)
+        );
+        assert (map_group_zero_or_more g l == (g `map_group_concat` map_group_nop) l);
+        map_group_concat_nop_r g;
+        assert (map_group_zero_or_more g l == g l);
+        apply_map_group_det_ext (map_group_zero_or_more g) g l
     )
-
-#pop-options
 
 let map_group_fail_shorten_intro
   (g: map_group)
@@ -1573,12 +1634,6 @@ let map_group_zero_or_more_choice
 = Classical.forall_intro (Classical.move_requires (map_group_zero_or_more_choice' g1 g2));
   assert (map_group_zero_or_more (g1 `map_group_choice` g2) `FE.feq_g` (map_group_zero_or_more g1 `map_group_concat` map_group_zero_or_more g2)
   )
-
-let map_group_choice_assoc
-  (g1 g2 g3: map_group)
-: Lemma
-  ((g1 `map_group_choice` g2) `map_group_choice` g3 == g1 `map_group_choice` (g2 `map_group_choice` g3))
-= assert (((g1 `map_group_choice` g2) `map_group_choice` g3) `map_group_equiv` (g1 `map_group_choice` (g2 `map_group_choice` g3)))
 
 let map_group_zero_or_one_choice
   (g1 g2: map_group)

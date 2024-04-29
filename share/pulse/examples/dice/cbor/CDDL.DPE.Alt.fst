@@ -265,7 +265,10 @@ let open_session_input_args_group =
   default_args_group
 )
 
+#push-options "--z3rlimit 64"
+#restart-solver
 let _ : squash (open_session_input_args_group == default_args_group) = ()
+#pop-options
 
 [@@_input_args] let open_session_input_args = CddlMap.t_map open_session_input_args_group
 
