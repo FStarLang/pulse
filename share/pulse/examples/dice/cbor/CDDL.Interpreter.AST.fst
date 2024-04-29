@@ -1128,7 +1128,6 @@ and spec_wf_map_group
 | WfMLiteral cut key value s ->
     spec_wf_typ env value s
 | WfMZeroOrMore key value s_key s_value ->
-    typ_bounded env.se_bound key /\
     spec_wf_typ env key s_key /\
     spec_wf_typ env value s_value
 
@@ -1281,11 +1280,9 @@ and spec_wf_map_group_incr
   (wf: ast0_wf_map_group g)
 : Lemma
   (requires sem_env_included env env' /\
-    group_bounded NMapGroup env.se_bound g /\
     spec_wf_map_group env g wf
   )
   (ensures
-      group_bounded NMapGroup env'.se_bound g /\
       spec_wf_map_group env' g wf
   )
   (decreases wf)
@@ -1294,6 +1291,127 @@ and spec_wf_map_group_incr
     [SMTPat (sem_env_included env env'); SMTPat (spec_wf_map_group env' g wf)];
   ]]
 = match wf with
+  | WfMConcat g1' s1 g2' s2
+  | WfMChoice g1' s1 g2' s2 ->
+    spec_wf_map_group_incr env env' g1' s1;
+    spec_wf_map_group_incr env env' g2' s2
+  | WfMZeroOrOne g s ->
+    spec_wf_map_group_incr env env' g s
+  | WfMLiteral cut key value s ->
+    spec_wf_typ_incr env env' value s
+  | WfMZeroOrMore key value s_key s_value ->
+    spec_wf_typ_incr env env' key s_key;
+    spec_wf_typ_incr env env' value s_value
+  | WfMDef _ -> ()
+
+[@@ sem_attr]
+let rec spec_wf_typ_bounded
+  (env: sem_env)
+  (g: typ)
+  (wf: ast0_wf_typ g)
+: Lemma
+  (requires
+    spec_wf_typ env g wf
+  )
+  (ensures
+    typ_bounded env.se_bound g
+  )
+  (decreases wf)
+  [SMTPat (spec_wf_typ env g wf)]
+= match wf with
+  | WfTArray g s ->
+    spec_wf_array_group_bounded env g s
+  | WfTMap g g1 s1 g2 s2 ->
+    spec_restrict_map_group_bounded env Spec.t_always_false g g1 s1;
+    spec_wf_map_group_bounded env g2 s2
+  | WfTChoice t1 t2 s1 s2 ->
+    spec_wf_typ_bounded env t1 s1;
+    spec_wf_typ_bounded env t2 s2
+  | WfTElem _
+  | WfTDef _ -> ()
+
+and spec_wf_array_group_bounded
+  (env: sem_env)
+  (g: group NArrayGroup)
+  (wf: ast0_wf_array_group g)
+: Lemma
+  (requires
+    spec_wf_array_group env g wf
+  )
+  (ensures
+      group_bounded NArrayGroup env.se_bound g
+  )
+  (decreases wf)
+  [SMTPat (spec_wf_array_group env g wf)]
+= match wf with
+  | WfAElem ty prf ->
+    spec_wf_typ_bounded env ty prf
+  | WfAConcat _ _ _ _
+  | WfAChoice _ _ _ _
+  | WfAZeroOrOneOrMore _ _ _
+  | WfAZeroOrOne _ _
+  | WfADef _ -> ()
+
+and spec_restrict_map_group_bounded
+  (env: sem_env)
+  (left: Spec.typ)
+  (g1 g2: group NMapGroup)
+  (wf: ast0_restrict_map_group left g1 g2)
+: Lemma
+  (requires
+    spec_restrict_map_group env left g1 g2 wf
+  )
+  (ensures
+    group_bounded NMapGroup env.se_bound g1 /\
+    group_bounded NMapGroup env.se_bound g2
+  )
+  (decreases wf)
+  [SMTPat (spec_restrict_map_group env left g1 g2 wf)]
+= match wf with
+  | RMChoice left g1 g1' s1 g2 g2' s2 ->
+    spec_restrict_map_group_bounded env left g1 g1' s1;
+    spec_restrict_map_group_bounded env left g2 g2' s2
+  | RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
+    spec_restrict_map_group_bounded env left g1 g1' s1;
+    spec_restrict_map_group_bounded env (left `Spec.t_choice` fp1) g2 g2' s2
+  | RMZeroOrOne left g g' s ->
+    spec_restrict_map_group_bounded env left g g' s
+  | RMElemLiteral left cut key value s' ->
+    spec_wf_typ_bounded env value s'
+  | RMZeroOrMoreKeep _ key value s_key s_value
+  | RMZeroOrMoreSkip _ key value s_key s_value ->
+    spec_wf_typ_bounded env key s_key;
+    spec_wf_typ_bounded env value s_value    
+  | RMDefKeep _ _
+  | RMDefSkip _ _ -> ()
+
+and spec_wf_map_group_bounded
+  (env: sem_env)
+  (g: group NMapGroup)
+  (wf: ast0_wf_map_group g)
+: Lemma
+  (requires
+    spec_wf_map_group env g wf
+  )
+  (ensures
+      group_bounded NMapGroup env.se_bound g
+  )
+  (decreases wf)
+  [SMTPat (spec_wf_map_group env g wf)]
+= match wf with
+  | WfMZeroOrMore key value s_key s_value ->
+    spec_wf_typ_bounded env key s_key;
+    spec_wf_typ_bounded env value s_value
+  | WfMLiteral cut key value s ->
+    spec_wf_typ_bounded env value s
+  | WfMZeroOrOne _ _
+  | WfMConcat _ _ _ _
+  | WfMChoice _ _ _ _
+  | WfMDef _ -> ()
+
+(*
+
+match wf with
   | WfMConcat g1' s1 g2' s2
   | WfMChoice g1' s1 g2' s2 ->
     spec_wf_map_group_incr env env' g1' s1;
