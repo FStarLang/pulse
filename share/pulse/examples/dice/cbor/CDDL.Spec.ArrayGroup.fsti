@@ -743,12 +743,13 @@ let array_group_parser_spec_zero_or_more
 : Tot (array_group_parser_spec (array_group3_zero_or_more source) target_size' target_prop')
 = array_group_parser_spec_zero_or_more' p target_size' target_prop'
 
-let nonempty_array_group3 : Type0 =
-  (a: array_group3 None {
+let array_group3_is_nonempty (a: array_group3 None) : Tot prop =
     forall l . match a l with
     | Some (consumed, _) -> Cons? consumed
     | _ -> True
-  })
+
+let nonempty_array_group3 : Type0 =
+  (a: array_group3 None { array_group3_is_nonempty a })
 
 let rec array_group_serializer_spec_zero_or_more'
   (#source: nonempty_array_group3)

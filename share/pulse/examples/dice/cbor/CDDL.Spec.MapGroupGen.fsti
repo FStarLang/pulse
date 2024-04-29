@@ -262,6 +262,7 @@ let map_group_footprint_match_item_for
   (ensures (
     map_group_footprint (map_group_match_item_for cut key value) (t_literal key)
   ))
+  [SMTPat (map_group_footprint (map_group_match_item_for cut key value))]
 = let g = map_group_match_item_for cut key value in
   map_group_footprint_intro
     g
@@ -285,6 +286,7 @@ let map_group_footprint_filter
   (ensures (
     map_group_footprint (map_group_filter phi) f
   ))
+  [SMTPat (map_group_footprint (map_group_filter phi) f)]
 = let g = map_group_filter phi in
   map_group_footprint_intro
     g
@@ -296,6 +298,13 @@ let map_group_footprint_filter
       ghost_map_filter_for_all phi m';
       assert (r' == r `ghost_map_union` m')
     )
+
+let map_group_footprint_zero_or_more_match_item
+  (key value: typ)
+: Lemma
+  (map_group_footprint (map_group_zero_or_more (map_group_match_item false key value)) key)
+  [SMTPat (map_group_footprint (map_group_zero_or_more (map_group_match_item false key value)))]
+= ()
 
 let restrict_map_group
   (g g': map_group)
@@ -326,12 +335,20 @@ let restrict_map_group_refl
   (g: det_map_group)
 : Lemma
   (restrict_map_group g g)
+  [SMTPat (restrict_map_group g g)]
 = ()
 
 let restrict_map_group_filter
   (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> GTot bool)
 : Lemma
   (restrict_map_group (map_group_filter f) map_group_nop)
+  [SMTPat (restrict_map_group (map_group_filter f) map_group_nop)]
+= ()
+
+let restrict_map_group_zero_or_more_match_item
+  (key value: typ)
+: Lemma
+  (restrict_map_group (map_group_zero_or_more (map_group_match_item false key value)) map_group_nop)
 = ()
 
 let restrict_map_group_zero_or_one_no_cut
@@ -339,6 +356,7 @@ let restrict_map_group_zero_or_one_no_cut
 : Lemma
   (requires (forall m . ~ (MapGroupCutFail? (apply_map_group_det g m))))
   (ensures (restrict_map_group (map_group_zero_or_one g) map_group_nop))
+  [SMTPat (restrict_map_group (map_group_zero_or_one g) map_group_nop)]
 = ()
 
 let restrict_map_group_choice
@@ -351,10 +369,20 @@ let restrict_map_group_choice
   (ensures (
     restrict_map_group (g1 `map_group_choice` g2) (g1' `map_group_choice` g2')
   ))
+  [SMTPat (restrict_map_group (g1 `map_group_choice` g2) (g1' `map_group_choice` g2'))]
 = ()
 
-let typ_included (f1 f2: typ) : Tot prop =
-  forall x . f1 x ==> f2 x
+let restrict_map_group_zero_or_one
+  (g1 g1': map_group)
+: Lemma
+  (requires (
+    restrict_map_group g1 g1'
+  ))
+  (ensures (
+    restrict_map_group (map_group_zero_or_one g1) (map_group_zero_or_one g1')
+  ))
+  [SMTPat (restrict_map_group (map_group_zero_or_one g1) (map_group_zero_or_one g1'))]
+= ()
 
 let map_group_footprint_weaken
   (g: map_group)

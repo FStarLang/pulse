@@ -40,6 +40,9 @@ let typ_equiv
 : Tot prop
 = forall x . t1 x == t2 x
 
+let typ_included (f1 f2: typ) : Tot prop =
+  forall x . f1 x ==> f2 x
+
 let typ_disjoint (a1 a2: typ) : Tot prop
 = (forall (l: Cbor.raw_data_item) . ~ (a1 l /\ a2 l))
 

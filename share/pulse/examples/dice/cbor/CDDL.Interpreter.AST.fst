@@ -217,12 +217,35 @@ let se_map_group_is_productive_codom
 : eqtype
 = (x: bool { x == true ==> (kind == NMapGroup /\ MapSpec.map_group_is_productive se) })
 
+[@@erasable]
+noeq
+type se_map_group_metadata
+  (kind: name_env_elem)
+  (se: sem_env_elem kind)
+= {
+    g_footprint: Spec.typ;
+    g_restrict: MapSpec.map_group;
+    g_restrict_footprint: Spec.typ;
+    g_is_filter: bool;
+    g_prf: squash (
+      kind == NMapGroup /\
+      MapSpec.map_group_footprint se g_footprint /\
+      MapSpec.restrict_map_group se g_restrict /\
+      MapSpec.map_group_footprint g_restrict g_restrict_footprint /\
+      Spec.typ_included g_restrict_footprint g_footprint /\
+      (g_is_filter == true ==> (exists f . se == MapSpec.map_group_filter f))
+    );
+  }
+
+let se_map_group_metadata_codom kind se = option (se_map_group_metadata kind se)
+
 [@@ bounded_attr; sem_attr]
 noeq
 type sem_env = {
   se_bound: name_env;
   se_env: ((n: name se_bound) -> sem_env_elem (Some?.v (se_bound n)));
   se_map_group_is_productive: (n: name se_bound) -> se_map_group_is_productive_codom (Some?.v (se_bound n)) (se_env n);
+  se_map_group_metadata: (n: name se_bound) -> se_map_group_metadata_codom (Some?.v (se_bound n)) (se_env n);
 }
 
 [@@"opaque_to_smt"] irreducible // because of false_elim
@@ -237,17 +260,25 @@ let se_map_group_is_productive_empty
 : Tot (se_map_group_is_productive_codom (Some?.v (empty_name_env n)) (se_env_empty n))
 = false_elim ()
 
+[@@"opaque_to_smt"] irreducible // because of false_elim
+let se_map_group_metadata_empty
+  (n: name empty_name_env)
+: Tot (se_map_group_metadata_codom (Some?.v (empty_name_env n)) (se_env_empty n))
+= false_elim ()
+
 [@@ bounded_attr; sem_attr]
 let empty_sem_env = {
   se_bound = empty_name_env;
   se_env = se_env_empty;
   se_map_group_is_productive = se_map_group_is_productive_empty;
+  se_map_group_metadata = se_map_group_metadata_empty;
 }
 
 let sem_env_included (s1 s2: sem_env) : Tot prop =
   name_env_included s1.se_bound s2.se_bound /\
   (forall (i: name s1.se_bound) . s1.se_env i == s2.se_env i) /\
-  (forall (i: name s1.se_bound) . s1.se_map_group_is_productive i ==> s2.se_map_group_is_productive i)
+  (forall (i: name s1.se_bound) . s1.se_map_group_is_productive i ==> s2.se_map_group_is_productive i) /\
+  (forall (i: name s1.se_bound) . let fp = s1.se_map_group_metadata i in Some? fp ==> fp == s2.se_map_group_metadata i)
 
 let sem_env_included_trans (s1 s2 s3: sem_env) : Lemma
   (requires (sem_env_included s1 s2 /\ sem_env_included s2 s3))
@@ -275,6 +306,7 @@ let sem_env_extend_gen
     se_bound = se_bound';
     se_env = (fun (i: name se_bound') -> if i = new_name then a else se.se_env i);
     se_map_group_is_productive = (fun (i: name se_bound') -> if i = new_name then false else se.se_map_group_is_productive i);
+    se_map_group_metadata = (fun (i: name se_bound') -> if i = new_name then None else se.se_map_group_metadata i);
   }
 
 [@@"opaque_to_smt"; bounded_attr; sem_attr]
@@ -289,9 +321,25 @@ let sem_env_set_map_group_is_productive
       se'.se_map_group_is_productive n == true
     )
 = {
-    se_bound = se.se_bound;
-    se_env = se.se_env;
+    se with
     se_map_group_is_productive = (fun (i: name se.se_bound) -> if i = n then true else se.se_map_group_is_productive i);
+  }
+
+[@@"opaque_to_smt"; bounded_attr; sem_attr]
+let sem_env_set_map_group_metadata
+  (se: sem_env)
+  (n: map_group_name se.se_bound)
+  (fp: se_map_group_metadata NMapGroup (se.se_env n))
+: Pure sem_env
+    (requires None? (se.se_map_group_metadata n))
+    (ensures fun se' ->
+      se'.se_bound == se.se_bound /\
+      sem_env_included se se' /\
+      se'.se_map_group_metadata n == Some fp
+    )
+= {
+    se with
+    se_map_group_metadata = (fun (i: name se.se_bound) -> if i = n then Some fp else se.se_map_group_metadata i);
   }
 
 let byte_list_of_char_list
@@ -809,6 +857,191 @@ and rewrite_group_correct
     rewrite_typ_correct env fuel' value;
     MapSpec.map_group_match_item_ext cut (typ_sem env key) (typ_sem env value) (typ_sem env (rewrite_typ env fuel' key)) (typ_sem env (rewrite_typ env fuel' value))
   | GDef _ -> ()
+
+let rec spec_map_group_footprint
+  (env: sem_env)
+  (g: group NMapGroup)
+: Pure (option Spec.typ)
+    (requires group_bounded NMapGroup env.se_bound g)
+    (ensures fun res -> match res with
+    | None -> True
+    | Some ty -> MapSpec.map_group_footprint (map_group_sem env g) ty)
+= match g with
+  | GDef n ->
+    begin match env.se_map_group_metadata n with
+    | None -> None
+    | Some md -> Some md.g_footprint
+    end
+  | GMapElem _ cut (TElem (ELiteral key)) value
+  -> MapSpec.map_group_footprint_match_item_for cut (eval_literal key) (typ_sem env value);
+    Some (Spec.t_literal (eval_literal key))
+  | GZeroOrMore (GMapElem _ false key _) // TODO: extend to GOneOrMore
+  -> Some (typ_sem env key)
+  | GZeroOrOne g -> spec_map_group_footprint env g
+  | GChoice g1 g2
+  | GConcat g1 g2 ->
+    begin match spec_map_group_footprint env g1, spec_map_group_footprint env g2 with
+    | Some ty1, Some ty2 -> Some (ty1 `Spec.t_choice` ty2)
+    | _ -> None
+    end
+  | GMapElem _ _ _ _
+  | GZeroOrMore _
+  | GOneOrMore _ -> None
+
+#restart-solver
+let rec spec_map_group_restrict
+  (env: sem_env)
+  (left: Spec.typ)
+  (g: group NMapGroup)
+: Ghost (option (MapSpec.map_group & Spec.typ))
+    (requires group_bounded NMapGroup env.se_bound g)
+    (ensures fun res -> match spec_map_group_footprint env g, res with
+    | _, None -> True
+    | Some fp, Some (g', fp') ->
+      MapSpec.restrict_map_group (map_group_sem env g) g' /\
+      MapSpec.map_group_footprint g' fp' /\
+      Spec.typ_included fp' fp /\
+      Spec.typ_disjoint left fp'
+    | _ -> False
+    )
+= match g with
+  | GDef n -> begin match env.se_map_group_metadata n with
+    | Some md ->
+      if FStar.StrongExcludedMiddle.strong_excluded_middle (Spec.typ_disjoint left md.g_restrict_footprint)
+      then Some (md.g_restrict, md.g_restrict_footprint)
+      else if md.g_is_filter
+      then begin
+        // OUCH: problem here, must disjointness be complete?
+        Some (MapSpec.map_group_nop, Spec.t_always_false) // skip extensibility tables
+      end
+      else None
+    | _ -> None
+    end
+  | GChoice g1 g2 ->
+      begin match spec_map_group_restrict env left g1, spec_map_group_restrict env left g2 with
+      | Some (g1', fp1'), Some (g2', fp2') ->
+        Some (g1' `MapSpec.map_group_choice` g2', fp1' `Spec.t_choice` fp2')
+      | _ -> None
+      end
+  | GZeroOrOne g1 ->
+    begin match spec_map_group_restrict env left g1 with
+    | Some (g1' , fp1') ->
+      Some (MapSpec.map_group_zero_or_one g1', fp1')
+    | _ -> None
+    end
+  | GConcat g1 g2 ->
+    begin match spec_map_group_restrict env left g1 with
+    | Some (g1', fp1') ->
+      let Some fp1 = spec_map_group_footprint env g1 in
+      begin match spec_map_group_restrict env (left `Spec.t_choice` fp1) g2 with
+      | Some (g2', fp2') ->
+        let Some fp2 = spec_map_group_footprint env g2 in
+          MapSpec.restrict_map_group_concat
+            (map_group_sem env g1)
+            fp1
+            g1'
+            (map_group_sem env g2)
+            g2'
+            fp2';
+          let g' = g1' `MapSpec.map_group_concat` g2' in
+          let fp' = fp1' `Spec.t_choice` fp2' in
+          assert (MapSpec.restrict_map_group (map_group_sem env g) g');
+          MapSpec.map_group_footprint_concat g1' g2' fp1' fp2';
+          assert (MapSpec.map_group_footprint g' fp');
+          assert (Spec.typ_included fp' (fp1 `Spec.t_choice` fp2));
+          assert (Spec.typ_disjoint left fp');
+          Some (g', fp')
+      | _ -> None
+      end
+    | _ -> None
+    end
+  | GMapElem _ cut (TElem (ELiteral key)) value ->
+    let vkey = eval_literal key in
+    let tkey = Spec.t_literal vkey in
+    MapSpec.map_group_footprint_match_item_for cut vkey (typ_sem env value);
+    if FStar.StrongExcludedMiddle.strong_excluded_middle (Spec.typ_disjoint left tkey)
+    then Some (map_group_sem env g, tkey)
+    else None
+  | GZeroOrMore (GMapElem _ false key value) ->
+    let tkey = typ_sem env key in
+    if FStar.StrongExcludedMiddle.strong_excluded_middle (Spec.typ_disjoint left tkey)
+    then begin
+      Some (map_group_sem env g, tkey)
+    end else begin
+      // OUCH: problem here, must disjointness be complete?
+      Some (MapSpec.map_group_nop, Spec.t_always_false) // skip extensibility tables
+    end
+  | _ -> None
+
+let rec spec_wf_typ
+  (env: sem_env)
+  (t: typ)
+: Pure prop
+    (requires typ_bounded env.se_bound t)
+    (ensures fun _ -> True)
+= match t with
+  | TArray g -> spec_wf_array_group env g
+  | TMap g -> spec_wf_map_group env g /\
+    Some? (spec_map_group_restrict env Spec.t_always_false g)
+  | TChoice t1 t2 ->
+    spec_wf_typ env t1 /\
+    spec_wf_typ env t2 /\
+    Spec.typ_disjoint (typ_sem env t1) (typ_sem env t2)
+  | TElem _
+  | TDef _
+  -> True
+
+and spec_wf_array_group
+  (env: sem_env)
+  (g: group NArrayGroup)
+: Pure prop
+    (requires group_bounded NArrayGroup env.se_bound g)
+    (ensures fun _ -> True)
+= match g with
+  | GArrayElem _ ty -> spec_wf_typ env ty
+  | GZeroOrOne g ->
+    spec_wf_array_group env g /\
+    Spec.array_group3_is_nonempty (array_group_sem env g)
+  | GZeroOrMore g
+  | GOneOrMore g ->
+    let a = array_group_sem env g in
+    spec_wf_array_group env g /\
+    Spec.array_group3_is_nonempty a /\
+    Spec.array_group3_concat_unique_strong a a
+  | GConcat g1 g2 ->
+    spec_wf_array_group env g1 /\
+    spec_wf_array_group env g2 /\
+    Spec.array_group3_concat_unique_weak (array_group_sem env g1) (array_group_sem env g2)
+  | GChoice g1 g2 ->
+    spec_wf_array_group env g1 /\
+    spec_wf_array_group env g2 /\
+    Spec.array_group3_disjoint (array_group_sem env g1) (array_group_sem env g2)
+  | GDef _ -> True // will be taken into account by the syntax environment
+
+and spec_wf_map_group
+  (env: sem_env)
+  (g: group NMapGroup)
+: Pure prop
+   (requires group_bounded NMapGroup env.se_bound g)
+   (ensures fun _ -> True)
+= match g with
+  | GMapElem _ cut key value ->
+    spec_wf_typ env key /\
+    spec_wf_typ env value
+  | GZeroOrOne g -> spec_wf_map_group env g
+  | GZeroOrMore g -> // only tables are supported, other occurrences of the Kleene rule should have been rewritten beforehand
+    spec_wf_map_group env g /\
+    GMapElem? g
+  | GOneOrMore _ -> False // TODO
+  | GChoice g1 g2 ->
+    spec_wf_map_group env g1 /\
+    spec_wf_map_group env g2 /\
+    MapSpec.map_group_choice_compatible (map_group_sem env g1) (map_group_sem env g2)
+  | GConcat g1 g2 ->
+    spec_wf_map_group env g1 /\
+    spec_wf_map_group env g2 /\
+    True // the remainder is captured by the existence of the restriction
+  | GDef _ -> True
 
 (*
 
