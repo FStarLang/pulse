@@ -338,6 +338,14 @@ let restrict_map_group_refl
   [SMTPat (restrict_map_group g g)]
 = ()
 
+let restrict_map_group_match_item_for
+  (cut: bool)
+  (key: Cbor.raw_data_item)
+  (value: typ)
+: Lemma
+  (restrict_map_group (map_group_match_item_for cut key value) (map_group_match_item_for cut key value))
+= ()
+
 let restrict_map_group_filter
   (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> GTot bool)
 : Lemma
@@ -349,6 +357,7 @@ let restrict_map_group_zero_or_more_match_item
   (key value: typ)
 : Lemma
   (restrict_map_group (map_group_zero_or_more (map_group_match_item false key value)) map_group_nop)
+  [SMTPat (restrict_map_group (map_group_zero_or_more (map_group_match_item false key value)))]
 = ()
 
 let restrict_map_group_zero_or_one_no_cut

@@ -69,7 +69,7 @@ type name_env_elem =
 | NMapGroup
 
 type group (kind: name_env_elem) =
-| GDef of string
+| GDef: squash (kind == NArrayGroup) -> string -> group kind // names for map groups are UNSOUND because of restrict_map_group
 | GArrayElem: squash (kind == NArrayGroup) -> typ -> group kind
 | GMapElem: squash (kind == NMapGroup) -> (cut: bool) -> (key: typ) -> (value: typ) -> group kind
 | GAlwaysFalse
@@ -123,7 +123,7 @@ let rec group_bounded
 : Tot bool
   (decreases g)
 = match g with
-  | GDef d -> env d = Some kind
+  | GDef _ d -> env d = Some kind
   | GMapElem _ _ key value -> typ_bounded env key && typ_bounded env value
   | GArrayElem _ t -> typ_bounded env t
   | GZeroOrMore g'
@@ -169,7 +169,7 @@ let rec group_bounded_incr
     [SMTPat (name_env_included env env'); SMTPat (group_bounded kind env' g)];
   ]]
 = match g with
-  | GDef _ -> ()
+  | GDef _ _ -> ()
   | GArrayElem _ t -> typ_bounded_incr env env' t
   | GMapElem _ _ key value -> typ_bounded_incr env env' key; typ_bounded_incr env env' value
   | GZeroOrMore g'
@@ -217,41 +217,11 @@ let sem_env_elem
   | NArrayGroup -> Spec.array_group3 None
   | NMapGroup -> MapSpec.map_group
 
-let se_map_group_is_productive_codom
-  (kind: name_env_elem)
-  (se: sem_env_elem kind)
-: eqtype
-= (x: bool { x == true ==> (kind == NMapGroup /\ MapSpec.map_group_is_productive se) })
-
-[@@erasable]
-noeq
-type se_map_group_metadata
-  (kind: name_env_elem)
-  (se: sem_env_elem kind)
-= {
-    g_footprint: Spec.typ;
-    g_restrict: MapSpec.map_group;
-    g_restrict_footprint: Spec.typ;
-    g_is_filter: bool;
-    g_prf: squash (
-      kind == NMapGroup /\
-      MapSpec.map_group_footprint se g_footprint /\
-      MapSpec.restrict_map_group se g_restrict /\
-      MapSpec.map_group_footprint g_restrict g_restrict_footprint /\
-      Spec.typ_included g_restrict_footprint g_footprint /\
-      (g_is_filter == true ==> (exists f . se == MapSpec.map_group_filter f))
-    );
-  }
-
-let se_map_group_metadata_codom kind se = option (se_map_group_metadata kind se)
-
 [@@ bounded_attr; sem_attr]
 noeq
 type sem_env = {
   se_bound: name_env;
   se_env: ((n: name se_bound) -> sem_env_elem (Some?.v (se_bound n)));
-  se_map_group_is_productive: (n: name se_bound) -> se_map_group_is_productive_codom (Some?.v (se_bound n)) (se_env n);
-  se_map_group_metadata: (n: name se_bound) -> se_map_group_metadata_codom (Some?.v (se_bound n)) (se_env n);
 }
 
 [@@"opaque_to_smt"] irreducible // because of false_elim
@@ -260,31 +230,15 @@ let se_env_empty
 : Tot (sem_env_elem (Some?.v (empty_name_env n)))
 = false_elim ()
 
-[@@"opaque_to_smt"] irreducible // because of false_elim
-let se_map_group_is_productive_empty
-  (n: name empty_name_env)
-: Tot (se_map_group_is_productive_codom (Some?.v (empty_name_env n)) (se_env_empty n))
-= false_elim ()
-
-[@@"opaque_to_smt"] irreducible // because of false_elim
-let se_map_group_metadata_empty
-  (n: name empty_name_env)
-: Tot (se_map_group_metadata_codom (Some?.v (empty_name_env n)) (se_env_empty n))
-= false_elim ()
-
 [@@ bounded_attr; sem_attr]
 let empty_sem_env = {
   se_bound = empty_name_env;
   se_env = se_env_empty;
-  se_map_group_is_productive = se_map_group_is_productive_empty;
-  se_map_group_metadata = se_map_group_metadata_empty;
 }
 
 let sem_env_included (s1 s2: sem_env) : Tot prop =
   name_env_included s1.se_bound s2.se_bound /\
-  (forall (i: name s1.se_bound) . s1.se_env i == s2.se_env i) /\
-  (forall (i: name s1.se_bound) . s1.se_map_group_is_productive i ==> s2.se_map_group_is_productive i) /\
-  (forall (i: name s1.se_bound) . let fp = s1.se_map_group_metadata i in Some? fp ==> fp == s2.se_map_group_metadata i)
+  (forall (i: name s1.se_bound) . s1.se_env i == s2.se_env i)
 
 let sem_env_included_trans (s1 s2 s3: sem_env) : Lemma
   (requires (sem_env_included s1 s2 /\ sem_env_included s2 s3))
@@ -311,41 +265,6 @@ let sem_env_extend_gen
   {
     se_bound = se_bound';
     se_env = (fun (i: name se_bound') -> if i = new_name then a else se.se_env i);
-    se_map_group_is_productive = (fun (i: name se_bound') -> if i = new_name then false else se.se_map_group_is_productive i);
-    se_map_group_metadata = (fun (i: name se_bound') -> if i = new_name then None else se.se_map_group_metadata i);
-  }
-
-[@@"opaque_to_smt"; bounded_attr; sem_attr]
-let sem_env_set_map_group_is_productive
-  (se: sem_env)
-  (n: map_group_name se.se_bound)
-: Pure sem_env
-    (requires MapSpec.map_group_is_productive (se.se_env n))
-    (ensures fun se' ->
-      se'.se_bound == se.se_bound /\
-      sem_env_included se se' /\
-      se'.se_map_group_is_productive n == true
-    )
-= {
-    se with
-    se_map_group_is_productive = (fun (i: name se.se_bound) -> if i = n then true else se.se_map_group_is_productive i);
-  }
-
-[@@"opaque_to_smt"; bounded_attr; sem_attr]
-let sem_env_set_map_group_metadata
-  (se: sem_env)
-  (n: map_group_name se.se_bound)
-  (fp: se_map_group_metadata NMapGroup (se.se_env n))
-: Pure sem_env
-    (requires None? (se.se_map_group_metadata n))
-    (ensures fun se' ->
-      se'.se_bound == se.se_bound /\
-      sem_env_included se se' /\
-      se'.se_map_group_metadata n == Some fp
-    )
-= {
-    se with
-    se_map_group_metadata = (fun (i: name se.se_bound) -> if i = n then Some fp else se.se_map_group_metadata i);
   }
 
 let byte_list_of_char_list
@@ -432,7 +351,7 @@ let rec array_group_sem
     (requires group_bounded NArrayGroup env.se_bound g)
     (ensures fun _ -> True)
 = match g with
-  | GDef d -> env.se_env d
+  | GDef _ d -> env.se_env d
   | GArrayElem _ t -> Spec.array_group3_item (typ_sem env t)
   | GAlwaysFalse -> Spec.array_group3_always_false
   | GNop -> Spec.array_group3_empty
@@ -449,7 +368,6 @@ and map_group_sem
     (requires group_bounded NMapGroup env.se_bound g)
     (ensures fun _ -> True)
 = match g with
-  | GDef d -> env.se_env d
   | GMapElem _ cut key value -> MapSpec.map_group_match_item cut (typ_sem env key) (typ_sem env value)
   | GAlwaysFalse -> MapSpec.map_group_always_false
   | GNop -> MapSpec.map_group_nop
@@ -497,7 +415,7 @@ let rec array_group_sem_incr
 = match g with
   | GAlwaysFalse
   | GNop
-  | GDef _ -> ()
+  | GDef _ _ -> ()
   | GArrayElem _ t -> typ_sem_incr env env' t
   | GZeroOrOne g
   | GZeroOrMore g
@@ -527,8 +445,7 @@ and map_group_sem_incr
   ]]
 = match g with
   | GAlwaysFalse
-  | GNop
-  | GDef _ -> ()
+  | GNop -> ()
   | GMapElem _ _ key value ->
     typ_sem_incr env env' key;
     typ_sem_incr env env' value
@@ -574,49 +491,17 @@ and typ_sem_incr
 
 [@@ sem_attr]
 let rec map_group_is_productive
-  (env: sem_env)
   (g: group NMapGroup)
-: Pure bool
-    (requires group_bounded NMapGroup env.se_bound g)
-    (ensures (fun _ -> True))
+: Tot bool
 = match g with
-  | GOneOrMore g' -> map_group_is_productive env g'
+  | GOneOrMore g' -> map_group_is_productive g'
   | GMapElem _ _ _ _ -> true
   | GAlwaysFalse
   | GNop
   | GZeroOrOne _
   | GZeroOrMore _ -> false
-  | GChoice g1 g2 -> map_group_is_productive env g1 && map_group_is_productive env g2
-  | GConcat g1 g2 -> map_group_is_productive env g1 || map_group_is_productive env g2
-  | GDef n -> env.se_map_group_is_productive n
-
-[@@ sem_attr]
-let rec map_group_is_productive_incr
-  (env env': sem_env)
-  (g: group NMapGroup)
-: Lemma
-  (requires sem_env_included env env' /\
-    group_bounded NMapGroup env.se_bound g /\
-    map_group_is_productive env g
-  )
-  (ensures
-      group_bounded NMapGroup env'.se_bound g /\
-      map_group_is_productive env' g
-  )
-  [SMTPatOr [
-    [SMTPat (sem_env_included env env'); SMTPat (map_group_is_productive env g)];
-    [SMTPat (sem_env_included env env'); SMTPat (map_group_is_productive env' g)];
-  ]]
-= match g with
-  | GOneOrMore g' -> map_group_is_productive_incr env env' g'
-  | GConcat g1 g2 ->
-    if map_group_is_productive env g1
-    then map_group_is_productive_incr env env' g1
-    else map_group_is_productive_incr env env' g2
-  | GChoice g1 g2 ->
-    map_group_is_productive_incr env env' g1;
-    map_group_is_productive_incr env env' g2
-  | _ -> ()
+  | GChoice g1 g2 -> map_group_is_productive g1 && map_group_is_productive g2
+  | GConcat g1 g2 -> map_group_is_productive g1 || map_group_is_productive g2
 
 let rec map_group_is_productive_correct
   (env: sem_env)
@@ -624,7 +509,7 @@ let rec map_group_is_productive_correct
 : Lemma
   (requires (
     group_bounded NMapGroup env.se_bound g /\
-    map_group_is_productive env g == true
+    map_group_is_productive g == true
   ))
   (ensures (
     MapSpec.map_group_is_productive (map_group_sem env g)
@@ -636,77 +521,71 @@ let rec map_group_is_productive_correct
     map_group_is_productive_correct env g1;
     map_group_is_productive_correct env g2
   | GConcat g1 g2 ->
-    if map_group_is_productive env g1
+    if map_group_is_productive g1
     then map_group_is_productive_correct env g1
     else map_group_is_productive_correct env g2
   | _ -> ()
 
 [@@ sem_attr]
 let rec rewrite_typ
-  (env: sem_env)
   (fuel: nat)
   (t: typ)
-: Pure typ
-  (requires typ_bounded env.se_bound t)
-  (ensures fun t' -> typ_bounded env.se_bound t')
-  (decreases fuel)
+: Tot typ
 = if fuel = 0
   then t
   else let fuel' : nat = fuel - 1 in
   match t with
-  | TChoice (TChoice t1 t2) t3 -> rewrite_typ env fuel' (TChoice t1 (TChoice t2 t3))
+  | TChoice (TChoice t1 t2) t3 -> rewrite_typ fuel' (TChoice t1 (TChoice t2 t3))
   | TChoice t1 t2 ->
-    let t' = TChoice (rewrite_typ env fuel' t1) (rewrite_typ env fuel' t2) in
+    let t' = TChoice (rewrite_typ fuel' t1) (rewrite_typ fuel' t2) in
     if t' = t
     then t'
-    else rewrite_typ env fuel' t'
-  | TArray g -> TArray (rewrite_group env fuel' NArrayGroup g)
-  | TMap g -> TMap (rewrite_group env fuel' NMapGroup g)
+    else rewrite_typ fuel' t'
+  | TArray g -> TArray (rewrite_group fuel' NArrayGroup g)
+  | TMap g -> TMap (rewrite_group fuel' NMapGroup g)
   | _ -> t
 
 and rewrite_group
-  (env: sem_env)
   (fuel: nat)
   (kind: name_env_elem)
   (g: group kind)
-: Pure (group kind)
-  (requires group_bounded kind env.se_bound g)
-  (ensures fun g' -> group_bounded kind env.se_bound g')
-  (decreases fuel)
+: Tot (group kind)
 = if fuel = 0
   then g
   else let fuel' : nat = fuel - 1 in
   match g with
-  | GConcat (GConcat t1 t2) t3 -> rewrite_group env fuel' kind (GConcat t1 (GConcat t2 t3))
+  | GConcat (GConcat t1 t2) t3 -> rewrite_group fuel' kind (GConcat t1 (GConcat t2 t3))
   | GConcat t1 t2 ->
-    let g' = GConcat (rewrite_group env fuel' kind t1) (rewrite_group env fuel' kind t2) in
+    let g' = GConcat (rewrite_group fuel' kind t1) (rewrite_group fuel' kind t2) in
     if g' = g
     then g'
-    else rewrite_group env fuel' kind g'
-  | GChoice (GChoice t1 t2) t3 -> rewrite_group env fuel' kind (GChoice t1 (GChoice t2 t3))
+    else rewrite_group fuel' kind g'
+  | GChoice (GChoice t1 t2) t3 -> rewrite_group fuel' kind (GChoice t1 (GChoice t2 t3))
   | GChoice t1 t2 ->
-    let g' = GChoice (rewrite_group env fuel' kind t1) (rewrite_group env fuel' kind t2) in
+    let g' = GChoice (rewrite_group fuel' kind t1) (rewrite_group fuel' kind t2) in
     if g' = g
     then g'
-    else rewrite_group env fuel' kind g'
+    else rewrite_group fuel' kind g'
   | GZeroOrMore (GMapElem sq cut (TElem (ELiteral key)) value) ->
-    rewrite_group env fuel' kind (GZeroOrOne (GMapElem sq cut (TElem (ELiteral key)) value))
+    rewrite_group fuel' kind (GZeroOrOne (GMapElem sq cut (TElem (ELiteral key)) value))
   | GZeroOrMore (GChoice (GMapElem sq cut key value) g') ->
-    if map_group_is_productive env g'
-    then rewrite_group env fuel' kind (GConcat (GZeroOrMore (GMapElem sq cut key value)) (GZeroOrMore g'))
+    if map_group_is_productive g'
+    then rewrite_group fuel' kind (GConcat (GZeroOrMore (GMapElem sq cut key value)) (GZeroOrMore g'))
     else g
   | GZeroOrMore g1 -> 
-    let g' = GZeroOrMore (rewrite_group env fuel' kind g1) in
+    let g' = GZeroOrMore (rewrite_group fuel' kind g1) in
     if g' = g
     then g'
-    else rewrite_group env fuel' kind g'
-  | GZeroOrOne g -> GZeroOrOne (rewrite_group env fuel' kind g)
-  | GOneOrMore g -> GOneOrMore (rewrite_group env fuel' kind g)
-  | GArrayElem sq ty -> GArrayElem sq (rewrite_typ env fuel' ty)
-  | GMapElem sq cut key value -> GMapElem sq cut (rewrite_typ env fuel' key) (rewrite_typ env fuel' value)
-  | GDef n -> GDef n
+    else rewrite_group fuel' kind g'
+  | GZeroOrOne g -> GZeroOrOne (rewrite_group fuel' kind g)
+  | GOneOrMore g -> GOneOrMore (rewrite_group fuel' kind g)
+  | GArrayElem sq ty -> GArrayElem sq (rewrite_typ fuel' ty)
+  | GMapElem sq cut key value -> GMapElem sq cut (rewrite_typ fuel' key) (rewrite_typ fuel' value)
+  | GDef sq n -> GDef sq n
   | GAlwaysFalse -> GAlwaysFalse
   | GNop -> GNop
+
+#push-options "--z3rlimit 32"
 
 #restart-solver
 let rec rewrite_typ_correct
@@ -718,7 +597,7 @@ let rec rewrite_typ_correct
     typ_bounded env.se_bound t
   ))
   (ensures (
-    let t' = rewrite_typ env fuel t in
+    let t' = rewrite_typ fuel t in
     typ_bounded env.se_bound t' /\
     Spec.typ_equiv (typ_sem env t) (typ_sem env t')
   ))
@@ -732,7 +611,7 @@ let rec rewrite_typ_correct
   | TChoice t1 t2 ->
     rewrite_typ_correct env fuel' t1;
     rewrite_typ_correct env fuel' t2;
-    rewrite_typ_correct env fuel' (TChoice (rewrite_typ env fuel' t1) (rewrite_typ env fuel' t2))
+    rewrite_typ_correct env fuel' (TChoice (rewrite_typ fuel' t1) (rewrite_typ fuel' t2))
   | TArray g ->
     rewrite_group_correct env fuel' g
   | TMap g ->
@@ -749,7 +628,7 @@ and rewrite_group_correct
     group_bounded kind env.se_bound t
   ))
   (ensures (
-    let t' = rewrite_group env fuel kind t in
+    let t' = rewrite_group fuel kind t in
     group_bounded kind env.se_bound t' /\
     begin match kind with
     | NArrayGroup -> Spec.array_group3_equiv (array_group_sem env t) (array_group_sem env t')
@@ -765,8 +644,8 @@ and rewrite_group_correct
   | GConcat (GConcat t1 t2) t3 ->
     rewrite_group_correct env fuel' (GConcat t1 (GConcat t2 t3))
   | GConcat t1 t2 ->
-    let t1' = rewrite_group env fuel' kind t1 in
-    let t2' = rewrite_group env fuel' kind t2 in
+    let t1' = rewrite_group fuel' kind t1 in
+    let t2' = rewrite_group fuel' kind t2 in
     rewrite_group_correct env fuel' t1;
     rewrite_group_correct env fuel' t2;
     rewrite_group_correct env fuel' (GConcat t1' t2');
@@ -777,8 +656,8 @@ and rewrite_group_correct
   | GChoice (GChoice t1 t2) t3 ->
     rewrite_group_correct env fuel' (GChoice t1 (GChoice t2 t3))
   | GChoice t1 t2 ->
-    let t1' = rewrite_group env fuel' kind t1 in
-    let t2' = rewrite_group env fuel' kind t2 in
+    let t1' = rewrite_group fuel' kind t1 in
+    let t2' = rewrite_group fuel' kind t2 in
     rewrite_group_correct env fuel' t1;
     rewrite_group_correct env fuel' t2;
     rewrite_group_correct env fuel' (GChoice t1' t2')
@@ -786,7 +665,7 @@ and rewrite_group_correct
     MapSpec.map_group_zero_or_more_map_group_match_item_for cut (eval_literal key) (typ_sem env value);
     rewrite_group_correct env fuel' (GZeroOrOne (GMapElem sq cut (TElem (ELiteral key)) value))
   | GZeroOrMore (GChoice (GMapElem sq cut key value) g') ->
-    if map_group_is_productive env g'
+    if map_group_is_productive g'
     then begin
       map_group_is_productive_correct env g';
       MapSpec.map_group_zero_or_more_choice (MapSpec.map_group_match_item cut (typ_sem env key) (typ_sem env value)) (map_group_sem env g');
@@ -796,7 +675,7 @@ and rewrite_group_correct
     rewrite_group_correct env fuel' g1
   | GZeroOrMore g1 ->
     rewrite_group_correct env fuel' g1;
-    let g2 = rewrite_group env fuel' kind g1 in
+    let g2 = rewrite_group fuel' kind g1 in
     rewrite_group_correct env fuel' (GZeroOrMore g2);
     begin match kind with
     | NArrayGroup -> Spec.array_group3_zero_or_more_equiv (array_group_sem env g1) (array_group_sem env g2)
@@ -804,7 +683,7 @@ and rewrite_group_correct
     end
   | GOneOrMore g1 ->
     rewrite_group_correct env fuel' g1;
-    let g2 = rewrite_group env fuel' kind g1 in
+    let g2 = rewrite_group fuel' kind g1 in
     rewrite_group_correct env fuel' (GOneOrMore g2);
     begin match kind with
     | NArrayGroup -> Spec.array_group3_zero_or_more_equiv (array_group_sem env g1) (array_group_sem env g2)
@@ -812,14 +691,16 @@ and rewrite_group_correct
     end
   | GArrayElem sq ty ->
     rewrite_typ_correct env fuel' ty;
-    Spec.array_group3_item_equiv (typ_sem env ty) (typ_sem env (rewrite_typ env fuel' ty))
+    Spec.array_group3_item_equiv (typ_sem env ty) (typ_sem env (rewrite_typ fuel' ty))
   | GMapElem sq cut key value ->
     rewrite_typ_correct env fuel' key;
     rewrite_typ_correct env fuel' value;
-    MapSpec.map_group_match_item_ext cut (typ_sem env key) (typ_sem env value) (typ_sem env (rewrite_typ env fuel' key)) (typ_sem env (rewrite_typ env fuel' value))
+    MapSpec.map_group_match_item_ext cut (typ_sem env key) (typ_sem env value) (typ_sem env (rewrite_typ fuel' key)) (typ_sem env (rewrite_typ fuel' value))
   | GAlwaysFalse
   | GNop
-  | GDef _ -> ()
+  | GDef _ _ -> ()
+
+#pop-options
 
 let rec spec_map_group_footprint
   (env: sem_env)
@@ -830,11 +711,6 @@ let rec spec_map_group_footprint
     | None -> True
     | Some ty -> MapSpec.map_group_footprint (map_group_sem env g) ty)
 = match g with
-  | GDef n ->
-    begin match env.se_map_group_metadata n with
-    | None -> None
-    | Some md -> Some md.g_footprint
-    end
   | GMapElem _ cut (TElem (ELiteral key)) value
   -> MapSpec.map_group_footprint_match_item_for cut (eval_literal key) (typ_sem env value);
     Some (Spec.t_literal (eval_literal key))
@@ -847,8 +723,8 @@ let rec spec_map_group_footprint
     | Some ty1, Some ty2 -> Some (ty1 `Spec.t_choice` ty2)
     | _ -> None
     end
-  | GAlwaysFalse
   | GNop
+  | GAlwaysFalse -> Some Spec.t_always_false
   | GMapElem _ _ _ _
   | GZeroOrMore _
   | GOneOrMore _ -> None
@@ -938,14 +814,11 @@ and ast0_wf_array_group
   ast0_wf_array_group (GChoice g1 g2)
 | WfADef:
   n: string ->
-  ast0_wf_array_group (GDef n) // will be taken into account by the syntax environment
+  ast0_wf_array_group (GDef () n) // will be taken into account by the syntax environment
 
 and ast0_wf_map_group
 : group NMapGroup -> Type
 =
-| WfMDef:
-    n: string ->
-    ast0_wf_map_group (GDef n)
 | WfMChoice:
     g1': group NMapGroup ->
     s1: ast0_wf_map_group g1' ->
@@ -978,14 +851,6 @@ and ast0_wf_map_group
 and ast0_restrict_map_group
 : Spec.typ -> group NMapGroup -> group NMapGroup -> Type
 =
-| RMDefKeep:
-    left: Spec.typ ->
-    n: string ->
-    ast0_restrict_map_group left (GDef n) (GDef n)
-| RMDefSkip:
-    left: Spec.typ ->
-    n: string ->
-    ast0_restrict_map_group left (GDef n) GNop
 | RMChoice:
     left: Spec.typ ->
     g1: group NMapGroup ->
@@ -1101,8 +966,6 @@ and spec_wf_map_group
 : Tot prop
   (decreases wf)
 = match wf with
-| WfMDef n ->
-    env.se_bound n == Some NMapGroup
 | WfMChoice g1' s1 g2' s2 ->
     group_bounded NMapGroup env.se_bound g1' /\
     spec_wf_map_group env g1' s1 /\
@@ -1140,20 +1003,6 @@ and spec_restrict_map_group
 : Tot prop
   (decreases s)
 = match s with
-| RMDefKeep left n ->
-    env.se_bound n == Some NMapGroup /\
-    (
-      match env.se_map_group_metadata n with
-      | Some md -> Spec.typ_disjoint left md.g_restrict_footprint
-      | _ -> False
-    )
-| RMDefSkip left n ->
-    env.se_bound n == Some NMapGroup /\
-    (
-      match env.se_map_group_metadata n with
-      | Some md -> md.g_is_filter
-      | _ -> False
-    )
 | RMChoice left g1 g1' s1 g2 g2' s2 ->
     group_bounded NMapGroup env.se_bound g1' /\
     spec_restrict_map_group env left g1 g1' s1 /\
@@ -1271,8 +1120,6 @@ and spec_restrict_map_group_incr
   | RMZeroOrMoreSkip _ key value s_key s_value ->
     spec_wf_typ_incr env env' key s_key;
     spec_wf_typ_incr env env' value s_value    
-  | RMDefKeep _ _
-  | RMDefSkip _ _ -> ()
 
 and spec_wf_map_group_incr
   (env env': sem_env)
@@ -1302,7 +1149,6 @@ and spec_wf_map_group_incr
   | WfMZeroOrMore key value s_key s_value ->
     spec_wf_typ_incr env env' key s_key;
     spec_wf_typ_incr env env' value s_value
-  | WfMDef _ -> ()
 
 [@@ sem_attr]
 let rec spec_wf_typ_bounded
@@ -1382,8 +1228,6 @@ and spec_restrict_map_group_bounded
   | RMZeroOrMoreSkip _ key value s_key s_value ->
     spec_wf_typ_bounded env key s_key;
     spec_wf_typ_bounded env value s_value    
-  | RMDefKeep _ _
-  | RMDefSkip _ _ -> ()
 
 and spec_wf_map_group_bounded
   (env: sem_env)
@@ -1407,7 +1251,57 @@ and spec_wf_map_group_bounded
   | WfMZeroOrOne _ _
   | WfMConcat _ _ _ _
   | WfMChoice _ _ _ _
-  | WfMDef _ -> ()
+  -> ()
+
+#push-options "--z3rlimit 32"
+
+#restart-solver
+let rec spec_restrict_map_group_correct
+  (env: sem_env)
+  (left: Spec.typ)
+  (g: group NMapGroup)
+  (g' : group NMapGroup)
+  (s: ast0_restrict_map_group left g g')
+: Lemma
+  (requires spec_restrict_map_group env left g g' s)
+  (ensures MapSpec.restrict_map_group
+    (map_group_sem env g)
+    (map_group_sem env g') /\
+    begin match spec_map_group_footprint env g, spec_map_group_footprint env g' with
+    | Some fp, Some fp' -> Spec.typ_included fp' fp /\
+      Spec.typ_disjoint left fp'
+    | _ -> False
+    end
+  )
+  (decreases s)
+  [SMTPat (spec_restrict_map_group env left g g' s)]
+= match s with
+  | RMChoice left g1 g1' s1 g2 g2' s2 ->
+    spec_restrict_map_group_correct env left g1 g1' s1;
+    spec_restrict_map_group_correct env left g2 g2' s2
+  | RMZeroOrOne left g g' s ->
+    spec_restrict_map_group_correct env left g g' s
+  | RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
+    spec_restrict_map_group_correct env left g1 g1' s1;
+    spec_restrict_map_group_correct env (left `Spec.t_choice` fp1) g2 g2' s2;
+    let Some fp2' = spec_map_group_footprint env g2' in
+    MapSpec.restrict_map_group_concat
+      (map_group_sem env g1)
+      fp1
+      (map_group_sem env g1')
+      (map_group_sem env g2)
+      (map_group_sem env g2')
+      fp2'
+  | RMElemLiteral _ cut key value _ ->
+    MapSpec.restrict_map_group_match_item_for
+      cut
+      (eval_literal key)
+      (typ_sem env value)
+  | RMZeroOrMoreKeep left key value s_key s_value
+  | RMZeroOrMoreSkip left key value s_key s_value -> ()
+
+#pop-options
+
 
 (*
 
