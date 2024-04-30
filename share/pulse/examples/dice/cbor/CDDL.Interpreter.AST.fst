@@ -495,8 +495,8 @@ let rec map_group_is_productive
 : Tot bool
 = match g with
   | GOneOrMore g' -> map_group_is_productive g'
-  | GMapElem _ _ _ _ -> true
   | GAlwaysFalse
+  | GMapElem _ _ _ _ -> true
   | GNop
   | GZeroOrOne _
   | GZeroOrMore _ -> false
@@ -554,12 +554,17 @@ and rewrite_group
   then g
   else let fuel' : nat = fuel - 1 in
   match g with
+  | GConcat GAlwaysFalse _ -> GAlwaysFalse
+  | GConcat GNop g -> rewrite_group fuel' kind g
+  | GConcat g GNop -> rewrite_group fuel' kind g
   | GConcat (GConcat t1 t2) t3 -> rewrite_group fuel' kind (GConcat t1 (GConcat t2 t3))
   | GConcat t1 t2 ->
     let g' = GConcat (rewrite_group fuel' kind t1) (rewrite_group fuel' kind t2) in
     if g' = g
     then g'
     else rewrite_group fuel' kind g'
+  | GChoice GAlwaysFalse g -> rewrite_group fuel' kind g
+  | GChoice g GAlwaysFalse -> rewrite_group fuel' kind g
   | GChoice (GChoice t1 t2) t3 -> rewrite_group fuel' kind (GChoice t1 (GChoice t2 t3))
   | GChoice t1 t2 ->
     let g' = GChoice (rewrite_group fuel' kind t1) (rewrite_group fuel' kind t2) in
@@ -641,6 +646,9 @@ and rewrite_group_correct
   then ()
   else let fuel' : nat = fuel - 1 in
   match t with
+  | GConcat GAlwaysFalse _ -> ()
+  | GConcat GNop g -> rewrite_group_correct env fuel' g
+  | GConcat g GNop -> rewrite_group_correct env fuel' g
   | GConcat (GConcat t1 t2) t3 ->
     rewrite_group_correct env fuel' (GConcat t1 (GConcat t2 t3))
   | GConcat t1 t2 ->
@@ -653,6 +661,8 @@ and rewrite_group_correct
     | NArrayGroup -> Spec.array_group3_concat_equiv (array_group_sem env t1) (array_group_sem env t1') (array_group_sem env t2) (array_group_sem env t2')
     | _ -> ()
     end
+  | GChoice GAlwaysFalse g -> rewrite_group_correct env fuel' g
+  | GChoice g GAlwaysFalse -> rewrite_group_correct env fuel' g
   | GChoice (GChoice t1 t2) t3 ->
     rewrite_group_correct env fuel' (GChoice t1 (GChoice t2 t3))
   | GChoice t1 t2 ->

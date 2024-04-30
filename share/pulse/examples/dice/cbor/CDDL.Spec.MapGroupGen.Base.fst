@@ -298,6 +298,18 @@ let map_group_choice_assoc
   ((g1 `map_group_choice` g2) `map_group_choice` g3 == g1 `map_group_choice` (g2 `map_group_choice` g3))
 = assert (((g1 `map_group_choice` g2) `map_group_choice` g3) `map_group_equiv` (g1 `map_group_choice` (g2 `map_group_choice` g3)))
 
+let map_group_choice_always_false_l
+  (g: map_group)
+: Lemma
+  (map_group_choice map_group_always_false g == g)
+= assert (map_group_choice map_group_always_false g `map_group_equiv` g)
+
+let map_group_choice_always_false_r
+  (g: map_group)
+: Lemma
+  (map_group_choice g map_group_always_false == g)
+= assert (map_group_choice g map_group_always_false `map_group_equiv` g)
+
 let map_group_concat_witness_pred
   (m1 m2: map_group)
   (l: cbor_map)
@@ -643,6 +655,16 @@ let map_group_concat_nop_r
       assert (map_group_concat_witness_pred m map_group_nop l l' (l', (ghost_map_empty, snd l')))
     )
 
+let map_group_concat_always_false
+  (m: map_group)
+: Lemma
+  (map_group_concat map_group_always_false m == map_group_always_false)
+= map_group_equiv_intro_equiv
+    (map_group_concat map_group_always_false m)
+    map_group_always_false
+    (fun _ -> ())
+    (fun _ _ -> ())
+
 let bound_map_group
   (l0: cbor_map)
   (m: (l: cbor_map { ghost_map_length l < ghost_map_length l0 }) ->
@@ -712,6 +734,8 @@ let map_group_is_productive
   forall l . match m l with
   | MapGroupCutFailure -> True
   | MapGroupResult s -> forall l' . FStar.GSet.mem l' s ==> ghost_map_length (snd l') < ghost_map_length l
+
+let map_group_is_productive_always_false = ()
 
 let map_group_is_productive_match_item
   (cut: bool)
@@ -1060,6 +1084,19 @@ let apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
       ghost_map_equiv k1 k2
     )
 
+let apply_map_group_det_map_group_equiv' (m1 m2: map_group)
+  (phi1: (l: _) -> Lemma
+    (~ (MapGroupNonDet? (apply_map_group_det m1 l))
+  ))
+  (phi2: (l: _) -> Lemma
+    (apply_map_group_det m1 l == apply_map_group_det m2 l)
+  )
+: Lemma
+  (ensures m1 == m2)
+= Classical.forall_intro phi1;
+  Classical.forall_intro phi2;
+  apply_map_group_det_map_group_equiv m1 m2
+
 let gset_singleton_inj
   (#t: Type)
   (x1 x2: t)
@@ -1156,10 +1193,10 @@ let apply_map_group_det_old_concat (m1 m2: map_group) (l: cbor_map)
     end
   | _ -> ()
 
-#pop-options
-
 let apply_map_group_det_concat (m1 m2: map_group) (l: cbor_map) =
   apply_map_group_det_old_concat m1 m2 l
+
+#pop-options
 
 #restart-solver
 let apply_map_group_det_match_item_for
@@ -1244,13 +1281,18 @@ let ghost_map_filter_not_filter_not_strong
     (notp_g (p1 `andp_g` p2))
     l
 
+#restart-solver
 let map_group_filter_filter
   p1 p2
-= Classical.forall_intro (ghost_map_filter_filter p1 p2);
-  Classical.forall_intro (ghost_map_filter_not_filter_not_strong p1 p2);
-  apply_map_group_det_map_group_equiv
+=
+  apply_map_group_det_map_group_equiv'
     (map_group_filter p1 `map_group_concat` map_group_filter p2)
     (map_group_filter (andp_g p1 p2))
+    (fun l -> map_group_concat_det (map_group_filter p1) (map_group_filter p2))
+    (fun l -> 
+      ghost_map_filter_filter p1 p2 l;
+      ghost_map_filter_not_filter_not_strong p1 p2 l
+    )
 
 #restart-solver
 let map_group_zero_or_one_match_item_filter_matched

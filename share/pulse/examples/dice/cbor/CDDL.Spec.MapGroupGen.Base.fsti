@@ -50,6 +50,18 @@ val map_group_choice_assoc
     [SMTPat (map_group_choice (map_group_choice g1 g2) g3)]
   ]]
 
+val map_group_choice_always_false_l
+  (g: map_group)
+: Lemma
+  (map_group_choice map_group_always_false g == g)
+  [SMTPat (map_group_choice map_group_always_false g)]
+
+val map_group_choice_always_false_r
+  (g: map_group)
+: Lemma
+  (map_group_choice g map_group_always_false == g)
+  [SMTPat (map_group_choice g map_group_always_false)]
+
 let map_group_zero_or_one (m: map_group) : map_group =
   map_group_choice m map_group_nop
 
@@ -62,9 +74,29 @@ val map_group_concat_assoc (m1 m2 m3: map_group) : Lemma
     [SMTPat (map_group_concat (map_group_concat m1 m2) m3)]
   ]]
 
+val map_group_concat_nop_l
+  (m: map_group)
+: Lemma
+  (map_group_concat map_group_nop m == m)
+  [SMTPat (map_group_concat map_group_nop m)]
+
+val map_group_concat_nop_r
+  (m: map_group)
+: Lemma
+  (map_group_concat m map_group_nop == m)
+  [SMTPat (map_group_concat m map_group_nop)]
+
+val map_group_concat_always_false
+  (m: map_group)
+: Lemma
+  (map_group_concat map_group_always_false m == map_group_always_false)
+  [SMTPat (map_group_concat map_group_always_false m)]
+
 val map_group_is_productive
   (m: map_group)
 : Tot prop
+
+val map_group_is_productive_always_false: squash (map_group_is_productive map_group_always_false)
 
 val map_group_is_productive_match_item
   (cut: bool)
@@ -190,6 +222,16 @@ val apply_map_group_det_concat (m1 m2: map_group) (l: ghost_map Cbor.raw_data_it
     end
   | _ -> True)
   [SMTPat (apply_map_group_det (map_group_concat m1 m2) l)]
+
+let map_group_concat_det (m1 m2: map_group) : Lemma
+    (requires (
+      (forall l . ~ (MapGroupNonDet? (apply_map_group_det m1 l))) /\
+      (forall l . ~ (MapGroupNonDet? (apply_map_group_det m2 l)))
+    ))
+    (ensures (
+      forall l . ~ (MapGroupNonDet? (apply_map_group_det (m1 `map_group_concat` m2) l))
+    ))
+= ()
 
 val apply_map_group_det_match_item_for
   (cut: bool)
