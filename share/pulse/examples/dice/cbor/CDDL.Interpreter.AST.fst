@@ -1623,6 +1623,17 @@ let ast_env_set_wf
 
 let wf_ast_env = (e: ast_env { forall i . Some? (e.e_wf i) })
 
+let bounded_wf_ast_env_elem
+  (env: name_env)
+  (#s: name_env_elem)
+  (x: ast_env_elem0 s)
+  (y: wf_ast_env_elem0 s x)
+: Tot prop
+= match s with
+  | NType -> bounded_wf_typ env x y
+  | NArrayGroup -> bounded_wf_array_group env x y
+  | NMapGroup -> bounded_wf_parse_map_group env x y
+
 noeq
 type target_type =
 | TTDef of string
@@ -1885,6 +1896,16 @@ and target_type_of_wf_map_group
   | WfMZeroOrOne _ s -> TTOption (target_type_of_wf_map_group s)
   | WfMLiteral _ _ _ s -> target_type_of_wf_typ s
   | WfMZeroOrMore _ _ s_key s_value -> TTTable (target_type_of_wf_typ s_key) (target_type_of_wf_typ s_value)
+
+let target_type_of_wf_ast_elem
+  (#s: name_env_elem)
+  (x: ast_env_elem0 s)
+  (y: wf_ast_env_elem0 s x)
+: Tot target_type
+= match s with
+  | NType -> target_type_of_wf_typ #x y
+  | NArrayGroup -> target_type_of_wf_array_group #x y
+  | NMapGroup -> target_type_of_wf_map_group #x y
 
 let rec target_type_of_wf_typ_bounded
   (env: name_env)
@@ -2252,6 +2273,19 @@ and wf_typ_serializable
   | WfTElem _ -> True
   | WfTDef n -> env.wft_serializable n z
 
+let wf_ast_elem_serializable
+  (#ne: name_env)
+  (env: wf_target_spec_env ne)
+  (#s: name_env_elem)
+  (x: ast_env_elem0 s)
+  (y: wf_ast_env_elem0 s x { bounded_wf_ast_env_elem ne x y } )
+  (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_ast_elem x y))
+: Tot prop
+= match s with
+  | NType -> wf_typ_serializable env #x y z
+  | NArrayGroup -> wf_array_group_serializable env #x y z
+  | NMapGroup -> wf_map_group_serializable env #x y z
+
 let list_forallP_ext
   (#t1 #t2: Type)
   (p1: t1 -> prop)
@@ -2444,64 +2478,35 @@ let wf_typ_serializable_incr'
   [SMTPat (wf_target_spec_env_included env env'); SMTPat (wf_typ_serializable env wf z)]
 = wf_typ_serializable_incr env env' wf z
 
-(*
-let mk_refinement (#t: Type) (p: t -> prop) = (x: t { p x })
+let bounded_target_type (env: name_env) =
+  (t: target_type { target_type_bounded env t })
 
-let serializable_target_spec_typ
-  (#b: name_env)
-  (env: wf_target_spec_env b) 
-  (t: typ { typ_bounded b t })
-: Tot Type
-= mk_refinement (typ_target_spec_value_serializable env t)
-
-let serializable_target_spec_array_group
-  (b: name_env)
-  (env: wf_target_spec_env b) 
-  (t: array_group { array_group_bounded b t })
-: Tot Type
-= mk_refinement (array_group_target_spec_value_serializable b env t)
-
-let serializable_target_spec_map_group
-  (b: name_env)
-  (env: wf_target_spec_env b) 
-  (t: map_group { map_group_bounded b t })
-: Tot Type
-= mk_refinement (map_group_target_spec_value_serializable b env t)
-
-let serializable_target_spec
-  (s_ast: wf_ast_env)
-  (s_sz: wf_target_spec_env (s_ast.we_env.e_sem_env.se_bound))
-  (n: name s_ast.we_env.e_sem_env.se_bound)
-: Tot Type
-= match s_ast.we_env.e_sem_env.se_env n with
-  | SEType _ -> serializable_target_spec_typ _ s_sz (s_ast.we_env.e_env n)
-  | SEArrayGroup _ -> serializable_target_spec_array_group _ s_sz (s_ast.we_env.e_env n)
-  | SEMapGroup _ -> serializable_target_spec_map_group _ s_sz (s_ast.we_env.e_env n)
-
-let mk_trivial_target_spec_env (b: name_env) (wft_env: target_spec_size_env b) : wf_target_spec_env b = {
-  wft_env = wft_env;
-  wft_serializable = (fun _ _ -> True);
-}
-
+[@@sem_attr]
 noeq
-type spec_env = {
-  s_ast: wf_ast_env;
-  s_sz: target_spec_size_env (s_ast.we_env.e_sem_env.se_bound);
-  s_bij: (n: name s_ast.we_env.e_sem_env.se_bound) -> Spec.bijection
-    (serializable_target_spec s_ast (mk_trivial_target_spec_env _ s_sz) n)
-    (s_sz.tss_env n);
-  s_array_size_preserved: squash (forall (n: name s_ast.we_env.e_sem_env.se_bound { SEArrayGroup? (s_ast.we_env.e_sem_env.se_env n) })
-    (x: serializable_target_spec s_ast (mk_trivial_target_spec_env _ s_sz) n) .
-    array_size_of_array_group _ s_sz (s_ast.we_env.e_env n) x ==
-    s_sz.tss_array_size n ((s_bij n).bij_from_to x)
+type target_ast_env = {
+  ta_ast: wf_ast_env;
+(*
+  ta_typ: (n: name ta_ast.e_sem_env.se_bound) -> bounded_target_type ta_ast.e_sem_env.se_bound; // TODO: we keep this here just for the sake of memoizing the produced target type, but this should move to the implementation environment
+  ta_typ_correct: (forall (n: name ta_ast.e_sem_env.se_bound) .
+    ta_typ n == target_type_of_wf_ast_elem (ta_ast.e_env n) (Some?.v (ta_ast.e_wf n))
   );
-  s_map_size_preserved: squash (forall (n: name s_ast.we_env.e_sem_env.se_bound { SEMapGroup? (s_ast.we_env.e_sem_env.se_env n) })
-    (x: serializable_target_spec s_ast (mk_trivial_target_spec_env _ s_sz) n) .
-    map_size_of_map_group _ s_sz (s_ast.we_env.e_env n) x ==
-    s_sz.tss_map_size n ((s_bij n).bij_from_to x)
+*)
+  ta_tgt: wf_target_spec_env (ta_ast.e_sem_env.se_bound);
+  ta_bij: (n: name ta_ast.e_sem_env.se_bound) -> Spec.bijection // in general, this bijection is the identity, except for recursive types
+    (target_type_sem ta_tgt.wft_env.tss_env (target_type_of_wf_ast_elem (ta_ast.e_env n) (Some?.v (ta_ast.e_wf n))))
+    (ta_tgt.wft_env.tss_env n);
+  ta_serializable_preserved: squash (
+    forall (n: name ta_ast.e_sem_env.se_bound) (x : target_type_sem ta_tgt.wft_env.tss_env (target_type_of_wf_ast_elem (ta_ast.e_env n) (Some?.v (ta_ast.e_wf n)))) .
+      wf_ast_elem_serializable ta_tgt _ _ x <==> ta_tgt.wft_serializable n ((ta_bij n).bij_from_to x)
+  );
+  ta_array_size_preserved: squash (forall (n: array_group_name ta_ast.e_sem_env.se_bound)
+    (x : target_type_sem ta_tgt.wft_env.tss_env (target_type_of_wf_array_group (Some?.v (ta_ast.e_wf n)))) .
+    wf_array_group_size ta_tgt.wft_env #(ta_ast.e_env n) (Some?.v (ta_ast.e_wf n)) x == ta_tgt.wft_env.tss_group_size n ((ta_bij n).bij_from_to x)
   );
 }
 
+
+(*
 
 
 
