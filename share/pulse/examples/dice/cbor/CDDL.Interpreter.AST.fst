@@ -766,10 +766,11 @@ type ast0_wf_typ
   ast0_wf_typ (TArray g)
 | WfTMap:
   (g: group NMapGroup) ->
-  (g1 : group NMapGroup) ->
-  (s1: ast0_restrict_map_group Spec.t_always_false g g1) ->
+  (ty1: Spec.typ) ->
+  (ty2: Spec.typ) ->
+  (s: ast0_wf_validate_map_group Spec.t_always_false Spec.t_always_false g ty1 ty2) ->
   (g2: group NMapGroup) ->
-  (s2: ast0_wf_map_group g2) ->
+  (s2: ast0_wf_parse_map_group g2) ->
   ast0_wf_typ (TMap g)
 | WfTChoice:
   (t1: typ) ->
@@ -816,87 +817,90 @@ and ast0_wf_array_group
   n: string ->
   ast0_wf_array_group (GDef () n) // will be taken into account by the syntax environment
 
-and ast0_wf_map_group
+and ast0_wf_parse_map_group
 : group NMapGroup -> Type
 =
 | WfMChoice:
     g1': group NMapGroup ->
-    s1: ast0_wf_map_group g1' ->
+    s1: ast0_wf_parse_map_group g1' ->
     g2': group NMapGroup ->
-    s2: ast0_wf_map_group g2' ->
-    ast0_wf_map_group (GChoice g1' g2')
+    s2: ast0_wf_parse_map_group g2' ->
+    ast0_wf_parse_map_group (GChoice g1' g2')
 | WfMConcat:
     g1: group NMapGroup ->
-    s1: ast0_wf_map_group g1 ->
+    s1: ast0_wf_parse_map_group g1 ->
     g2: group NMapGroup ->
-    s2: ast0_wf_map_group g2 ->
-    ast0_wf_map_group (GConcat g1 g2)
+    s2: ast0_wf_parse_map_group g2 ->
+    ast0_wf_parse_map_group (GConcat g1 g2)
 | WfMZeroOrOne:
     g: group NMapGroup ->
-    s: ast0_wf_map_group g ->
-    ast0_wf_map_group (GZeroOrOne g)
+    s: ast0_wf_parse_map_group g ->
+    ast0_wf_parse_map_group (GZeroOrOne g)
 | WfMLiteral:
     cut: bool ->
     key: literal ->
     value: typ ->
     s: ast0_wf_typ value ->
-    ast0_wf_map_group (GMapElem () cut (TElem (ELiteral key)) value)
+    ast0_wf_parse_map_group (GMapElem () cut (TElem (ELiteral key)) value)
 | WfMZeroOrMore:
     key: typ ->
     value: typ ->
     s_key: ast0_wf_typ key ->
     s_value: ast0_wf_typ value ->
-    ast0_wf_map_group (GZeroOrMore (GMapElem () false key value))
+    ast0_wf_parse_map_group (GZeroOrMore (GMapElem () false key value))
 
-and ast0_restrict_map_group
-: Spec.typ -> group NMapGroup -> group NMapGroup -> Type
+and ast0_wf_validate_map_group
+: Spec.typ -> Spec.typ -> group NMapGroup -> Spec.typ -> Spec.typ -> Type
 =
 | RMChoice:
-    left: Spec.typ ->
+    left_elems: Spec.typ ->
+    left_tables: Spec.typ ->
     g1: group NMapGroup ->
-    g1': group NMapGroup ->
-    s1: ast0_restrict_map_group left g1 g1' ->
+    left_elems1: Spec.typ ->
+    left_tables1: Spec.typ ->
+    s1: ast0_wf_validate_map_group left_elems left_tables g1 left_elems1 left_tables1 ->
     g2: group NMapGroup ->
-    g2': group NMapGroup ->
-    s2: ast0_restrict_map_group left g2 g2' ->
-    ast0_restrict_map_group left (GChoice g1 g2) (GChoice g1' g2')
+    left_elems2: Spec.typ ->
+    left_tables2: Spec.typ ->
+    s2: ast0_wf_validate_map_group left_elems left_tables g2 left_elems2 left_tables2 ->
+    ast0_wf_validate_map_group left_elems left_tables (GChoice g1 g2) (left_elems1 `Spec.t_choice` left_elems2) (left_tables1 `Spec.t_choice` left_tables2)
 | RMConcat:
-    left: Spec.typ ->
+    left_elems: Spec.typ ->
+    left_tables: Spec.typ ->
     g1: group NMapGroup ->
-    g1': group NMapGroup ->
-    s1: ast0_restrict_map_group left g1 g1' ->
-    fp1: Spec.typ ->
+    left_elems1: Spec.typ ->
+    left_tables1: Spec.typ ->
+    s1: ast0_wf_validate_map_group left_elems left_tables g1 left_elems1 left_tables1 ->
     g2: group NMapGroup ->
-    g2': group NMapGroup ->
-    s2: ast0_restrict_map_group (left `Spec.t_choice` fp1) g2 g2' ->
-    ast0_restrict_map_group left (GConcat g1 g2) (GConcat g1' g2')
+    left_elems2: Spec.typ ->
+    left_tables2: Spec.typ ->
+    s2: ast0_wf_validate_map_group left_elems1 left_tables1 g2 left_elems2 left_tables2 ->
+    ast0_wf_validate_map_group left_elems left_tables (GConcat g1 g2) left_elems2 left_tables2
 | RMZeroOrOne:
-    left: Spec.typ ->
+    left_elems: Spec.typ ->
+    left_tables: Spec.typ ->
     g: group NMapGroup ->
-    g': group NMapGroup ->
-    s: ast0_restrict_map_group left g g' ->
-    ast0_restrict_map_group left (GZeroOrOne g) (GZeroOrOne g')
+    left_elems': Spec.typ ->
+    left_tables': Spec.typ ->
+    s: ast0_wf_validate_map_group left_elems left_tables g left_elems' left_tables' ->
+    ast0_wf_validate_map_group left_elems left_tables (GZeroOrOne g) left_elems' left_tables'
 | RMElemLiteral:
-    left: Spec.typ ->
+    left_elems: Spec.typ ->
+    left_tables: Spec.typ ->
     cut: bool ->
     key: literal ->
     value: typ ->
     s: ast0_wf_typ value ->
-    ast0_restrict_map_group left (GMapElem () cut (TElem (ELiteral key)) value) (GMapElem () cut (TElem (ELiteral key)) value)
-| RMZeroOrMoreKeep:
-    left: Spec.typ ->
+    ast0_wf_validate_map_group left_elems left_tables (GMapElem () cut (TElem (ELiteral key)) value) (left_elems `Spec.t_choice` Spec.t_literal (eval_literal key)) left_tables
+| RMZeroOrMore:
+    left_elems: Spec.typ ->
+    left_tables: Spec.typ ->
     key: typ ->
     value: typ ->
     s_key: ast0_wf_typ key ->
     s_value: ast0_wf_typ value ->
-    ast0_restrict_map_group left (GZeroOrMore (GMapElem () false key value)) (GZeroOrMore (GMapElem () false key value))
-| RMZeroOrMoreSkip:
-    left: Spec.typ ->
-    key: typ ->
-    value: typ ->
-    s_key: ast0_wf_typ key ->
-    s_value: ast0_wf_typ value ->
-    ast0_restrict_map_group left (GZeroOrMore (GMapElem () false key value)) GNop
+    v_key: Spec.typ ->
+    ast0_wf_validate_map_group left_elems left_tables (GZeroOrMore (GMapElem () false key value)) left_elems (left_tables `Spec.t_choice` v_key)
 
 let rec spec_wf_typ
   (env: sem_env)
@@ -907,12 +911,12 @@ let rec spec_wf_typ
 = match wf with
 | WfTArray g s ->
   spec_wf_array_group env g s
-| WfTMap g g1 s1 g2 s2 ->
+| WfTMap g1 ty1 ty2 s1 g2 s2 ->
     group_bounded NMapGroup env.se_bound g1 /\
     group_bounded NMapGroup env.se_bound g2 /\
-    map_group_sem env g1 == map_group_sem env g2 /\
-    spec_restrict_map_group env Spec.t_always_false g g1 s1 /\
-    spec_wf_map_group env g2 s2
+    MapSpec.restrict_map_group (map_group_sem env g1) (map_group_sem env g2) /\
+    spec_wf_validate_map_group env Spec.t_always_false Spec.t_always_false g1 ty1 ty2 s1 /\
+    spec_wf_parse_map_group env g2 s2
 | WfTChoice t1 t2 s1 s2 ->
   typ_bounded env.se_bound t1 /\
   typ_bounded env.se_bound t2 /\
@@ -959,26 +963,26 @@ and spec_wf_array_group
 | WfADef n ->
   env.se_bound n == Some NArrayGroup
 
-and spec_wf_map_group
+and spec_wf_parse_map_group
   (env: sem_env)
   (g: group NMapGroup)
-  (wf: ast0_wf_map_group g)
+  (wf: ast0_wf_parse_map_group g)
 : Tot prop
   (decreases wf)
 = match wf with
 | WfMChoice g1' s1 g2' s2 ->
     group_bounded NMapGroup env.se_bound g1' /\
-    spec_wf_map_group env g1' s1 /\
+    spec_wf_parse_map_group env g1' s1 /\
     group_bounded NMapGroup env.se_bound g2' /\
-    spec_wf_map_group env g2' s2 /\
+    spec_wf_parse_map_group env g2' s2 /\
     MapSpec.map_group_choice_compatible
       (map_group_sem env g1')
       (map_group_sem env g2')
 | WfMConcat g1 s1 g2 s2 ->
     group_bounded NMapGroup env.se_bound g1 /\
-    spec_wf_map_group env g1 s1 /\
+    spec_wf_parse_map_group env g1 s1 /\
     group_bounded NMapGroup env.se_bound g2 /\
-    spec_wf_map_group env g2 s2 /\
+    spec_wf_parse_map_group env g2 s2 /\
     (
       match spec_map_group_footprint env g1, spec_map_group_footprint env g2 with
       | Some fp1, Some fp2 -> Spec.typ_disjoint fp1 fp2
@@ -986,7 +990,7 @@ and spec_wf_map_group
     )
 | WfMZeroOrOne g s ->
     group_bounded NMapGroup env.se_bound g /\
-    spec_wf_map_group env g s /\
+    spec_wf_parse_map_group env g s /\
     MapSpec.map_group_is_productive (map_group_sem env g)
 | WfMLiteral cut key value s ->
     spec_wf_typ env value s
@@ -994,41 +998,34 @@ and spec_wf_map_group
     spec_wf_typ env key s_key /\
     spec_wf_typ env value s_value
 
-and spec_restrict_map_group
+and spec_wf_validate_map_group
   (env: sem_env)
-  (left: Spec.typ)
+  (left_elems: Spec.typ)
+  (left_tables: Spec.typ)
   (g: group NMapGroup)
-  (g' : group NMapGroup)
-  (s: ast0_restrict_map_group left g g')
+  (left_elems': Spec.typ)
+  (left_tables': Spec.typ)
+  (s: ast0_wf_validate_map_group left_elems left_tables g left_elems' left_tables')
 : Tot prop
   (decreases s)
 = match s with
-| RMChoice left g1 g1' s1 g2 g2' s2 ->
-    group_bounded NMapGroup env.se_bound g1' /\
-    spec_restrict_map_group env left g1 g1' s1 /\
-    group_bounded NMapGroup env.se_bound g2' /\
-    spec_restrict_map_group env left g2 g2' s2 /\
-    MapSpec.map_group_choice_compatible
-      (map_group_sem env g1')
-      (map_group_sem env g2')
-| RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
-    group_bounded NMapGroup env.se_bound g1 /\
-    spec_restrict_map_group env left g1 g1' s1 /\
-    spec_map_group_footprint env g1 == Some fp1 /\
-    spec_restrict_map_group env (left `Spec.t_choice` fp1) g2 g2' s2
-| RMZeroOrOne left g g' s ->
-    spec_restrict_map_group env left g g' s
-| RMElemLiteral left cut key value s' ->
+| RMChoice left_elems left_tables g1 left_elems1 left_tables1 s1 g2 left_elems2 left_tables2 s2 ->
+    spec_wf_validate_map_group env left_elems left_tables g1 left_elems1 left_tables1 s1 /\
+    spec_wf_validate_map_group env left_elems left_tables g2 left_elems2 left_tables2 s2
+| RMConcat left_elems left_tables g1 left_elems1 left_tables1 s1 g2 left_elems2 left_tables2 s2 ->
+    spec_wf_validate_map_group env left_elems left_tables g1 left_elems1 left_tables1 s1 /\
+    spec_wf_validate_map_group env left_elems1 left_tables1 g2 left_elems2 left_tables2 s2
+| RMZeroOrOne left_elems left_tables g left_elems' left_tables' s ->
+    spec_wf_validate_map_group env left_elems left_tables g left_elems' left_tables' s
+| RMElemLiteral left_elems left_tables cut key value s' ->
     spec_wf_typ env value s' /\
-    Spec.typ_disjoint left (Spec.t_literal (eval_literal key))
-| RMZeroOrMoreKeep left key value s_key s_value ->
+    Spec.typ_disjoint (left_elems `Spec.t_choice` left_tables) (Spec.t_literal (eval_literal key))
+| RMZeroOrMore left_elems left_tables key value s_key s_value v_key ->
     typ_bounded env.se_bound key /\
     spec_wf_typ env key s_key /\
     spec_wf_typ env value s_value /\
-    Spec.typ_disjoint left (typ_sem env key)
-| RMZeroOrMoreSkip left key value s_key s_value ->
-    spec_wf_typ env key s_key /\
-    spec_wf_typ env value s_value
+    v_key == (typ_sem env key) /\
+    Spec.typ_disjoint left_tables v_key
 
 [@@ sem_attr]
 let rec spec_wf_typ_incr
@@ -1050,9 +1047,9 @@ let rec spec_wf_typ_incr
 = match wf with
   | WfTArray g s ->
     spec_wf_array_group_incr env env' g s
-  | WfTMap g g1 s1 g2 s2 ->
-    spec_restrict_map_group_incr env env' Spec.t_always_false g g1 s1;
-    spec_wf_map_group_incr env env' g2 s2
+  | WfTMap g1 ty1 ty2 s1 g2 s2 ->
+    spec_wf_validate_map_group_incr env env' Spec.t_always_false Spec.t_always_false g1 ty1 ty2 s1;
+    spec_wf_parse_map_group_incr env env' g2 s2
   | WfTChoice t1 t2 s1 s2 ->
     spec_wf_typ_incr env env' t1 s1;
     spec_wf_typ_incr env env' t2 s2
@@ -1088,62 +1085,64 @@ and spec_wf_array_group_incr
     spec_wf_array_group_incr env env' g2 s2
   | WfADef _ -> ()
 
-and spec_restrict_map_group_incr
+and spec_wf_validate_map_group_incr
   (env env': sem_env)
-  (left: Spec.typ)
-  (g1 g2: group NMapGroup)
-  (wf: ast0_restrict_map_group left g1 g2)
+  (left_elems: Spec.typ)
+  (left_tables: Spec.typ)
+  (g1: group NMapGroup)
+  (left_elems1: Spec.typ)
+  (left_tables1: Spec.typ)
+  (wf: ast0_wf_validate_map_group left_elems left_tables g1 left_elems1 left_tables1)
 : Lemma
   (requires sem_env_included env env' /\
-    spec_restrict_map_group env left g1 g2 wf
+    spec_wf_validate_map_group env left_elems left_tables g1 left_elems1 left_tables1 wf
   )
   (ensures
-      spec_restrict_map_group env' left g1 g2 wf
+    spec_wf_validate_map_group env' left_elems left_tables g1 left_elems1 left_tables1 wf
   )
   (decreases wf)
   [SMTPatOr [
-    [SMTPat (sem_env_included env env'); SMTPat (spec_restrict_map_group env left g1 g2 wf)];
-    [SMTPat (sem_env_included env env'); SMTPat (spec_restrict_map_group env' left g1 g2 wf)];
+    [SMTPat (sem_env_included env env'); SMTPat (spec_wf_validate_map_group env left_elems left_tables g1 left_elems1 left_tables1 wf)];
+    [SMTPat (sem_env_included env env'); SMTPat (spec_wf_validate_map_group env' left_elems left_tables g1 left_elems1 left_tables1 wf)];
   ]]
 = match wf with
-  | RMChoice left g1 g1' s1 g2 g2' s2 ->
-    spec_restrict_map_group_incr env env' left g1 g1' s1;
-    spec_restrict_map_group_incr env env' left g2 g2' s2
-  | RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
-    spec_restrict_map_group_incr env env' left g1 g1' s1;
-    spec_restrict_map_group_incr env env' (left `Spec.t_choice` fp1) g2 g2' s2
-  | RMZeroOrOne left g g' s ->
-    spec_restrict_map_group_incr env env' left g g' s
-  | RMElemLiteral left cut key value s' ->
+| RMChoice left_elems left_tables g1 left_elems1 left_tables1 s1 g2 left_elems2 left_tables2 s2 ->
+    spec_wf_validate_map_group_incr env env' left_elems left_tables g1 left_elems1 left_tables1 s1;
+    spec_wf_validate_map_group_incr env env'  left_elems left_tables g2 left_elems2 left_tables2 s2
+| RMConcat left_elems left_tables g1 left_elems1 left_tables1 s1 g2 left_elems2 left_tables2 s2 ->
+    spec_wf_validate_map_group_incr env env' left_elems left_tables g1 left_elems1 left_tables1 s1;
+    spec_wf_validate_map_group_incr env env' left_elems1 left_tables1 g2 left_elems2 left_tables2 s2
+| RMZeroOrOne left_elems left_tables g left_elems' left_tables' s ->
+    spec_wf_validate_map_group_incr env env'  left_elems left_tables g left_elems' left_tables' s
+| RMElemLiteral left_elems left_tables cut key value s' ->
     spec_wf_typ_incr env env' value s'
-  | RMZeroOrMoreKeep _ key value s_key s_value
-  | RMZeroOrMoreSkip _ key value s_key s_value ->
+| RMZeroOrMore left_elems left_tables key value s_key s_value v_key ->
     spec_wf_typ_incr env env' key s_key;
-    spec_wf_typ_incr env env' value s_value    
+    spec_wf_typ_incr env env' value s_value
 
-and spec_wf_map_group_incr
+and spec_wf_parse_map_group_incr
   (env env': sem_env)
   (g: group NMapGroup)
-  (wf: ast0_wf_map_group g)
+  (wf: ast0_wf_parse_map_group g)
 : Lemma
   (requires sem_env_included env env' /\
-    spec_wf_map_group env g wf
+    spec_wf_parse_map_group env g wf
   )
   (ensures
-      spec_wf_map_group env' g wf
+      spec_wf_parse_map_group env' g wf
   )
   (decreases wf)
   [SMTPatOr [
-    [SMTPat (sem_env_included env env'); SMTPat (spec_wf_map_group env g wf)];
-    [SMTPat (sem_env_included env env'); SMTPat (spec_wf_map_group env' g wf)];
+    [SMTPat (sem_env_included env env'); SMTPat (spec_wf_parse_map_group env g wf)];
+    [SMTPat (sem_env_included env env'); SMTPat (spec_wf_parse_map_group env' g wf)];
   ]]
 = match wf with
   | WfMConcat g1' s1 g2' s2
   | WfMChoice g1' s1 g2' s2 ->
-    spec_wf_map_group_incr env env' g1' s1;
-    spec_wf_map_group_incr env env' g2' s2
+    spec_wf_parse_map_group_incr env env' g1' s1;
+    spec_wf_parse_map_group_incr env env' g2' s2
   | WfMZeroOrOne g s ->
-    spec_wf_map_group_incr env env' g s
+    spec_wf_parse_map_group_incr env env' g s
   | WfMLiteral cut key value s ->
     spec_wf_typ_incr env env' value s
   | WfMZeroOrMore key value s_key s_value ->
@@ -1167,9 +1166,9 @@ let rec spec_wf_typ_bounded
 = match wf with
   | WfTArray g s ->
     spec_wf_array_group_bounded env g s
-  | WfTMap g g1 s1 g2 s2 ->
-    spec_restrict_map_group_bounded env Spec.t_always_false g g1 s1;
-    spec_wf_map_group_bounded env g2 s2
+  | WfTMap g1 ty1 ty2 s1 g2 s2 ->
+    spec_wf_validate_map_group_bounded env Spec.t_always_false Spec.t_always_false g1 ty1 ty2 s1;
+    spec_wf_parse_map_group_bounded env g2 s2
   | WfTChoice t1 t2 s1 s2 ->
     spec_wf_typ_bounded env t1 s1;
     spec_wf_typ_bounded env t2 s2
@@ -1198,50 +1197,51 @@ and spec_wf_array_group_bounded
   | WfAZeroOrOne _ _
   | WfADef _ -> ()
 
-and spec_restrict_map_group_bounded
+and spec_wf_validate_map_group_bounded
   (env: sem_env)
-  (left: Spec.typ)
-  (g1 g2: group NMapGroup)
-  (wf: ast0_restrict_map_group left g1 g2)
+  (left_elems: Spec.typ)
+  (left_tables: Spec.typ)
+  (g1: group NMapGroup)
+  (left_elems1: Spec.typ)
+  (left_tables1: Spec.typ)
+  (wf: ast0_wf_validate_map_group left_elems left_tables g1 left_elems1 left_tables1)
 : Lemma
   (requires
-    spec_restrict_map_group env left g1 g2 wf
+    spec_wf_validate_map_group env left_elems left_tables g1 left_elems1 left_tables1 wf
   )
   (ensures
-    group_bounded NMapGroup env.se_bound g1 /\
-    group_bounded NMapGroup env.se_bound g2
+    group_bounded NMapGroup env.se_bound g1
   )
   (decreases wf)
-  [SMTPat (spec_restrict_map_group env left g1 g2 wf)]
+  [SMTPat (spec_wf_validate_map_group env left_elems left_tables g1 left_elems1 left_tables1 wf)]
 = match wf with
-  | RMChoice left g1 g1' s1 g2 g2' s2 ->
-    spec_restrict_map_group_bounded env left g1 g1' s1;
-    spec_restrict_map_group_bounded env left g2 g2' s2
-  | RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
-    spec_restrict_map_group_bounded env left g1 g1' s1;
-    spec_restrict_map_group_bounded env (left `Spec.t_choice` fp1) g2 g2' s2
-  | RMZeroOrOne left g g' s ->
-    spec_restrict_map_group_bounded env left g g' s
-  | RMElemLiteral left cut key value s' ->
+| RMChoice left_elems left_tables g1 left_elems1 left_tables1 s1 g2 left_elems2 left_tables2 s2 ->
+    spec_wf_validate_map_group_bounded env left_elems left_tables g1 left_elems1 left_tables1 s1;
+    spec_wf_validate_map_group_bounded env  left_elems left_tables g2 left_elems2 left_tables2 s2
+| RMConcat left_elems left_tables g1 left_elems1 left_tables1 s1 g2 left_elems2 left_tables2 s2 ->
+    spec_wf_validate_map_group_bounded env left_elems left_tables g1 left_elems1 left_tables1 s1;
+    spec_wf_validate_map_group_bounded env left_elems1 left_tables1 g2 left_elems2 left_tables2 s2
+| RMZeroOrOne left_elems left_tables g left_elems' left_tables' s ->
+    spec_wf_validate_map_group_bounded env left_elems left_tables g left_elems' left_tables' s
+| RMElemLiteral left_elems left_tables cut key value s' ->
     spec_wf_typ_bounded env value s'
-  | RMZeroOrMoreKeep _ key value s_key s_value
-  | RMZeroOrMoreSkip _ key value s_key s_value ->
+| RMZeroOrMore left_elems left_tables key value s_key s_value v_key ->
     spec_wf_typ_bounded env key s_key;
-    spec_wf_typ_bounded env value s_value    
+    spec_wf_typ_bounded env value s_value
 
-and spec_wf_map_group_bounded
+and spec_wf_parse_map_group_bounded
   (env: sem_env)
   (g: group NMapGroup)
-  (wf: ast0_wf_map_group g)
+  (wf: ast0_wf_parse_map_group g)
 : Lemma
   (requires
-    spec_wf_map_group env g wf
+    spec_wf_parse_map_group env g wf
   )
   (ensures
       group_bounded NMapGroup env.se_bound g
   )
   (decreases wf)
-  [SMTPat (spec_wf_map_group env g wf)]
+  [SMTPat (spec_wf_parse_map_group env g wf)]
 = match wf with
   | WfMZeroOrMore key value s_key s_value ->
     spec_wf_typ_bounded env key s_key;
@@ -1253,65 +1253,16 @@ and spec_wf_map_group_bounded
   | WfMChoice _ _ _ _
   -> ()
 
-#push-options "--z3rlimit 32"
-
-#restart-solver
-let rec spec_restrict_map_group_correct
-  (env: sem_env)
-  (left: Spec.typ)
-  (g: group NMapGroup)
-  (g' : group NMapGroup)
-  (s: ast0_restrict_map_group left g g')
-: Lemma
-  (requires spec_restrict_map_group env left g g' s)
-  (ensures MapSpec.restrict_map_group
-    (map_group_sem env g)
-    (map_group_sem env g') /\
-    begin match spec_map_group_footprint env g, spec_map_group_footprint env g' with
-    | Some fp, Some fp' -> Spec.typ_included fp' fp /\
-      Spec.typ_disjoint left fp'
-    | _ -> False
-    end
-  )
-  (decreases s)
-  [SMTPat (spec_restrict_map_group env left g g' s)]
-= match s with
-  | RMChoice left g1 g1' s1 g2 g2' s2 ->
-    spec_restrict_map_group_correct env left g1 g1' s1;
-    spec_restrict_map_group_correct env left g2 g2' s2
-  | RMZeroOrOne left g g' s ->
-    spec_restrict_map_group_correct env left g g' s
-  | RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
-    spec_restrict_map_group_correct env left g1 g1' s1;
-    spec_restrict_map_group_correct env (left `Spec.t_choice` fp1) g2 g2' s2;
-    let Some fp2' = spec_map_group_footprint env g2' in
-    MapSpec.restrict_map_group_concat
-      (map_group_sem env g1)
-      fp1
-      (map_group_sem env g1')
-      (map_group_sem env g2)
-      (map_group_sem env g2')
-      fp2'
-  | RMElemLiteral _ cut key value _ ->
-    MapSpec.restrict_map_group_match_item_for
-      cut
-      (eval_literal key)
-      (typ_sem env value)
-  | RMZeroOrMoreKeep left key value s_key s_value
-  | RMZeroOrMoreSkip left key value s_key s_value -> ()
-
-#pop-options
-
 
 (*
 
 match wf with
   | WfMConcat g1' s1 g2' s2
   | WfMChoice g1' s1 g2' s2 ->
-    spec_wf_map_group_incr env env' g1' s1;
-    spec_wf_map_group_incr env env' g2' s2
+    spec_wf_parse_map_group_incr env env' g1' s1;
+    spec_wf_parse_map_group_incr env env' g2' s2
   | WfMZeroOrOne g s ->
-    spec_wf_map_group_incr env env' g s
+    spec_wf_parse_map_group_incr env env' g s
   | WfMLiteral cut key value s ->
     spec_wf_typ_incr env env' value s
   | WfMZeroOrMore key value s_key s_value ->
