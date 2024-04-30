@@ -1253,23 +1253,6 @@ and spec_wf_parse_map_group_bounded
   | WfMChoice _ _ _ _
   -> ()
 
-
-(*
-
-match wf with
-  | WfMConcat g1' s1 g2' s2
-  | WfMChoice g1' s1 g2' s2 ->
-    spec_wf_parse_map_group_incr env env' g1' s1;
-    spec_wf_parse_map_group_incr env env' g2' s2
-  | WfMZeroOrOne g s ->
-    spec_wf_parse_map_group_incr env env' g s
-  | WfMLiteral cut key value s ->
-    spec_wf_typ_incr env env' value s
-  | WfMZeroOrMore key value s_key s_value ->
-    spec_wf_typ_incr env env' key s_key;
-    spec_wf_typ_incr env env' value s_value
-  | WfMDef _ -> ()
-
 [@@ sem_attr]
 let ast_env_elem0 (s: name_env_elem) : Type0 =
   match s with
@@ -1301,15 +1284,47 @@ let ast_env_elem_prop_included (e1 e2: sem_env) (s: name_env_elem) (phi: sem_env
 let ast_env_elem (e_sem_env: sem_env) (s: name_env_elem) (phi: sem_env_elem s) =
   (x: ast_env_elem0 s { ast_env_elem_prop e_sem_env s phi x })
 
+[@@ sem_attr]
+let wf_ast_env_elem0 (s: name_env_elem) (x: ast_env_elem0 s) : Type0 =
+  match s with
+  | NType -> ast0_wf_typ x
+  | NArrayGroup -> ast0_wf_array_group x
+  | NMapGroup -> squash False
+
+let wf_ast_env_elem_prop (e_sem_env: sem_env) (s: name_env_elem) (x: ast_env_elem0 s) (y: option (wf_ast_env_elem0 s x)) : Tot prop =
+  match y with
+  | None -> True
+  | Some y ->
+    match s with
+    | NType -> spec_wf_typ e_sem_env x y
+    | NArrayGroup -> spec_wf_array_group e_sem_env x y
+    | NMapGroup -> False
+
+let wf_ast_env_elem_prop_included (e1 e2: sem_env) (s: name_env_elem) (x: ast_env_elem0 s) (y: option (wf_ast_env_elem0 s x)) : Lemma
+  (requires sem_env_included e1 e2 /\
+    wf_ast_env_elem_prop e1 s x y
+  )
+  (ensures wf_ast_env_elem_prop e2 s x y)
+  [SMTPat (ast_env_elem_prop e1 s x y); SMTPat (ast_env_elem_prop e2 s x y)]
+= ()
+
+[@@ sem_attr]
+let wf_ast_env_elem (e_sem_env: sem_env) (s: name_env_elem) (x: ast_env_elem0 s) =
+  (y: option (wf_ast_env_elem0 s x) { wf_ast_env_elem_prop e_sem_env s x y })
+
 [@@ bounded_attr; sem_attr]
 noeq
 type ast_env = {
   e_sem_env: sem_env;
   e_env: (i: name e_sem_env.se_bound) -> (ast_env_elem e_sem_env (Some?.v (e_sem_env.se_bound i)) (e_sem_env.se_env i));
+  e_wf: (i: name e_sem_env.se_bound) -> wf_ast_env_elem e_sem_env (Some?.v (e_sem_env.se_bound i)) (e_env i);
 }
 
 [@@"opaque_to_smt"] irreducible // because of false_elim
 let e_env_empty (i: name empty_name_env) : Tot (ast_env_elem empty_sem_env (Some?.v (empty_name_env i)) (empty_sem_env.se_env i)) = false_elim ()
+
+[@@"opaque_to_smt"] irreducible // because of false_elim
+let e_wf_empty (i: name empty_name_env) : Tot (wf_ast_env_elem empty_sem_env (Some?.v (empty_name_env i)) (e_env_empty i)) = false_elim ()
 
 [@@"opaque_to_smt"; bounded_attr; sem_attr]
 let empty_ast_env : (e: ast_env {
@@ -1317,13 +1332,15 @@ let empty_ast_env : (e: ast_env {
 }) = {
   e_sem_env = empty_sem_env;
   e_env = e_env_empty;
+  e_wf = e_wf_empty;
 }
 
 let ast_env_included
   (e1 e2: ast_env)
 : Tot prop
 = sem_env_included e1.e_sem_env e2.e_sem_env /\
-  (forall (i: name e1.e_sem_env.se_bound) . e2.e_env i == e1.e_env i)
+  (forall (i: name e1.e_sem_env.se_bound) . e2.e_env i == e1.e_env i) /\
+  (forall (i: name e1.e_sem_env.se_bound) . Some? (e1.e_wf i) ==> (e1.e_wf i == e2.e_wf i))
 
 let ast_env_included_trans (s1 s2 s3: ast_env) : Lemma
   (requires (ast_env_included s1 s2 /\ ast_env_included s2 s3))
@@ -1355,7 +1372,37 @@ let ast_env_extend_gen
       then x
       else e.e_env i
     );
+    e_wf = (fun (i: name se'.se_bound) ->
+      if i = new_name
+      then None
+      else e.e_wf i
+    );
   }
+
+[@@"opaque_to_smt"; bounded_attr; sem_attr]
+let ast_env_set_wf
+  (e: ast_env)
+  (new_name: name e.e_sem_env.se_bound)
+  (wf: wf_ast_env_elem e.e_sem_env (Some?.v (e.e_sem_env.se_bound new_name)) (e.e_env new_name))
+: Pure ast_env
+    (requires
+      None? (e.e_wf new_name)
+    )
+    (ensures fun e' ->
+      e'.e_sem_env == e.e_sem_env /\
+      ast_env_included e e' /\
+      e'.e_wf new_name == wf
+    )
+=
+  {
+    e with
+    e_wf = (fun (i: name e.e_sem_env.se_bound) ->
+      if i = new_name
+      then wf
+      else e.e_wf i
+    );
+  }
+
 
 
 
