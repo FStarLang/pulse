@@ -62,6 +62,17 @@ let rec t_tag_rec
   Cbor.Tagged?.tag x = tag &&
   phi x (t_tag_rec tag phi) (Cbor.Tagged?.v x)
 
+let spec_tag
+  (tag: U64.t)
+  (#t: typ)
+  (#target: Type)
+  (#target_prop: target -> prop)
+  (p: spec t target target_prop)
+: Tot (spec (t_tag tag t) target target_prop)
+= {
+  parser = (function Cbor.Tagged _ v -> p.parser v);
+  serializer = (fun x -> Cbor.Tagged tag (p.serializer x));
+}
 
 // Section 3.8.1: Control .size
 

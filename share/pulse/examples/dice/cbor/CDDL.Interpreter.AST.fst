@@ -85,6 +85,7 @@ and typ =
 | TDef of string
 | TArray of group NArrayGroup
 | TMap of group NMapGroup
+| TTagged: (tag: U64.t) -> (body: typ) -> typ
 | TChoice: typ -> typ -> typ
 
 type name_env = (string -> Tot (option name_env_elem))
@@ -147,6 +148,7 @@ and typ_bounded
   | TDef s -> env s = Some NType
   | TArray g -> group_bounded NArrayGroup env g
   | TMap g -> group_bounded NMapGroup env g
+  | TTagged _ t' -> typ_bounded env t'
   | TChoice t1 t2 ->
     typ_bounded env t1 &&
     typ_bounded env t2
@@ -202,6 +204,7 @@ and typ_bounded_incr
   | TElem _
   | TDef _
   -> ()
+  | TTagged _ t' -> typ_bounded_incr env env' t'
   | TArray g -> group_bounded_incr NArrayGroup env env' g
   | TMap g -> group_bounded_incr NMapGroup env env' g
   | TChoice t1 t2 -> typ_bounded_incr env env' t1; typ_bounded_incr env env' t2
@@ -386,6 +389,7 @@ and typ_sem
 = match x with
   | TElem t -> elem_typ_sem t
   | TDef s -> env.se_env s
+  | TTagged tg t' -> Spec.t_tag tg (typ_sem env t')
   | TArray g ->
     Spec.t_array3 (array_group_sem env g)
   | TMap g ->
@@ -479,6 +483,7 @@ and typ_sem_incr
   | TElem _
   | TDef _
   -> ()
+  | TTagged _ t' -> typ_sem_incr env env' t'
   | TArray g ->
     array_group_sem_incr env env' g
   | TMap g ->
@@ -487,6 +492,9 @@ and typ_sem_incr
     typ_sem_incr env env' t1;
     typ_sem_incr env env' t2
 
+#push-options "--z3rlimit 32"
+
+#restart-solver
 let rec spec_map_group_footprint
   (env: sem_env)
   (g: group NMapGroup)
@@ -513,6 +521,8 @@ let rec spec_map_group_footprint
   | GMapElem _ _ _ _
   | GZeroOrMore _
   | GOneOrMore _ -> None
+
+#pop-options
 
 let rec spec_map_group_footprint_incr
   (env env': sem_env)
@@ -557,6 +567,11 @@ type ast0_wf_typ
   (g2: group NMapGroup) ->
   (s2: ast0_wf_parse_map_group g2) ->
   ast0_wf_typ (TMap g)
+| WfTTagged:
+  (tag: U64.t) ->
+  (t': typ) ->
+  (s': ast0_wf_typ t') ->
+  ast0_wf_typ (TTagged tag t')
 | WfTChoice:
   (t1: typ) ->
   (t2: typ) ->
@@ -696,6 +711,8 @@ let rec bounded_wf_typ
 = match wf with
 | WfTArray g s ->
   bounded_wf_array_group env g s
+| WfTTagged _ t' s' ->
+  bounded_wf_typ env t' s'
 | WfTMap g1 ty1 ty2 s1 g2 s2 ->
     group_bounded NMapGroup env g1 /\
     group_bounded NMapGroup env g2 /\
@@ -809,6 +826,8 @@ let rec bounded_wf_typ_incr
 = match wf with
   | WfTArray g s ->
     bounded_wf_array_group_incr env env' g s
+  | WfTTagged _ t' s' ->
+    bounded_wf_typ_incr env env' t' s'
   | WfTMap g1 ty1 ty2 s1 g2 s2 ->
     bounded_wf_validate_map_group_incr env env' Spec.t_always_false Spec.t_always_false g1 ty1 ty2 s1;
     bounded_wf_parse_map_group_incr env env' g2 s2
@@ -927,6 +946,8 @@ let rec bounded_wf_typ_bounded
 = match wf with
   | WfTArray g s ->
     bounded_wf_array_group_bounded env g s
+  | WfTTagged _ t' s' ->
+    bounded_wf_typ_bounded env t' s'
   | WfTMap g1 ty1 ty2 s1 g2 s2 ->
     bounded_wf_validate_map_group_bounded env Spec.t_always_false Spec.t_always_false g1 ty1 ty2 s1;
     bounded_wf_parse_map_group_bounded env g2 s2
@@ -1023,6 +1044,8 @@ let rec spec_wf_typ
 = bounded_wf_typ env.se_bound t wf /\ begin match wf with
 | WfTArray g s ->
   spec_wf_array_group env g s
+| WfTTagged _ t' s' ->
+  spec_wf_typ env t' s'
 | WfTMap g1 ty1 ty2 s1 g2 s2 ->
     MapSpec.restrict_map_group (map_group_sem env g1) (map_group_sem env g2) /\
     spec_wf_validate_map_group env Spec.t_always_false Spec.t_always_false g1 ty1 ty2 s1 /\
@@ -1144,6 +1167,8 @@ let rec spec_wf_typ_incr
 = match wf with
   | WfTArray g s ->
     spec_wf_array_group_incr env env' g s
+  | WfTTagged _ t' s' ->
+    spec_wf_typ_incr env env' t' s'
   | WfTMap g1 ty1 ty2 s1 g2 s2 ->
     spec_wf_validate_map_group_incr env env' Spec.t_always_false Spec.t_always_false g1 ty1 ty2 s1;
     spec_wf_parse_map_group_incr env env' g2 s2
@@ -1774,6 +1799,7 @@ let rec target_type_of_wf_typ
   (decreases wf)
 = match wf with
   | WfTArray _ s -> target_type_of_wf_array_group s
+  | WfTTagged _ _ s -> target_type_of_wf_typ s
   | WfTMap _ _ _ _ _ s -> target_type_of_wf_map_group s
   | WfTChoice _ _ s1 s2 -> TTUnion (target_type_of_wf_typ s1) (target_type_of_wf_typ s2)
   | WfTElem e -> target_type_of_elem_typ e
@@ -1827,6 +1853,7 @@ let rec target_type_of_wf_typ_bounded
   [SMTPat (target_type_bounded env (target_type_of_wf_typ wf))]
 = match wf with
   | WfTArray _ s -> target_type_of_wf_array_group_bounded env s
+  | WfTTagged _ _ s -> target_type_of_wf_typ_bounded env s
   | WfTMap _ _ _ _ _ s -> target_type_of_wf_map_group_bounded env s
   | WfTChoice _ _ s1 s2 ->
     target_type_of_wf_typ_bounded env s1;
@@ -2165,6 +2192,8 @@ and wf_typ_serializable
     wf_array_group_serializable env s z /\
     wf_array_group_size env.wft_env s z < pow2 64
     end
+  | WfTTagged _ _ s ->
+    wf_typ_serializable env s
   | WfTMap _ _ _ _ g s ->
     begin fun z ->
     wf_map_group_serializable env s z /\
@@ -2318,6 +2347,8 @@ and wf_typ_serializable_incr
   | WfTArray _ s ->
     wf_array_group_serializable_incr env env' s z;
     wf_array_group_size_incr env.wft_env env'.wft_env s z // FIXME: WHY WHY WHY does the pattern not trigger?
+  | WfTTagged _ _ s ->
+    wf_typ_serializable_incr env env' s z
   | WfTMap _ _ _ _ g s ->
     wf_map_group_serializable_incr env env' s z;
     wf_map_group_size_incr env.wft_env env'.wft_env s z
@@ -2460,6 +2491,8 @@ let rec spec_of_wf_typ
 = match wf with
   | WfTArray g s ->
     Spec.spec_array_group (spec_of_wf_array_group env s) _
+  | WfTTagged tag t' s ->
+    Spec.spec_tag tag (spec_of_wf_typ env s)
   | WfTMap g1 _ _ _ _ s2 ->
     MapSpec.spec_map_group (map_group_sem tp_sem g1) (spec_of_wf_map_group env s2) _
   | WfTChoice _ _ s1 s2 ->
