@@ -182,9 +182,13 @@ val apply_map_group_det_end (l: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
   )
   [SMTPat (apply_map_group_det map_group_end l)]
 
-val apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
+let map_group_is_det (m: map_group) : prop =
+  forall l . ~ (MapGroupNonDet? (apply_map_group_det m l))
+
+let det_map_group = (m: map_group { map_group_is_det m })
+
+val apply_map_group_det_map_group_equiv (m1: det_map_group) (m2: map_group) : Lemma
   (requires
-    (forall l . ~ (MapGroupNonDet? (apply_map_group_det m1 l))) /\
     (forall l . apply_map_group_det m1 l == apply_map_group_det m2 l)
   )
   (ensures m1 == m2)
@@ -223,13 +227,9 @@ val apply_map_group_det_concat (m1 m2: map_group) (l: ghost_map Cbor.raw_data_it
   | _ -> True)
   [SMTPat (apply_map_group_det (map_group_concat m1 m2) l)]
 
-let map_group_concat_det (m1 m2: map_group) : Lemma
-    (requires (
-      (forall l . ~ (MapGroupNonDet? (apply_map_group_det m1 l))) /\
-      (forall l . ~ (MapGroupNonDet? (apply_map_group_det m2 l)))
-    ))
+let map_group_concat_det (m1 m2: det_map_group) : Lemma
     (ensures (
-      forall l . ~ (MapGroupNonDet? (apply_map_group_det (m1 `map_group_concat` m2) l))
+      map_group_is_det (m1 `map_group_concat` m2)
     ))
 = ()
 

@@ -1061,12 +1061,8 @@ let apply_map_group_det_nop (l: cbor_map) : Lemma
 
 let apply_map_group_det_end l = ()
 
-let apply_map_group_det_map_group_equiv (m1 m2: map_group) : Lemma
-  (requires
-    (forall l . ~ (MapGroupNonDet? (apply_map_group_det m1 l))) /\
-    (forall l . apply_map_group_det m1 l == apply_map_group_det m2 l)
-  )
-  (ensures m1 == m2)
+let apply_map_group_det_map_group_equiv
+  m1 m2
 = map_group_equiv_intro m1 m2
     (fun l -> ())
     (fun l l' ->
@@ -1477,10 +1473,9 @@ let apply_map_group_det_ext
 
 #restart-solver
 let rec map_group_zero_or_more_det
-  (g: map_group)
+  (g: det_map_group)
   (l: cbor_map)
 : Lemma
-  (requires (forall l . ~ (MapGroupNonDet? (apply_map_group_det g l))))
   (ensures (~ (MapGroupNonDet? (apply_map_group_det (map_group_zero_or_more g) l))))
   (decreases (ghost_map_length l))
 = map_group_zero_or_more_eq g l;

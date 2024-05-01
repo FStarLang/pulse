@@ -4,8 +4,6 @@ module Cbor = CBOR.Spec
 module U8 = FStar.UInt8
 module U64 = FStar.UInt64
 
-let det_map_group = (m: map_group { forall l . ~ (MapGroupNonDet? (apply_map_group_det m l)) })
-
 let ghost_map_disjoint_from_footprint
   (m: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
   (f: typ)
@@ -766,6 +764,20 @@ let map_group_serializer_spec
     p y == x
   })
 
+[@@erasable]
+noeq
+type mg_spec
+  (source: det_map_group)
+  (source_fp: typ)
+  (#target: Type0)
+  (target_size: target -> GTot nat)
+  (target_prop: target -> prop)
+: Type0
+= {
+  mg_parser: map_group_parser_spec source source_fp target_size target_prop;
+  mg_serializer: map_group_serializer_spec mg_parser;
+}
+
 let rec list_forall_memP_filter
   (#t: Type)
   (f: t -> bool)
@@ -866,6 +878,26 @@ let serializer_spec_map_group
   assert (parser_spec_map_group source0 p target_prop' res == z);
   res
 
+let spec_map_group
+  (source0: det_map_group)
+  (#source: det_map_group)
+  (#source_fp: typ)
+  (#target: Type0)
+  (#target_size: target -> GTot nat)
+  (#target_prop: target -> prop)
+  (p: mg_spec source source_fp target_size target_prop {
+    restrict_map_group source0 source /\
+    map_group_footprint source source_fp
+  })
+  (target_prop' : target -> prop {
+    forall x . target_prop' x <==> (target_prop x /\ target_size x < pow2 64)
+  })
+: Tot (spec (t_map source0) target target_prop')
+= {
+  parser = parser_spec_map_group source0 p.mg_parser target_prop';
+  serializer = serializer_spec_map_group source0 p.mg_serializer target_prop';
+}
+
 let map_group_parser_spec_bij
   (#source: det_map_group)
   (#source_fp: typ)
@@ -892,7 +924,7 @@ let map_group_serializer_spec_bij
   (#f: map_group_parser_spec source source_fp target_size1 target_prop1)
   (s: map_group_serializer_spec f)
   (#target2: Type0)
-  (target_size2: target2 -> nat)
+  (target_size2: target2 -> GTot nat)
   (target_prop2: target2 -> prop)
   (bij: bijection target1 target2 {
     (forall x2 . target_size2 x2 == target_size1 (bij.bij_to_from x2)) /\
@@ -900,6 +932,26 @@ let map_group_serializer_spec_bij
   })
 : Tot (map_group_serializer_spec (map_group_parser_spec_bij f target_size2 target_prop2 bij))
 = fun x -> s (bij.bij_to_from x)
+
+let mg_spec_bij
+  (#source: det_map_group)
+  (#source_fp: typ)
+  (#target1: Type0)
+  (#target_size1: target1 -> GTot nat)
+  (#target_prop1: target1 -> prop)
+  (f: mg_spec source source_fp target_size1 target_prop1)
+  (#target2: Type0)
+  (target_size2: target2 -> GTot nat)
+  (target_prop2: target2 -> prop)
+  (bij: bijection target1 target2 {
+    (forall x2 . target_size2 x2 == target_size1 (bij.bij_to_from x2)) /\
+    (forall x2 . target_prop2 x2 <==> target_prop1 (bij.bij_to_from x2))
+  })
+: Tot (mg_spec source source_fp target_size2 target_prop2)
+= {
+  mg_parser = map_group_parser_spec_bij f.mg_parser target_size2 target_prop2 bij;
+  mg_serializer = map_group_serializer_spec_bij f.mg_serializer target_size2 target_prop2 bij;
+}
 
 let map_group_parser_spec_match_item_for
   (cut: bool)
@@ -919,8 +971,8 @@ let map_group_parser_spec_match_item_for
   p v
 
 let map_group_serializer_spec_match_item_for
-  (#cut: bool)
-  (#k: Cbor.raw_data_item)
+  (cut: bool)
+  (k: Cbor.raw_data_item)
   (#ty: typ)
   (#target: Type)
   (#target_prop: target -> prop)
@@ -939,6 +991,22 @@ let map_group_serializer_spec_match_item_for
   let MapGroupDet _ rem = apply_map_group_det (map_group_match_item_for cut k ty) mres in
   ghost_map_equiv rem ghost_map_empty;
   res
+
+let mg_spec_match_item_for
+  (cut: bool)
+  (k: Cbor.raw_data_item)
+  (#ty: typ)
+  (#target: Type)
+  (#target_prop: target -> prop)
+  (p: spec ty target target_prop)
+  (target_size: target -> GTot nat {
+    forall x . target_size x == 1
+  })
+: Tot (mg_spec (map_group_match_item_for cut k ty) (t_literal k) target_size target_prop)
+= {
+  mg_parser = map_group_parser_spec_match_item_for cut k p.parser target_size;
+  mg_serializer = map_group_serializer_spec_match_item_for cut k p.serializer target_size;
+}
 
 val map_group_parser_spec_concat
   (#source1: det_map_group)
@@ -1068,6 +1136,34 @@ let map_group_serializer_spec_concat
     assert (map_group_parser_spec_concat p1 p2 target_size target_prop res == x);
     res
 
+let mg_spec_concat
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> GTot nat)
+  (#target_prop1: target1 -> prop)
+  (p1: mg_spec source1 source_fp1 target_size1 target_prop1)
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> GTot nat)
+  (#target_prop2: target2 -> prop)
+  (p2: mg_spec source2 source_fp2 target_size2 target_prop2)
+  (target_size: (target1 & target2) -> GTot nat {
+    map_group_footprint source1 source_fp1 /\
+    map_group_footprint source2 source_fp2 /\
+    typ_disjoint source_fp1 source_fp2 /\
+    (forall x . target_size x == target_size1 (fst x) + target_size2 (snd x))
+  })
+  (target_prop: (target1 & target2) -> prop {
+    forall x . target_prop x <==> (target_prop1 (fst x) /\ target_prop2 (snd x))
+  })
+: Tot (mg_spec (map_group_concat source1 source2) (source_fp1 `t_choice` source_fp2) target_size target_prop)
+= {
+  mg_parser = map_group_parser_spec_concat p1.mg_parser p2.mg_parser target_size target_prop;
+  mg_serializer = map_group_serializer_spec_concat p1.mg_serializer p2.mg_serializer target_size target_prop;
+}
+
 val map_group_parser_spec_choice
   (#source1: det_map_group)
   (#source_fp1: typ)
@@ -1173,7 +1269,7 @@ let map_group_serializer_spec_choice
     map_group_footprint source2 source_fp2 /\
     map_group_choice_compatible source1 source2
   })
-  (target_size: (target1 `either` target2) -> nat {
+  (target_size: (target1 `either` target2) -> GTot nat {
     forall x . target_size x == begin match x with
     | Inl y -> target_size1 y
     | Inr y -> target_size2 y
@@ -1205,6 +1301,42 @@ let map_group_serializer_spec_choice
         assert (map_group_parser_spec_choice p1 p2 target_size target_prop res == x)
     in
     res
+
+let mg_spec_choice
+  (#source1: det_map_group)
+  (#source_fp1: typ)
+  (#target1: Type)
+  (#target_size1: target1 -> GTot nat)
+  (#target_prop1: target1 -> prop)
+  (p1: mg_spec source1 source_fp1 target_size1 target_prop1 {
+    map_group_footprint source1 source_fp1
+  })
+  (#source2: det_map_group)
+  (#source_fp2: typ)
+  (#target2: Type)
+  (#target_size2: target2 -> GTot nat)
+  (#target_prop2: target2 -> prop)
+  (p2: mg_spec source2 source_fp2 target_size2 target_prop2 {
+    map_group_footprint source2 source_fp2 /\
+    map_group_choice_compatible source1 source2
+  })
+  (target_size: (target1 `either` target2) -> GTot nat {
+    forall x . target_size x == begin match x with
+    | Inl y -> target_size1 y
+    | Inr y -> target_size2 y
+    end
+  })
+  (target_prop: (target1 `either` target2) -> prop {
+    forall x . target_prop x <==> begin match x with
+    | Inl x1 -> target_prop1 x1
+    | Inr x2 -> target_prop2 x2
+    end
+  })  
+: Tot (mg_spec (map_group_choice source1 source2) (source_fp1 `t_choice` source_fp2) target_size target_prop)
+= {
+  mg_parser = map_group_parser_spec_choice p1.mg_parser p2.mg_parser target_size target_prop;
+  mg_serializer = map_group_serializer_spec_choice p1.mg_serializer p2.mg_serializer target_size target_prop;
+}
 
 (*
 let rec map_group_parser_spec_zero_or_more'

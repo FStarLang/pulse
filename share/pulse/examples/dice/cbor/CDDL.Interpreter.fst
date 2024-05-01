@@ -2771,6 +2771,8 @@ module U8 = FStar.UInt8
 let string64 = (s: Seq.seq U8.t { Seq.length s < pow2 64 })
 module U64 = FStar.UInt64
 
+let nelist (a: Type) : Type0 = (l: list a { Cons? l })
+
 let rec target_type_sem
   (bound: name_env)
   (env: target_spec_env bound)
@@ -2783,7 +2785,7 @@ let rec target_type_sem
   | TTPair t1 t2 -> target_type_sem bound env t1 & target_type_sem bound env t2
   | TTUnion t1 t2 -> target_type_sem bound env t1 `either` target_type_sem bound env t2
   | TTArray a -> list (target_type_sem bound env a)
-  | TTNonemptyArray a -> Spec.nelist (target_type_sem bound env a)
+  | TTNonemptyArray a -> nelist (target_type_sem bound env a)
   | TTOption a -> option (target_type_sem bound env a)
   | TTSimple -> CBOR.Spec.simple_value
   | TTUInt64 -> U64.t

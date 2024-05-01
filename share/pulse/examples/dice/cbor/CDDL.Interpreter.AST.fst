@@ -1646,7 +1646,6 @@ type target_type =
 | TTPair: target_type -> target_type -> target_type
 | TTUnion: target_type -> target_type -> target_type
 | TTArray of target_type
-| TTNonemptyArray of target_type
 | TTTable: target_type -> target_type -> target_type
 
 let rec target_type_bounded
@@ -1660,7 +1659,6 @@ let rec target_type_bounded
   | TTUnion t1 t2 ->
     target_type_bounded bound t1 &&
     target_type_bounded bound t2
-  | TTNonemptyArray a
   | TTArray a
   | TTOption a ->
     target_type_bounded bound a
@@ -1691,7 +1689,6 @@ let rec target_type_bounded_incr
   | TTUnion t1 t2 ->
     target_type_bounded_incr bound bound' t1;
     target_type_bounded_incr bound bound' t2
-  | TTNonemptyArray a
   | TTArray a
   | TTOption a ->
     target_type_bounded_incr bound bound' a
@@ -1743,7 +1740,6 @@ let rec target_type_sem
   | TTPair t1 t2 -> target_type_sem env t1 & target_type_sem env t2
   | TTUnion t1 t2 -> target_type_sem env t1 `either` target_type_sem env t2
   | TTArray a -> list (target_type_sem env a)
-  | TTNonemptyArray a -> Spec.nelist (target_type_sem env a)
   | TTTable t1 t2 -> table (target_type_sem env t1) (target_type_sem env t2)
   | TTOption a -> option (target_type_sem env a)
   | TTSimple -> CBOR.Spec.simple_value
@@ -1772,7 +1768,6 @@ let rec target_type_sem_incr
   | TTUnion t1 t2 ->
     target_type_sem_incr env env' t1;
     target_type_sem_incr env env' t2
-  | TTNonemptyArray a
   | TTArray a
   | TTOption a ->
     target_type_sem_incr env env' a
@@ -1877,10 +1872,7 @@ and target_type_of_wf_array_group
   | WfAZeroOrOne _ s -> TTOption (target_type_of_wf_array_group s)
   | WfAZeroOrOneOrMore _ s g' ->
     let t' = target_type_of_wf_array_group s in
-    begin match g' with
-    | GZeroOrMore _ -> TTArray t'
-    | GOneOrMore _ -> TTNonemptyArray t'
-    end
+    TTArray t'
   | WfAConcat _ _ s1 s2 -> ttpair (target_type_of_wf_array_group s1) (target_type_of_wf_array_group s2)
   | WfAChoice _ _ s1 s2 -> TTUnion (target_type_of_wf_array_group s1) (target_type_of_wf_array_group s2)
   | WfADef n -> TTDef n
@@ -2029,9 +2021,7 @@ let rec wf_array_group_size
     end
   | WfAZeroOrOneOrMore _ s' g' ->
     let z' : list (target_type_sem env.tss_env (target_type_of_wf_array_group s')) =
-      if GZeroOrMore? g'
-      then coerce_eq #_ #(list (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) () z
-      else coerce_eq #_ #(Spec.nelist (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) () z
+      coerce_eq #_ #(list (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) () z
     in
     list_sum (wf_array_group_size env s') z'
   | WfADef n ->
@@ -2100,14 +2090,10 @@ let rec wf_array_group_size_incr
   | WfAZeroOrOneOrMore g s' g' ->
     let z0 = z in
     let z' : list (target_type_sem env'.tss_env (target_type_of_wf_array_group s')) =
-      if GZeroOrMore? g'
-      then coerce_eq #_ #(list (target_type_sem env'.tss_env (target_type_of_wf_array_group s'))) () z
-      else coerce_eq #_ #(Spec.nelist (target_type_sem env'.tss_env (target_type_of_wf_array_group s'))) () z
+      coerce_eq #_ #(list (target_type_sem env'.tss_env (target_type_of_wf_array_group s'))) () z
     in
     let z : list (target_type_sem env.tss_env (target_type_of_wf_array_group s')) =
-      if GZeroOrMore? g'
-      then coerce_eq #_ #(list (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) () z
-      else coerce_eq #_ #(Spec.nelist (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) () z
+      coerce_eq #_ #(list (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) () z
     in
     Classical.forall_intro (Classical.move_requires (wf_array_group_size_incr env env' s'));
     list_sum_ext (wf_array_group_size env s') (wf_array_group_size env' s') z z';
@@ -2214,10 +2200,9 @@ let rec wf_array_group_serializable
     end
   | WfAZeroOrOneOrMore _ s' g' ->
     let z' : list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s')) =
-      if GZeroOrMore? g'
-      then coerce_eq #_ #(list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) () z
-      else coerce_eq #_ #(Spec.nelist (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) () z
+      coerce_eq #_ #(list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) () z
     in
+    (GZeroOrMore? g' ==> Cons? z') /\
     list_forallP (wf_array_group_serializable env s') z'
   | WfADef n ->
     env.wft_serializable n z
@@ -2339,14 +2324,10 @@ let rec wf_array_group_serializable_incr
   | WfAZeroOrOneOrMore _ s' g' ->
     let z0 = z in
     let z : list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s')) =
-      if GZeroOrMore? g'
-      then coerce_eq #_ #(list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) () z0
-      else coerce_eq #_ #(Spec.nelist (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) () z0
+      coerce_eq #_ #(list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) () z0
     in
     let z' : list (target_type_sem env'.wft_env.tss_env (target_type_of_wf_array_group s')) =
-      if GZeroOrMore? g'
-      then coerce_eq #_ #(list (target_type_sem env'.wft_env.tss_env (target_type_of_wf_array_group s'))) () z0
-      else coerce_eq #_ #(Spec.nelist (target_type_sem env'.wft_env.tss_env (target_type_of_wf_array_group s'))) () z0
+      coerce_eq #_ #(list (target_type_sem env'.wft_env.tss_env (target_type_of_wf_array_group s'))) () z0
     in
     Classical.forall_intro (Classical.move_requires (wf_array_group_serializable_incr env env' s'));
     list_forallP_ext (wf_array_group_serializable env s') (wf_array_group_serializable env' s') z z'
