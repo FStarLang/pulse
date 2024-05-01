@@ -778,6 +778,25 @@ type mg_spec
   mg_serializer: map_group_serializer_spec mg_parser;
 }
 
+let mg_spec_coerce_target_prop
+  (#source: det_map_group)
+  (#source_fp: typ)
+  (#target: Type0)
+  (#target_size: target -> GTot nat)
+  (#target_prop: target -> prop)
+  (p: mg_spec source source_fp target_size target_prop)
+  (target_size': target -> GTot nat {
+    forall x . target_size' x == target_size x
+  })
+  (target_prop': target -> prop {
+    forall x . target_prop' x <==> target_prop x
+  })
+: mg_spec source source_fp target_size' target_prop'
+= {
+  mg_parser = (p.mg_parser <: map_group_parser_spec source source_fp target_size' target_prop');
+  mg_serializer = p.mg_serializer;
+}
+
 let rec list_forall_memP_filter
   (#t: Type)
   (f: t -> bool)

@@ -88,6 +88,18 @@ type spec (source:typ) (target: Type0) (target_prop: target -> prop) = {
   serializer: serializer_spec parser;
 }
 
+let spec_coerce_target_prop
+  (#source:typ) (#target: Type0) (#target_prop: target -> prop)
+  (p: spec source target target_prop)
+  (target_prop' : (target -> prop) {
+    forall x . target_prop' x <==> target_prop x
+  })
+: Tot (spec source target target_prop')
+= {
+  parser = (p.parser <: parser_spec source target target_prop');
+  serializer = p.serializer;
+}
+
 let parse_spec_bij (#source:typ) (#target1 #target2: Type0) (#target1_prop: target1 -> prop) (p: parser_spec source target1 target1_prop) (target2_prop: target2 -> prop) (bij: bijection target1 target2 {
   forall x . target2_prop x <==> target1_prop (bij.bij_to_from x)
 }) : parser_spec source target2 target2_prop =

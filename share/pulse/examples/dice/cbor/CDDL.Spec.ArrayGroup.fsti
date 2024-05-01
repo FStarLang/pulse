@@ -545,6 +545,24 @@ type ag_spec
   ag_serializer: array_group_serializer_spec ag_parser;
 }
 
+let ag_spec_coerce_target_prop
+  (#source: array_group3 None)
+  (#target: Type0)
+  (#target_size: target -> GTot nat)
+  (#target_prop: target -> prop)
+  (p: ag_spec source target_size target_prop)
+  (target_size': target -> GTot nat {
+    forall x . target_size' x == target_size x
+  })
+  (target_prop': target -> prop {
+    forall x . target_prop' x <==> target_prop x
+  })
+: ag_spec source target_size' target_prop'
+= {
+  ag_parser = (p.ag_parser <: array_group_parser_spec source target_size' target_prop');
+  ag_serializer = p.ag_serializer;
+}
+
 let parser_spec_array_group
   (#source: array_group3 None)
   (#target: Type0)
@@ -642,7 +660,7 @@ let array_group_parser_spec_item
   (#target: Type)
   (#target_prop: target -> GTot prop)
   (p: parser_spec ty target target_prop)
-  (target_size: target -> nat {
+  (target_size: target -> GTot nat {
     forall x . target_size x == 1
   })
 : Tot (array_group_parser_spec (array_group3_item ty) target_size target_prop)
@@ -654,7 +672,7 @@ let array_group_serializer_spec_item
   (#target_prop: target -> GTot prop)
   (#p: parser_spec ty target target_prop)
   (s: serializer_spec p)
-  (target_size: target -> nat {
+  (target_size: target -> GTot nat {
     forall x . target_size x == 1
   })
 : Tot (array_group_serializer_spec (array_group_parser_spec_item p target_size))
@@ -665,7 +683,7 @@ let ag_spec_item
   (#target: Type)
   (#target_prop: target -> GTot prop)
   (p: spec ty target target_prop)
-  (target_size: target -> nat {
+  (target_size: target -> GTot nat {
     forall x . target_size x == 1
   })
 : Tot (ag_spec (array_group3_item ty) target_size target_prop)

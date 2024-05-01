@@ -1284,7 +1284,7 @@ let map_group_filter_filter
   apply_map_group_det_map_group_equiv'
     (map_group_filter p1 `map_group_concat` map_group_filter p2)
     (map_group_filter (andp_g p1 p2))
-    (fun l -> map_group_concat_det (map_group_filter p1) (map_group_filter p2))
+    (fun l -> map_group_is_det_concat (map_group_filter p1) (map_group_filter p2))
     (fun l -> 
       ghost_map_filter_filter p1 p2 l;
       ghost_map_filter_not_filter_not_strong p1 p2 l

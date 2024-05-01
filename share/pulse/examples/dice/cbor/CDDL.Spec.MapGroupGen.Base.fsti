@@ -227,10 +227,11 @@ val apply_map_group_det_concat (m1 m2: map_group) (l: ghost_map Cbor.raw_data_it
   | _ -> True)
   [SMTPat (apply_map_group_det (map_group_concat m1 m2) l)]
 
-let map_group_concat_det (m1 m2: det_map_group) : Lemma
+let map_group_is_det_concat (m1 m2: det_map_group) : Lemma
     (ensures (
       map_group_is_det (m1 `map_group_concat` m2)
     ))
+    [SMTPat (map_group_is_det (m1 `map_group_concat` m2))]
 = ()
 
 val apply_map_group_det_match_item_for
@@ -249,6 +250,14 @@ val apply_map_group_det_match_item_for
     else MapGroupFail
   ))
   [SMTPat (apply_map_group_det (map_group_match_item_for cut k ty) l)]
+
+let map_group_is_det_match_item_for
+  (cut: bool)
+  (k: Cbor.raw_data_item)
+  (ty: typ)
+: Lemma
+  (map_group_is_det (map_group_match_item_for cut k ty))
+= ()
 
 val map_group_filter
   (f: (Cbor.raw_data_item & Cbor.raw_data_item) -> GTot bool)
