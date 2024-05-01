@@ -1967,7 +1967,7 @@ type target_spec_size_env (b: name_env) = {
 
 let target_spec_size_env_included (#bound1: name_env) (t1: target_spec_size_env bound1) (#bound2: name_env) (t2: target_spec_size_env bound2) : Tot prop =
   target_spec_env_included t1.tss_env t2.tss_env /\
-  (forall (x: array_group_name bound1) (y: t1.tss_env x) . t1.tss_group_size x y == t2.tss_group_size x y)
+  (forall (x: array_group_name bound1) . t1.tss_group_size x == t2.tss_group_size x) // equality needed because it will be used as a type index for parser specifications
 
 let rec list_sum
   (#t: Type)
@@ -2166,7 +2166,7 @@ type wf_target_spec_env (b: name_env) = {
 
 let wf_target_spec_env_included (#bound1: name_env) (t1: wf_target_spec_env bound1) (#bound2: name_env) (t2: wf_target_spec_env bound2) : Tot prop =
   target_spec_size_env_included t1.wft_env t2.wft_env /\
-  (forall (x: name bound1) (y: t1.wft_env.tss_env x) . t1.wft_serializable x y <==> t2.wft_serializable x y)
+  (forall (x: name bound1) . t1.wft_serializable x == t2.wft_serializable x) // equality needed because it will be used as a type index for parser specifications
 
 let list_forallP (#t: Type) (f: t -> prop) (l: list t) : Tot prop =
   forall (x: t) . List.Tot.memP x l ==> f x
@@ -2485,6 +2485,33 @@ type target_ast_env = {
     wf_array_group_size ta_tgt.wft_env #(ta_ast.e_env n) (Some?.v (ta_ast.e_wf n)) x == ta_tgt.wft_env.tss_group_size n ((ta_bij n).bij_from_to x)
   );
 }
+
+noeq
+type spec_env (tp_sem: sem_env) (tp_tgt: wf_target_spec_env (tp_sem.se_bound)) = {
+  tp_spec_typ: (n: typ_name tp_sem.se_bound) -> Spec.spec (tp_sem.se_env n) (tp_tgt.wft_env.tss_env n) (tp_tgt.wft_serializable n);
+  tp_spec_array_group: (n: array_group_name tp_sem.se_bound) -> Spec.ag_spec (tp_sem.se_env n) (tp_tgt.wft_env.tss_group_size n) (tp_tgt.wft_serializable n);
+}
+
+let spec_env_included
+  (#tp_sem1: sem_env)
+  (#tp_tgt1: wf_target_spec_env (tp_sem1.se_bound))
+  (env1: spec_env tp_sem1 tp_tgt1)
+  (#tp_sem2: sem_env)
+  (#tp_tgt2: wf_target_spec_env (tp_sem2.se_bound))
+  (env2: spec_env tp_sem2 tp_tgt2)
+: Tot prop
+= sem_env_included tp_sem1 tp_sem2 /\
+  wf_target_spec_env_included tp_tgt1 tp_tgt2 /\
+  (forall (n: typ_name tp_sem1.se_bound) . env1.tp_spec_typ n == env2.tp_spec_typ n) /\
+  (forall (n: array_group_name tp_sem1.se_bound) . env1.tp_spec_array_group n == env2.tp_spec_array_group n)
+
+assume val spec_of_wf_typ
+  (#tp_sem: sem_env)
+  (#tp_tgt: wf_target_spec_env (tp_sem.se_bound))
+  (env: spec_env tp_sem tp_tgt)
+  (#t: typ)
+  (wf: ast0_wf_typ t { spec_wf_typ tp_sem t wf })
+: Tot (Spec.spec (typ_sem tp_sem t) (target_type_sem tp_tgt.wft_env.tss_env (target_type_of_wf_typ wf)) (wf_typ_serializable tp_tgt wf))
 
 
 (*
