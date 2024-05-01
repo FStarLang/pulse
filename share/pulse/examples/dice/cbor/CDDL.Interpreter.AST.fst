@@ -62,6 +62,8 @@ type elem_typ =
 | EBool
 | EByteString
 | ETextString
+| EAlwaysFalse
+| EAny
 
 type name_env_elem =
 | NType
@@ -345,6 +347,8 @@ let elem_typ_sem
   | EBool -> Spec.t_bool
   | EByteString -> Spec.bstr
   | ETextString -> Spec.tstr
+  | EAlwaysFalse -> Spec.t_always_false
+  | EAny -> Spec.any
 
 [@@ sem_attr ]
 let rec array_group_sem
@@ -1460,13 +1464,19 @@ let bounded_wf_ast_env_elem
   | NMapGroup -> bounded_wf_parse_map_group env x y
 
 noeq
-type target_type =
-| TTDef of string
+type target_elem_type =
 | TTUnit
 | TTSimple
 | TTUInt64
 | TTString
 | TTBool
+| TTAny
+| TTAlwaysFalse
+
+noeq
+type target_type =
+| TTElem of target_elem_type
+| TTDef of string
 | TTOption of target_type
 | TTPair: target_type -> target_type -> target_type
 | TTUnion: target_type -> target_type -> target_type
@@ -1487,11 +1497,7 @@ let rec target_type_bounded
   | TTArray a
   | TTOption a ->
     target_type_bounded bound a
-  | TTSimple
-  | TTUInt64
-  | TTUnit
-  | TTBool
-  | TTString -> true
+  | TTElem _ -> true
 
 let rec target_type_bounded_incr
   (bound bound': name_env)
@@ -1517,11 +1523,7 @@ let rec target_type_bounded_incr
   | TTArray a
   | TTOption a ->
     target_type_bounded_incr bound bound' a
-  | TTSimple
-  | TTUInt64
-  | TTUnit
-  | TTBool
-  | TTString
+  | TTElem _
   | TTDef _ -> ()
 
 type target_spec_env (bound: name_env) =
@@ -1553,6 +1555,18 @@ let table
   ([@@@strictly_positive] value: Type)
 = (list (key & value)) // { List.Tot.no_repeats_p (List.Tot.map fst l) }) // the refinement is NOT strictly positive, because of `List.Tot.memP`, so we need to use a serializability condition, see below
 
+let target_elem_type_sem
+  (t: target_elem_type)
+: Tot Type0
+= match t with
+  | TTSimple -> CBOR.Spec.simple_value
+  | TTUInt64 -> U64.t
+  | TTUnit -> unit
+  | TTBool -> bool
+  | TTString -> string64
+  | TTAny -> CBOR.Spec.raw_data_item
+  | TTAlwaysFalse -> squash False
+
 let rec target_type_sem
   (#bound: name_env)
   (env: target_spec_env bound)
@@ -1567,11 +1581,7 @@ let rec target_type_sem
   | TTArray a -> list (target_type_sem env a)
   | TTTable t1 t2 -> table (target_type_sem env t1) (target_type_sem env t2)
   | TTOption a -> option (target_type_sem env a)
-  | TTSimple -> CBOR.Spec.simple_value
-  | TTUInt64 -> U64.t
-  | TTUnit -> unit
-  | TTBool -> bool
-  | TTString -> string64
+  | TTElem e -> target_elem_type_sem e
 
 let rec target_type_sem_incr
   (#bound #bound': name_env)
@@ -1596,11 +1606,7 @@ let rec target_type_sem_incr
   | TTArray a
   | TTOption a ->
     target_type_sem_incr env env' a
-  | TTSimple
-  | TTUInt64
-  | TTUnit
-  | TTBool
-  | TTString
+  | TTElem _
   | TTDef _ -> ()
 
 noeq
@@ -1622,11 +1628,7 @@ let rec target_type_sem'
   | TTArray a -> list (target_type_sem' env a)
   | TTTable t1 t2 -> table (target_type_sem' env t1) (target_type_sem' env t2)
   | TTOption a -> option (target_type_sem' env a)
-  | TTSimple -> CBOR.Spec.simple_value
-  | TTUInt64 -> U64.t
-  | TTUnit -> unit
-  | TTBool -> bool
-  | TTString -> string64
+  | TTElem e -> target_elem_type_sem e
 
 let rec target_type_sem'_correct
   (#bound: name_env)
@@ -1642,11 +1644,7 @@ let rec target_type_sem'_correct
   | TTUnion t1 t2 -> target_type_sem'_correct env t1; target_type_sem'_correct env t2
   | TTOption a
   | TTArray a -> target_type_sem'_correct env a
-  | TTUInt64
-  | TTUnit
-  | TTBool
-  | TTString
-  | TTSimple
+  | TTElem _
   | TTDef _ -> ()
 
 let target_type_sem_rec_body
@@ -1692,13 +1690,13 @@ let pair (k: pair_kind) (t1 t2: Type0) : Pure Type0
   | _ -> t1 & t2
 
 let ttpair (t1 t2: target_type) : target_type = match t1, t2 with
-| TTUnit, _ -> t2
-| _, TTUnit -> t1
+| TTElem TTUnit, _ -> t2
+| _, TTElem TTUnit -> t1
 | _ -> TTPair t1 t2
 
 let ttpair_kind (t1 t2: target_type) : pair_kind = match t1, t2 with
-| TTUnit, _ -> PEraseLeft
-| _, TTUnit -> PEraseRight
+| TTElem TTUnit, _ -> PEraseLeft
+| _, TTElem TTUnit -> PEraseRight
 | _ -> PKeep
 
 #restart-solver
@@ -1756,8 +1754,8 @@ let destruct_ttpair
   (x: target_type_sem env (t1 `ttpair` t2))
 : Tot (target_type_sem env t1 & target_type_sem env t2)
 = match t1, t2 with
-  | TTUnit, _ -> (coerce_eq () (), x)
-  | _, TTUnit -> (x, coerce_eq () ())
+  | TTElem TTUnit, _ -> (coerce_eq () (), x)
+  | _, TTElem TTUnit -> (x, coerce_eq () ())
   | _ -> assert (target_type_sem env (t1 `ttpair` t2) == target_type_sem env t1 & target_type_sem env t2);
       coerce_eq () x
 
@@ -1768,8 +1766,8 @@ let ttpair_fst
   (x: target_type_sem env (t1 `ttpair` t2))
 : Tot (target_type_sem env t1)
 = match t1, t2 with
-  | TTUnit, _ -> coerce_eq () ()
-  | _, TTUnit -> x
+  | TTElem TTUnit, _ -> coerce_eq () ()
+  | _, TTElem TTUnit -> x
   | _ -> fst #(target_type_sem env t1) #(target_type_sem env t2) (coerce_eq () x)
 
 let construct_ttpair
@@ -1779,18 +1777,20 @@ let construct_ttpair
   (x: target_type_sem env t1 & target_type_sem env t2)
 : Tot (target_type_sem env (t1 `ttpair` t2))
 = match t1, t2 with
-  | TTUnit, _ -> snd x
-  | _, TTUnit -> fst x
+  | TTElem TTUnit, _ -> snd x
+  | _, TTElem TTUnit -> fst x
   | _ -> coerce_eq () x
 
 let target_type_of_elem_typ
   (x: elem_typ)
-: Tot target_type
+: Tot target_elem_type
 = match x with
   | ELiteral _ -> TTUnit
   | EBool -> TTBool
   | EByteString
   | ETextString -> TTString
+  | EAny -> TTAny
+  | EAlwaysFalse -> TTAlwaysFalse
 
 let rec target_type_of_wf_typ
   (#x: typ)
@@ -1802,7 +1802,7 @@ let rec target_type_of_wf_typ
   | WfTTagged _ _ s -> target_type_of_wf_typ s
   | WfTMap _ _ _ _ _ s -> target_type_of_wf_map_group s
   | WfTChoice _ _ s1 s2 -> TTUnion (target_type_of_wf_typ s1) (target_type_of_wf_typ s2)
-  | WfTElem e -> target_type_of_elem_typ e
+  | WfTElem e -> TTElem (target_type_of_elem_typ e)
   | WfTDef e -> TTDef e
 
 and target_type_of_wf_array_group
@@ -2463,11 +2463,9 @@ let spec_env_included
   (forall (n: array_group_name tp_sem1.se_bound) . env1.tp_spec_array_group n == env2.tp_spec_array_group n)
 
 let spec_of_elem_typ
-  (#bound: name_env)
-  (env: target_spec_env bound)
   (e: elem_typ)
-  (p: (target_type_sem env (target_type_of_elem_typ e) -> prop) { forall x . p x })
-: Tot (Spec.spec (elem_typ_sem e) (target_type_sem env (target_type_of_elem_typ e)) p)
+  (p: (target_elem_type_sem (target_type_of_elem_typ e) -> prop) { forall x . p x })
+: Tot (Spec.spec (elem_typ_sem e) (target_elem_type_sem (target_type_of_elem_typ e)) p)
 = match e with
   | ELiteral l -> Spec.spec_literal (eval_literal l) _
   | _ -> admit ()
@@ -2501,7 +2499,7 @@ let rec spec_of_wf_typ
       (spec_of_wf_typ env s2)
       _
   | WfTDef n -> env.tp_spec_typ n
-  | WfTElem s -> spec_of_elem_typ tp_tgt.wft_env.tss_env s _
+  | WfTElem s -> spec_of_elem_typ s _
 
 and spec_of_wf_array_group
   (#tp_sem: sem_env)
