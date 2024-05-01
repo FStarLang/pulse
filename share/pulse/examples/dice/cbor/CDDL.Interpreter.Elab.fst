@@ -53,6 +53,9 @@ let rec rewrite_typ
   else let fuel' : nat = fuel - 1 in
   match t with
   | TChoice (TChoice t1 t2) t3 -> rewrite_typ fuel' (TChoice t1 (TChoice t2 t3))
+  | TChoice t (TElem EAlwaysFalse)
+  | TChoice (TElem EAlwaysFalse) t
+    -> rewrite_typ fuel' t
   | TChoice t1 t2 ->
     let t' = TChoice (rewrite_typ fuel' t1) (rewrite_typ fuel' t2) in
     if t' = t
@@ -130,6 +133,9 @@ let rec rewrite_typ_correct
   match t with
   | TChoice (TChoice t1 t2) t3 ->
     rewrite_typ_correct env fuel' (TChoice t1 (TChoice t2 t3))
+  | TChoice t (TElem EAlwaysFalse)
+  | TChoice (TElem EAlwaysFalse) t
+    -> rewrite_typ_correct env fuel' t
   | TChoice t1 t2 ->
     rewrite_typ_correct env fuel' t1;
     rewrite_typ_correct env fuel' t2;
@@ -319,6 +325,8 @@ let rec typ_disjoint
     let s1 = e.e_sem_env.se_env i in
     let t1' = e.e_env i in
     typ_disjoint e fuel' t1' t2
+  | TElem EAlwaysFalse, _
+  | _, TElem EAlwaysFalse -> RSuccess ()
   | TChoice t1l t1r, t2
   | t2, TChoice t1l t1r ->
     let rl = typ_disjoint e fuel' t1l t2 in
@@ -462,6 +470,172 @@ and array_group_disjoint
 #pop-options
 
 (*
+#restart-solver
+let rec map_group_footprint
+  (g: group NMapGroup)
+: Tot (result typ)
+= match g with
+  | GMapElem _ cut (TElem (ELiteral key)) value
+  -> RSuccess (TElem (ELiteral key))
+  | GZeroOrMore (GMapElem _ false key _) // TODO: extend to GOneOrMore
+  -> RSuccess key
+  | GZeroOrOne g -> map_group_footprint g
+  | GChoice g1 g2
+  | GConcat g1 g2 ->
+    begin match map_group_footprint g1 with
+    | RSuccess ty1 ->
+      begin match map_group_footprint g2 with
+      | RSuccess ty2 -> RSuccess (ty1 `TChoice` ty2)
+      | res -> res
+      end
+    | res -> res
+    end
+  | GNop
+  | GAlwaysFalse -> Some Spec.t_always_false
+  | GMapElem _ _ _ _
+  | GZeroOrMore _
+  | GOneOrMore _ -> None
+
+
+let restrict_map_group
+  (env: ast_env)
+  (left: typ)
+  (g: group NMapGroup)
+: Pure (result (group NMapGroup))
+    (requires (
+      typ_bounded env.e_sem_env.se_bound left /\
+      group_bounded _ env.e_sem_env.se_bound g
+    ))
+    (ensures (fun g' ->
+      match g' with
+      | RSuccess g' ->
+        group_bounded _ env.e_sem_env.se_bound g' /\
+        MapSpec.restrict_map_group
+          (map_group_sem env.e_sem_env g)
+          (map_group_sem env.e_sem_env g') /\
+        begin match spec_map_group_footprint env.e_sem_env g, spec_map_group_footprint env.e_sem_env g' with
+        | Some fp, Some fp' -> Spec.typ_included fp' fp /\
+          Spec.typ_disjoint (typ_sem env.e_sem_env left) fp'
+        | _ -> False
+        end
+      | _ -> True
+    ))
+  (decreases g)
+= RFailure "not supported"
+
+(*
+
+match s with
+| RMChoice left g1 g1' s1 g2 g2' s2 ->
+    group_bounded NMapGroup env.se_bound g1' /\
+    spec_restrict_map_group env left g1 g1' s1 /\
+    group_bounded NMapGroup env.se_bound g2' /\
+    spec_restrict_map_group env left g2 g2' s2 /\
+    MapSpec.map_group_choice_compatible
+      (map_group_sem env g1')
+      (map_group_sem env g2')
+| RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
+    group_bounded NMapGroup env.se_bound g1 /\
+    spec_restrict_map_group env left g1 g1' s1 /\
+    spec_map_group_footprint env g1 == Some fp1 /\
+    spec_restrict_map_group env (left `Spec.t_choice` fp1) g2 g2' s2
+| RMZeroOrOne left g g' s ->
+    spec_restrict_map_group env left g g' s
+| RMElemLiteral left cut key value s' ->
+    spec_wf_typ env value s' /\
+    Spec.typ_disjoint left (Spec.t_literal (eval_literal key))
+| RMZeroOrMoreKeep left key value s_key s_value ->
+    typ_bounded env.se_bound key /\
+    spec_wf_typ env key s_key /\
+    spec_wf_typ env value s_value /\
+    Spec.typ_disjoint left (typ_sem env key)
+| RMZeroOrMoreSkip left key value s_key s_value ->
+    spec_wf_typ env key s_key /\
+    spec_wf_typ env value s_value
+
+(*
+
+and spec_restrict_map_group
+  (env: sem_env)
+  (left: Spec.typ)
+  (g: group NMapGroup)
+  (g' : group NMapGroup)
+  (s: ast0_restrict_map_group left g g')
+: Tot prop
+  (decreases s)
+= match s with
+| RMChoice left g1 g1' s1 g2 g2' s2 ->
+    group_bounded NMapGroup env.se_bound g1' /\
+    spec_restrict_map_group env left g1 g1' s1 /\
+    group_bounded NMapGroup env.se_bound g2' /\
+    spec_restrict_map_group env left g2 g2' s2 /\
+    MapSpec.map_group_choice_compatible
+      (map_group_sem env g1')
+      (map_group_sem env g2')
+| RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
+    group_bounded NMapGroup env.se_bound g1 /\
+    spec_restrict_map_group env left g1 g1' s1 /\
+    spec_map_group_footprint env g1 == Some fp1 /\
+    spec_restrict_map_group env (left `Spec.t_choice` fp1) g2 g2' s2
+| RMZeroOrOne left g g' s ->
+    spec_restrict_map_group env left g g' s
+| RMElemLiteral left cut key value s' ->
+    spec_wf_typ env value s' /\
+    Spec.typ_disjoint left (Spec.t_literal (eval_literal key))
+| RMZeroOrMoreKeep left key value s_key s_value ->
+    typ_bounded env.se_bound key /\
+    spec_wf_typ env key s_key /\
+    spec_wf_typ env value s_value /\
+    Spec.typ_disjoint left (typ_sem env key)
+| RMZeroOrMoreSkip left key value s_key s_value ->
+    spec_wf_typ env key s_key /\
+    spec_wf_typ env value s_value
+
+
+#restart-solver
+let rec spec_restrict_map_group_correct
+  (env: sem_env)
+  (left: Spec.typ)
+  (g: group NMapGroup)
+  (g' : group NMapGroup)
+  (s: ast0_restrict_map_group left g g')
+: Lemma
+  (requires spec_restrict_map_group env left g g' s)
+  (ensures MapSpec.restrict_map_group
+    (map_group_sem env g)
+    (map_group_sem env g') /\
+    begin match spec_map_group_footprint env g, spec_map_group_footprint env g' with
+    | Some fp, Some fp' -> Spec.typ_included fp' fp /\
+      Spec.typ_disjoint left fp'
+    | _ -> False
+    end
+  )
+  (decreases s)
+  [SMTPat (spec_restrict_map_group env left g g' s)]
+= match s with
+  | RMChoice left g1 g1' s1 g2 g2' s2 ->
+    spec_restrict_map_group_correct env left g1 g1' s1;
+    spec_restrict_map_group_correct env left g2 g2' s2
+  | RMZeroOrOne left g g' s ->
+    spec_restrict_map_group_correct env left g g' s
+  | RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
+    spec_restrict_map_group_correct env left g1 g1' s1;
+    spec_restrict_map_group_correct env (left `Spec.t_choice` fp1) g2 g2' s2;
+    let Some fp2' = spec_map_group_footprint env g2' in
+    MapSpec.restrict_map_group_concat
+      (map_group_sem env g1)
+      fp1
+      (map_group_sem env g1')
+      (map_group_sem env g2)
+      (map_group_sem env g2')
+      fp2'
+  | RMElemLiteral _ cut key value _ ->
+    MapSpec.restrict_map_group_match_item_for
+      cut
+      (eval_literal key)
+      (typ_sem env value)
+  | RMZeroOrMoreKeep left key value s_key s_value
+  | RMZeroOrMoreSkip left key value s_key s_value -> ()
 
 
   
