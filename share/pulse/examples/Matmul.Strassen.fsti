@@ -29,15 +29,22 @@ fn matrix_idx (p: matrix_ref) #pr (m : SZ.t) (n : SZ.t) (i : SZ.t { SZ.v i < SZ.
   ensures pure (x == reveal a (SZ.v i) (SZ.v j)) ** pts_to_matrix p #pr m n a
 {
   unfold pts_to_matrix p #pr m n a;
-  ();
   pts_to_len p;
   assert pure (SZ.v n * SZ.v i + SZ.v j < SZ.v n * (SZ.v i + 1));
   let x = p.((n `SZ.mul` i) `SZ.add` j);
-  ();
   fold pts_to_matrix p #pr m n a;
   x;
 }
 ```
+
+let col_maj_idx_inj () :
+  squash (forall (n i1 j1 i2 j2 : nat). {:pattern (n*i1 + j1 == n*i2 + j2)}
+    (j1 < n /\ j2 < n /\ n*i1 + j1 == n*i2 + j2) ==> (i1 == i2 /\ j1 == j2)) = admit ()
+
+let of_col_maj_upd m n (buf: Seq.seq r { Seq.length buf == m*n }) (i: nat { i < m }) (j: nat { j < n }) (y: r) :
+    Lemma (assert (n*i+j < n*(i+1));
+      of_col_maj _ _ (Seq.upd buf (n*i+j) y) == upd (of_col_maj m n buf) i j y) =
+  admit ()
 
 ```pulse
 fn matrix_upd (p: matrix_ref) (m : SZ.t) (n : SZ.t) (i : SZ.t { SZ.v i < SZ.v m }) (j : SZ.t { SZ.v j < SZ.v n }) (#a: erased (matrix (SZ.v m) (SZ.v n))) (y: r)
@@ -46,17 +53,30 @@ fn matrix_upd (p: matrix_ref) (m : SZ.t) (n : SZ.t) (i : SZ.t { SZ.v i < SZ.v m 
   ensures pts_to_matrix p m n (upd a (SZ.v i) (SZ.v j) y)
 {
   unfold pts_to_matrix p m n a;
-  ();
   pts_to_len p;
   assert pure (SZ.v n * SZ.v i + SZ.v j < SZ.v n * (SZ.v i + 1));
-  p.((n `SZ.mul` i) `SZ.add` j) <- y;
   with buf. assert pts_to p buf;
-  ();
-  magic #(of_col_maj _ _ buf == upd a (SZ.v i) (SZ.v j) y) (); // TODO
+  p.((n `SZ.mul` i) `SZ.add` j) <- y;
+  of_col_maj_upd (SZ.v m) (SZ.v n) buf (SZ.v i) (SZ.v j) y;
   fold pts_to_matrix p m n (upd a (SZ.v i) (SZ.v j) y);
-  ();
 }
 ```
+
+// TODO: does not work if inlined?
+let compute_dot_elem_inv
+    (#m #n #k : SZ.t)
+    (i : SZ.t { SZ.v i < SZ.v m })
+    (j : SZ.t { SZ.v j < SZ.v k })
+    (a: erased (matrix (SZ.v m) (SZ.v n)))
+    (b: erased (matrix (SZ.v n) (SZ.v k)))
+    (vacc : r) (vl : SZ.t ) : prop =
+  SZ.v vl <= SZ.v n /\
+    vacc == bigsum 0 (SZ.v vl) (dot_summand a b (SZ.v i) (SZ.v j))
+
+let rec bigsum_rec_left (m : nat) (n : nat {m <= n}) (f : (i:nat { m <= i /\ i < n } -> r)) :
+    Lemma (ensures m <> n ==> bigsum m n f == f m + bigsum (m+1) n f) (decreases n) =
+  if m = n || m + 1 = n then () else
+  (bigsum_rec_left m (n-1) f; bigsum_rec_left (m+1) (n-1) f)
 
 ```pulse
 fn compute_dot_elem (p q: matrix_ref)
@@ -75,7 +95,26 @@ fn compute_dot_elem (p q: matrix_ref)
     pts_to_matrix q #pb n k b **
     pure (y == dot a b (SZ.v i) (SZ.v j))
 {
-  admit ();
+  let mut l = 0sz;
+  let mut acc = (0 <: r);
+  while (let vl = !l; (vl `SZ.lt` n))
+    invariant cond.
+    pts_to_matrix p #pa m n a **
+    pts_to_matrix q #pb n k b **
+    (exists* vl vacc.
+      R.pts_to l vl ** R.pts_to acc vacc
+      ** pure (compute_dot_elem_inv i j a b vacc vl)
+      ** pure (vl `SZ.lte` n)
+      ** pure (cond == (vl `SZ.lt` n)))
+  {
+    let vl = !l;
+    let vacc = !acc;
+    let ail = matrix_idx p m n i vl;
+    let blj = matrix_idx q n k vl j;
+    acc := vacc + ail * blj;
+    l := vl `SZ.add` 1sz;
+  };
+  !acc;
 }
 ```
 
