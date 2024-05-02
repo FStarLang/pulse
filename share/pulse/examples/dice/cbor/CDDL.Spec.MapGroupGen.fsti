@@ -509,24 +509,59 @@ let map_group_consumes_all
   | MapGroupDet _ r -> r == ghost_map_empty
   | _ -> False
 
-let map_group_choice_compatible_list
-  (l: list map_group)
-  (g: map_group)
-: Tot prop
-= forall x . map_group_consumes_all g x ==> (exists g' . List.Tot.memP g' l /\ MapGroupFail? (apply_map_group_det g' x))
-
-let map_group_choice_compatible_list_singleton
-  (left right: map_group)
-: Lemma
-  (map_group_choice_compatible_list [left] right <==> map_group_choice_compatible left right)
-= ()
-
-let map_group_choice_compatible_list_concat_left
+let map_group_choice_compatible_concat_left
   (g1: det_map_group)
   (f1: typ)
   (g2: det_map_group)
   (f2: typ)
-  (l:  list map_group)
+  (g: map_group)
+: Lemma
+  (requires (
+    map_group_footprint g1 f1 /\
+    map_group_footprint g2 f2 /\
+    typ_disjoint f1 f2 /\
+    (map_group_choice_compatible g1 g \/ (
+      map_group_choice_compatible_no_cut g1 g /\
+      map_group_choice_compatible g2 g)
+    )
+  ))
+  (ensures (
+    map_group_choice_compatible (g1 `map_group_concat` g2) g
+  ))
+= Classical.forall_intro (Classical.move_requires (map_group_fail_concat_intro g1 f1 g2 f2))
+
+#restart-solver
+let map_group_concat_no_cut_intro
+  (g1: det_map_group)
+  (f1: typ)
+  (g2: det_map_group)
+  (f2: typ)
+  (x: ghost_map Cbor.raw_data_item Cbor.raw_data_item)
+: Lemma
+  (requires (
+    map_group_footprint g1 f1 /\
+    map_group_footprint g2 f2 /\
+    typ_disjoint f1 f2 /\ (
+    (~ (MapGroupCutFail? (apply_map_group_det g1 x))) /\
+    (~ (MapGroupCutFail? (apply_map_group_det g2 x)))
+  )))
+  (ensures (
+    (~ (MapGroupCutFail? (apply_map_group_det (g1 `map_group_concat` g2) x)))
+  ))
+= if MapGroupFail? (apply_map_group_det g1 x)
+  then ()
+  else begin
+    let MapGroupDet c1 r1 = apply_map_group_det g1 x in
+    map_group_footprint_consumed_disjoint g1 f1 f2 x;
+    ghost_map_disjoint_union_comm c1 r1
+  end
+
+#restart-solver
+let map_group_choice_compatible_no_cut_concat_left
+  (g1: det_map_group)
+  (f1: typ)
+  (g2: det_map_group)
+  (f2: typ)
   (g: map_group)
 : Lemma
   (requires (
@@ -534,74 +569,83 @@ let map_group_choice_compatible_list_concat_left
     map_group_footprint g2 f2 /\
     typ_disjoint f1 f2 /\
     map_group_choice_compatible_no_cut g1 g /\
-    map_group_choice_compatible_list (g1 :: g2 :: l) g
+    map_group_choice_compatible_no_cut g2 g
   ))
   (ensures (
-    map_group_choice_compatible_list ((g1 `map_group_concat` g2) :: l) g
+    map_group_choice_compatible_no_cut (g1 `map_group_concat` g2) g
   ))
-= Classical.forall_intro (Classical.move_requires (map_group_fail_concat_intro g1 f1 g2 f2))
-
-let map_group_choice_compatible_list_concat_left_weak
-  (g1: det_map_group)
-  (f1: typ)
-  (g2: det_map_group)
-  (f2: typ)
-  (l:  list map_group)
-  (g: map_group)
-: Lemma
-  (requires (
-    map_group_footprint g1 f1 /\
-    map_group_footprint g2 f2 /\
-    typ_disjoint f1 f2 /\
-    map_group_choice_compatible g1 g
-  ))
-  (ensures (
-    map_group_choice_compatible_list ((g1 `map_group_concat` g2) :: l) g
-  ))
-= map_group_choice_compatible_list_concat_left g1 f1 g2 f2 l g
+= Classical.forall_intro (Classical.move_requires (map_group_concat_no_cut_intro g1 f1 g2 f2))
 
 #restart-solver
-let map_group_choice_compatible_list_choice_left
+let map_group_choice_compatible_choice_left
   (g1: det_map_group)
   (g2: det_map_group)
-  (l: list map_group)
   (g: map_group)
 : Lemma
   (requires (
-    map_group_choice_compatible_list (g1 :: l) g /\
-    map_group_choice_compatible_list (g2 :: l) g
+    map_group_choice_compatible g1 g /\
+    map_group_choice_compatible g2 g
   ))
   (ensures (
-    map_group_choice_compatible_list ((g1 `map_group_choice` g2) :: l) g
+    map_group_choice_compatible (g1 `map_group_choice` g2) g
   ))
 = ()
 
 #restart-solver
-let map_group_choice_compatible_tail
+let map_group_choice_compatible_no_cut_choice_left
   (g1: det_map_group)
-  (l: list map_group)
+  (g2: det_map_group)
   (g: map_group)
 : Lemma
   (requires (
-    map_group_choice_compatible_list l g
+    map_group_choice_compatible_no_cut g1 g /\
+    map_group_choice_compatible_no_cut g2 g
   ))
   (ensures (
-    map_group_choice_compatible_list (g1 :: l) g
+    map_group_choice_compatible_no_cut (g1 `map_group_choice` g2) g
   ))
 = ()
 
 #restart-solver
-let map_group_choice_compatible_list_choice_right
+let map_group_choice_compatible_no_cut_zero_or_one_left
   (g1: det_map_group)
-  (g2: det_map_group)
-  (l: list map_group)
+  (g: map_group)
 : Lemma
   (requires (
-    map_group_choice_compatible_list l g1 /\
-    map_group_choice_compatible_list l g2
+    map_group_choice_compatible_no_cut g1 g
   ))
   (ensures (
-    map_group_choice_compatible_list l (g1 `map_group_choice` g2)
+    map_group_choice_compatible_no_cut (map_group_zero_or_one g1) g
+  ))
+= ()
+
+#restart-solver
+let map_group_choice_compatible_choice_right
+  (g: det_map_group)
+  (g1: det_map_group)
+  (g2: det_map_group)
+: Lemma
+  (requires (
+    map_group_choice_compatible g g1 /\
+    map_group_choice_compatible g g2
+  ))
+  (ensures (
+    map_group_choice_compatible g (g1 `map_group_choice` g2)
+  ))
+= ()
+
+#restart-solver
+let map_group_choice_compatible_no_cut_choice_right
+  (g: det_map_group)
+  (g1: det_map_group)
+  (g2: det_map_group)
+: Lemma
+  (requires (
+    map_group_choice_compatible_no_cut g g1 /\
+    map_group_choice_compatible_no_cut g g2
+  ))
+  (ensures (
+    map_group_choice_compatible_no_cut g (g1 `map_group_choice` g2)
   ))
 = ()
 
@@ -647,29 +691,23 @@ let map_group_footprint_concat_consumes_all_recip'
 
 #restart-solver
 let map_group_choice_compatible_match_item_for_concat_right
-  (cut: bool)
   (k: Cbor.raw_data_item)
   (v: typ)
-  (l: list map_group)
-  (g1: det_map_group)
-  (f1: typ)
-  (g2: det_map_group)
-  (f2: typ)
+  (g1 g2: det_map_group)
+  (f1 f2: typ)
 : Lemma
   (requires (
-    let g = map_group_match_item_for cut k v in
+    map_group_choice_compatible (map_group_match_item_for false k v) g1 /\
+    map_group_choice_compatible (map_group_match_item_for false k v) g2 /\
     map_group_footprint g1 f1 /\
     map_group_footprint g2 f2 /\
-    typ_disjoint f1 f2 /\
-    List.Tot.memP g l /\
-    map_group_choice_compatible_list [g] g1 /\
-    map_group_choice_compatible_list [g] g2
+    typ_disjoint f1 f2
   ))
   (ensures (
-    map_group_choice_compatible_list l (g1 `map_group_concat` g2)
+    map_group_choice_compatible (map_group_match_item_for false k v) (map_group_concat g1 g2)
   ))
 = Classical.forall_intro (Classical.move_requires (map_group_footprint_concat_consumes_all_recip' g1 g2 f1 f2))
-
+    
 #restart-solver
 let map_group_choice_compatible_match_item_for_zero_or_one_right
   (cut: bool)
@@ -678,10 +716,10 @@ let map_group_choice_compatible_match_item_for_zero_or_one_right
   (g: det_map_group)
 : Lemma
   (requires (
-    map_group_choice_compatible_list [map_group_match_item_for cut k v] g
+    map_group_choice_compatible (map_group_match_item_for cut k v) g
   ))
   (ensures (
-    map_group_choice_compatible_list [map_group_match_item_for cut k v] (map_group_zero_or_one g)
+    map_group_choice_compatible (map_group_match_item_for cut k v) (map_group_zero_or_one g)
   ))
 = ()
 
@@ -695,7 +733,7 @@ let map_group_choice_compatible_match_item_for_same
     typ_disjoint v1 v2
   ))
   (ensures (
-    map_group_choice_compatible_list [map_group_match_item_for false k v1] (map_group_match_item_for cut2 k v2)
+    map_group_choice_compatible (map_group_match_item_for false k v1) (map_group_match_item_for cut2 k v2)
   ))
 = ()
 
