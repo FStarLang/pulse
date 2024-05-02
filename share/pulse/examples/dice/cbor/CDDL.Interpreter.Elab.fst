@@ -333,15 +333,20 @@ let rec typ_disjoint
   then ROutOfFuel
   else let fuel' : nat = fuel - 1 in
   match t1, t2 with
+  | TElem EAlwaysFalse, _
+  | _, TElem EAlwaysFalse -> RSuccess ()
+  | TElem EAny, _
+  | _, TElem EAny -> RFailure "typ_disjoint: EAny"
+  | _ ->
+    if t1 = t2
+    then RFailure "typ_disjoint: irrefl"
+    else begin
+  match t1, t2 with
   | t2, TDef i
   | TDef i, t2 ->
     let s1 = e.e_sem_env.se_env i in
     let t1' = e.e_env i in
     typ_disjoint e fuel' t1' t2
-  | TElem EAlwaysFalse, _
-  | _, TElem EAlwaysFalse -> RSuccess ()
-  | TElem EAny, _
-  | _, TElem EAny -> RFailure "typ_disjoint: EAny"
   | TChoice t1l t1r, t2
   | t2, TChoice t1l t1r ->
     let rl = typ_disjoint e fuel' t1l t2 in
@@ -372,9 +377,7 @@ let rec typ_disjoint
     then RFailure "typ_disjoint: text string"
     else RSuccess ()
   | TElem e1, TElem e2 ->
-    if e1 = e2
-    then RFailure "typ_disjoint: equal elem"
-    else RSuccess ()
+    RSuccess ()
   | TElem _, _
   | _, TElem _ -> RSuccess ()
   | TMap _, TMap _ -> RFailure "typ_disjoint: map: not supported"
@@ -386,6 +389,7 @@ let rec typ_disjoint
     array_group_disjoint e fuel' true a1 a2
   | TArray _, _
   | _, TArray _ -> RSuccess ()
+  end
 
 and array_group_disjoint
   (e: ast_env)
@@ -407,7 +411,11 @@ and array_group_disjoint
   match (a1, destruct_group a1), (a2, destruct_group a2) with
   | (GAlwaysFalse, _), _
   | _, (GAlwaysFalse, _) -> RSuccess ()
-  | (GNop, _), (GNop, _) -> RFailure "array_group_disjoint: nop"
+  | _ ->
+    if a1 = a2
+    then RFailure "array_group_disjoint: irrefl"
+    else begin
+  match (a1, destruct_group a1), (a2, destruct_group a2) with
   | (GChoice a1l a1r, _), (a2, _)
   | (a2, _), (GChoice a1l a1r, _) ->
     let res1 = array_group_disjoint e fuel' close a1l a2 in
@@ -481,6 +489,7 @@ and array_group_disjoint
    | (a2, _), (_, (GConcat a11 a12, a13)) ->
      array_group_disjoint e fuel' close (GConcat a11 (GConcat a12 a13)) a2
    | _ -> RFailure "array_group_disjoint: array: unsupported pattern"
+  end
 
 #pop-options
 
@@ -1034,17 +1043,18 @@ let rec map_group_choice_compatible_no_cut
       RSuccess ()
     end
 
-#pop-options
-
+#restart-solver
 let rec map_group_choice_compatible
   (fuel: nat) // to unfold definitions
   (env: ast_env)
-  (g1: group NMapGroup)
-  (g2: group NMapGroup)
+  (#g1: group NMapGroup)
+  (s1: ast0_wf_parse_map_group g1)
+  (#g2: group NMapGroup)
+  (s2: ast0_wf_parse_map_group g2)
 : Pure (result unit)
     (requires (
-      group_bounded _ env.e_sem_env.se_bound g1 /\
-      group_bounded _ env.e_sem_env.se_bound g2
+      spec_wf_parse_map_group env.e_sem_env _ s1 /\
+      spec_wf_parse_map_group env.e_sem_env _ s2
     ))
     (ensures fun r -> match r with
     | RSuccess _ -> MapSpec.map_group_choice_compatible (map_group_sem env.e_sem_env g1) (map_group_sem env.e_sem_env g2)
@@ -1054,10 +1064,131 @@ let rec map_group_choice_compatible
 = if fuel = 0
   then ROutOfFuel
   else let fuel' : nat = fuel - 1 in
-  match g1 with
-  | _ -> RFailure "map_group_choice_compatible_no_cut"
-
-#push-options "--z3rlimit 64" // --split_queries always --query_stats"
+  match s1 with
+  | WfMZeroOrMore _ _ _ _ ->
+    RFailure "map_group_choice_compatible: GZeroOrMore never fails"
+  | WfMZeroOrOne _ _ ->
+    RFailure "map_group_choice_compatible: GZeroOrOne always succeeds or cuts, but never fails"
+  | WfMChoice g1l s1l g1r s1r ->
+    let res1 = map_group_choice_compatible fuel' env s1l s2 in
+    if not (RSuccess? res1)
+    then res1
+    else let res2 = map_group_choice_compatible fuel' env s1r s2 in
+    if not (RSuccess? res2)
+    then res2
+    else begin
+      MapSpec.map_group_choice_compatible_choice_left
+        (map_group_sem env.e_sem_env g1l)
+        (map_group_sem env.e_sem_env g1r)
+        (map_group_sem env.e_sem_env g2);
+      RSuccess ()
+    end
+  | _ ->
+    begin match s2 with
+    | WfMChoice g2l s2l g2r s2r ->
+      let res1 = map_group_choice_compatible fuel' env s1 s2l in
+      if not (RSuccess? res1)
+      then res1
+      else let res2 = map_group_choice_compatible fuel' env s1 s2r in
+      if not (RSuccess? res2)
+      then res2
+      else begin
+        MapSpec.map_group_choice_compatible_choice_right
+          (map_group_sem env.e_sem_env g1)
+          (map_group_sem env.e_sem_env g2l)
+          (map_group_sem env.e_sem_env g2r);
+        RSuccess ()
+      end
+    | _ ->
+      begin match s1 with
+      | WfMConcat g1l s1l g1r s1r ->
+        begin match map_group_choice_compatible fuel' env s1l s2 with
+        | RSuccess _ ->
+          MapSpec.map_group_choice_compatible_concat_left
+            (map_group_sem env.e_sem_env g1l)
+            (Some?.v (spec_map_group_footprint env.e_sem_env g1l))
+            (map_group_sem env.e_sem_env g1r)
+            (Some?.v (spec_map_group_footprint env.e_sem_env g1r))
+            (map_group_sem env.e_sem_env g2);
+          RSuccess ()
+        | ROutOfFuel -> ROutOfFuel
+        | RFailure _ ->
+          let res1 = map_group_choice_compatible_no_cut fuel env s1l s2 in
+          if not (RSuccess? res1)
+          then res1
+          else let res2 = map_group_choice_compatible fuel' env s1r s2 in
+          if not (RSuccess? res2)
+          then res2
+          else begin
+            MapSpec.map_group_choice_compatible_concat_left
+              (map_group_sem env.e_sem_env g1l)
+              (Some?.v (spec_map_group_footprint env.e_sem_env g1l))
+              (map_group_sem env.e_sem_env g1r)
+              (Some?.v (spec_map_group_footprint env.e_sem_env g1r))
+              (map_group_sem env.e_sem_env g2);
+            RSuccess ()
+          end
+        end
+      | WfMLiteral cut key value _ ->
+        map_group_footprint_correct env.e_sem_env g2;
+        let RSuccess f2 = map_group_footprint g2 in
+        begin match typ_disjoint env fuel (TElem (ELiteral key)) f2 with
+        | RSuccess _ ->
+          MapSpec.map_group_choice_compatible_match_item_for cut (eval_literal key) (typ_sem env.e_sem_env value) (map_group_sem env.e_sem_env g2) (typ_sem env.e_sem_env f2);
+          RSuccess ()
+        | ROutOfFuel -> ROutOfFuel
+        | RFailure _ ->
+          if cut
+          then RFailure "map_group_choice_compatible: GMapElem true (TElem (ELiteral key)) value, not disjoint"
+          else begin match s2 with
+          | WfMConcat g2l s2l g2r s2r ->
+            let res1 = map_group_choice_compatible fuel' env s1 s2l in
+            if not (RSuccess? res1)
+            then res1
+            else let res2 = map_group_choice_compatible fuel' env s1 s2r in
+            if not (RSuccess? res2)
+            then res2
+            else begin
+              MapSpec.map_group_choice_compatible_match_item_for_concat_right
+                (eval_literal key)
+                (typ_sem env.e_sem_env value)
+                (map_group_sem env.e_sem_env g2l)
+                (map_group_sem env.e_sem_env g2r)
+                (Some?.v (spec_map_group_footprint env.e_sem_env g2l))
+                (Some?.v (spec_map_group_footprint env.e_sem_env g2r));
+              RSuccess ()
+            end
+          | WfMZeroOrOne g s ->
+            let res1 = map_group_choice_compatible fuel' env s1 s in
+            if not (RSuccess? res1)
+            then res1
+            else begin
+              MapSpec.map_group_choice_compatible_match_item_for_zero_or_one_right cut (eval_literal key) (typ_sem env.e_sem_env value) (map_group_sem env.e_sem_env g);
+              RSuccess ()
+            end
+          | WfMLiteral cut2 key2 value2 _ ->
+            if key <> key2
+            then begin // this case should already have been eliminated by the typ_disjoint test above
+              MapSpec.map_group_choice_compatible_match_item_for cut (eval_literal key) (typ_sem env.e_sem_env value) (map_group_sem env.e_sem_env g2) (Spec.t_literal (eval_literal key2));
+              RSuccess ()
+            end else begin
+              let res1 = typ_disjoint env fuel value value2 in
+              if not (RSuccess? res1)
+              then res1
+              else begin
+                MapSpec.map_group_choice_compatible_match_item_for_same
+                  (eval_literal key)
+                  (typ_sem env.e_sem_env value)
+                  (typ_sem env.e_sem_env value2)
+                  cut2;
+                RSuccess ()
+              end
+            end
+          | WfMZeroOrMore _ _ _ _ -> RFailure "map_group_choice_compatible: GZeroOrMore right, not disjoint"
+          end
+        end
+      end
+    end
 
 #restart-solver
 let rec mk_wf_typ
@@ -1209,12 +1340,12 @@ and mk_wf_parse_map_group
   else let fuel' : nat = fuel - 1 in
   match g with
   | GChoice g1 g2 ->
-    begin match map_group_choice_compatible fuel env g1 g2 with
-    | RSuccess _ ->
-      begin match mk_wf_parse_map_group fuel' env g1 with
-      | RSuccess s1 ->
-        begin match mk_wf_parse_map_group fuel' env g2 with
-        | RSuccess s2 -> RSuccess (WfMChoice g1 s1 g2 s2)
+    begin match mk_wf_parse_map_group fuel' env g1 with
+    | RSuccess s1 ->
+      begin match mk_wf_parse_map_group fuel' env g2 with
+      | RSuccess s2 -> 
+        begin match map_group_choice_compatible fuel env s1 s2 with
+        | RSuccess _ -> RSuccess (WfMChoice g1 s1 g2 s2)
         | res -> coerce_failure res
         end
       | res -> coerce_failure res
