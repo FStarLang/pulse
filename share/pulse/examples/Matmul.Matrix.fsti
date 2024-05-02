@@ -81,14 +81,35 @@ let one_smul #m #n (a : matrix m n) : Lemma (smul 1 a == a) [SMTPat (smul 1 a)] 
 let smul_smul #m #n (x y : r) (a : matrix m n) : Lemma (smul x (smul y a) == smul (x * y) a) [SMTPat (smul x (smul y a))] =
   ext (smul x (smul y a)) (smul (x * y) a)
 
-let rec bigsum (m : nat) (n : nat {m <= n}) (f : (i:nat { m <= i /\ i < n } -> r)) : Tot r =
+let rec bigsum (m : int) (n : int {m <= n}) (f : (int -> r)) : Tot r (decreases (n-m)) =
   if m = n then 0 else f (n-1) + bigsum m (n-1) f
 
-let rec bigsum_congr m n f g : Lemma (requires forall i. f i == g i) (ensures bigsum m n f == bigsum m n g) =
+let rec bigsum_congr (m:int) (n : int {m <= n}) (f g : int -> r)
+  : Lemma (requires forall (i:int{m <= i /\ i < n}). f i == g i)
+          (ensures bigsum m n f == bigsum m n g)
+          (decreases n-m)
+=
   if m = n then () else bigsum_congr m (n-1) f g
 
-let dot_summand #m #n #k (a : matrix m n) (b : matrix n k) i j l : r =
-  a i l * b l j
+let shift (delta:int) (f:int -> 'a) : int -> 'a =
+  fun x -> f (x + delta)
+
+let rec bigsum_shift (m:int) (n : int {m <= n}) (f : int -> r)
+        (delta : nat)
+  : Lemma (ensures bigsum m n f == bigsum (m-delta) (n-delta) (shift delta f))
+          (decreases n-m)
+=
+  if m = n then () else bigsum_shift m (n-1) f delta
+
+let rec bigsum_split (m:int) (k:int{m <= k}) (n:int{k <= n}) (f : int -> r)
+  : Lemma (ensures bigsum m n f == bigsum m k f + bigsum k n f)
+          (decreases n-m)
+  = if k = n then () else bigsum_split m k (n-1) f
+
+let dot_summand #m #n #k (a : matrix m n) (b : matrix n k) i j (l : int) : r =
+  if 0 <= l && l < n
+  then a i l * b l j
+  else 0
 let dot #m #n #k (a : matrix m n) (b : matrix n k) : matrix m k =
   mk (fun i j -> bigsum 0 n (dot_summand a b i j))
 
@@ -111,15 +132,60 @@ let dot_id #m #n (a : matrix m n) : Lemma (dot a id == a) [SMTPat (dot a id)] =
 let id_dot #m #n (a : matrix m n) : Lemma (dot id a == a) [SMTPat (dot id a)] =
   assert (tr (tr (dot id a)) == a)
 
+let pointwise_add (f g : 'a -> r) : 'a -> r = fun x -> f x + g x
+let pointwise_smul (k : r) (f : 'a -> r) : 'a -> r = fun x -> k * f x
+
+let rec bigsum_pointwise_add
+  (m : int) (n : int {m <= n})
+  (f g : int -> r)
+: Lemma (ensures bigsum m n (pointwise_add f g) == bigsum m n f + bigsum m n g)
+        (decreases n-m)
+= if m = n then () else bigsum_pointwise_add m (n-1) f g
+
+let rec bigsum_smul
+  (m : int) (n : int {m <= n})
+  (k : r)
+  (f : int -> r)
+: Lemma (ensures bigsum m n (pointwise_smul k f) == k * bigsum m n f)
+        (decreases n-m)
+= if m = n then () else bigsum_smul m (n-1) k f
+
 let dot_add #m #n #k (a : matrix m n) (b c : matrix n k) :
     Lemma (dot a (add b c) == add (dot a b) (dot a c))
       [SMTPatOr [[SMTPat (dot a (add b c))]; [SMTPat (add (dot a b) (dot a c))]]] =
-  admit ()
+  introduce forall i j. dot a (add b c) i j == add (dot a b) (dot a c) i j with begin
+    calc (==) {
+      dot a (add b c) i j;
+      == {}
+      bigsum 0 n (dot_summand a (add b c) i j);
+      == { bigsum_congr 0 n (dot_summand a (add b c) i j)
+                            (pointwise_add (dot_summand a b i j) (dot_summand a c i j)) }
+      bigsum 0 n (pointwise_add (dot_summand a b i j) (dot_summand a c i j));
+      == { bigsum_pointwise_add 0 n (dot_summand a b i j) (dot_summand a c i j) }
+      bigsum 0 n (dot_summand a b i j) + bigsum 0 n (dot_summand a c i j);
+      == {}
+      add (dot a b) (dot a c) i j;
+    }
+  end;
+  ext (dot a (add b c)) (add (dot a b) (dot a c))
 
 let dot_smul #m #n #k (a : matrix m n) (x : r) (b : matrix n k) :
     Lemma (dot a (smul x b) == smul x (dot a b))
-      [SMTPatOr [[SMTPat (dot a (smul x b))]; [SMTPat (smul x (dot a b))]]] =
-  admit ()
+      [SMTPatOr [[SMTPat (dot a (smul x b))]; [SMTPat (smul x (dot a b))]]]
+=
+  introduce forall i j. dot a (smul x b) i j == smul x (dot a b) i j with
+    calc (==) {
+      dot a (smul x b) i j;
+      == {}
+      bigsum 0 n (dot_summand a (smul x b) i j);
+      == { bigsum_congr 0 n (dot_summand a (smul x b) i j) (pointwise_smul x (dot_summand a b i j)) }
+      bigsum 0 n (pointwise_smul x (dot_summand a b i j));
+      == { bigsum_smul 0 n x (dot_summand a b i j) }
+      x * bigsum 0 n (dot_summand a b i j);
+      == {}
+      smul x (dot a b) i j;
+    };
+  ext (dot a (smul x b)) (smul x (dot a b))
 
 let add_dot #m #n #k (a b : matrix m n) (c : matrix n k) :
     Lemma (dot (add a b) c == add (dot a c) (dot b c))
@@ -186,9 +252,33 @@ let vcat_dot #m1 #m2 #n #k (a1 : matrix m1 n) (a2 : matrix m2 n) (b : matrix n k
   dot_hcat (tr b) (tr a1) (tr a2) m;
   assert (tr (tr (dot (vcat a1 a2 m) b)) == vcat (dot a1 b) (dot a2 b) m)
 
+(*
+         B1
+         B2
+  A1 A2  C     ==> C = A1B1 + A2B2
+*)
 let hcat_dot_vcat #m #n1 #n2 #k (a1 : matrix m n1) (a2 : matrix m n2) (b1 : matrix n1 k) (b2 : matrix n2 k) (n : nat {n==n1+n2}) :
     Lemma (dot (hcat a1 a2 n) (vcat b1 b2 n) == add (dot a1 b1) (dot a2 b2)) =
   introduce forall i j. dot (hcat a1 a2 n) (vcat b1 b2 n) i j == add (dot a1 b1) (dot a2 b2) i j with begin
-    admit ()
+    calc (==) {
+      dot (hcat a1 a2 n) (vcat b1 b2 n) i j;
+      == {}
+      bigsum 0 n (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j);
+      == { bigsum_split 0 n1 n (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j) }
+        bigsum 0 n1 (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j)
+      + bigsum n1 n (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j);
+      == { bigsum_congr 0 n1 (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j) (dot_summand a1 b1 i j) }
+        bigsum 0 n1 (dot_summand a1 b1 i j)
+      + bigsum n1 n (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j);
+      == { bigsum_shift n1 n (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j) n1 }
+        bigsum 0 n1 (dot_summand a1 b1 i j)
+      + bigsum 0 n2 (shift n1 (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j));
+      == { bigsum_congr 0 n2 (shift n1 (dot_summand (hcat a1 a2 n) (vcat b1 b2 n) i j))
+                             (dot_summand a2 b2 i j) }
+        bigsum 0 n1 (dot_summand a1 b1 i j)
+      + bigsum 0 n2 (dot_summand a2 b2 i j);
+      == { () }
+      add (dot a1 b1) (dot a2 b2) i j;
+    }
   end;
   ext (dot (hcat a1 a2 n) (vcat b1 b2 n)) (add (dot a1 b1) (dot a2 b2))

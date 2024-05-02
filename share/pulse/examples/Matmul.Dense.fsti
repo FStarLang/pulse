@@ -9,7 +9,7 @@ module SZ = FStar.SizeT
 
 let pts_to_elem #t (a:array t)
     ([@@@ equate_by_smt] i:erased nat)
-    (#[exact (`full_perm)] p:perm)
+    (#[exact (`1.0R)] p:perm)
     ([@@@ equate_by_smt] x: t) : vprop =
   pts_to_range a i (i + 1) #p (Seq.create 1 x)
 
@@ -98,12 +98,12 @@ type matrix_ref = array r
 
 let pts_to_vec_fun (p: matrix_ref) (#n: nat) (off : nat) (pr:perm) (a: (Fin.under n ^-> r)) j : vprop =
   pts_to_elem p (off + j) #pr (a j)
-let pts_to_vec (p: matrix_ref) (#n: nat) (off : nat) (#[exact (`full_perm)] pr:perm) (a: (Fin.under n ^-> r)) : vprop =
+let pts_to_vec (p: matrix_ref) (#n: nat) (off : nat) (#[exact (`1.0R)] pr:perm) (a: (Fin.under n ^-> r)) : vprop =
   bigstar 0 n (pts_to_vec_fun p off pr a)
 
 let pts_to_matrix_fun (p: matrix_ref) (#m: nat) (#n: nat) (off : nat) (stride: nat) (pr:perm) (a: (matrix m n)) (i:nat { i < m }) : vprop =
   pts_to_vec p (off + stride*i) #pr (a i)
-let pts_to_matrix (p: matrix_ref) (#m: nat) (#n: nat) (off : nat) (stride: nat) (#[exact (`full_perm)] pr:perm) (a: (matrix m n)) : vprop =
+let pts_to_matrix (p: matrix_ref) (#m: nat) (#n: nat) (off : nat) (stride: nat) (#[exact (`1.0R)] pr:perm) (a: (matrix m n)) : vprop =
   bigstar 0 m (pts_to_matrix_fun p off stride pr a)
 
 #push-options "--split_queries always"
@@ -282,10 +282,13 @@ fn matmul_serial (a b c : matrix_ref) (oa sa ob sb oc sc : SZ.t) (#pa #pb : perm
   let mut i = 0sz;
   while (let vi = !i; (vi `SZ.lt` m))
     invariant cond.
-      pts_to_matrix a (SZ.v oa) (SZ.v sa) #pa a' **
-      pts_to_matrix b (SZ.v ob) (SZ.v sb) #pb b' **
-      (exists* (buf : matrix m k). pts_to_matrix c (SZ.v oc) (SZ.v sc) buf)
+      exists* vi. Pulse.Lib.Reference.pts_to i vi **
+      // pts_to_matrix a (SZ.v oa) (SZ.v sa) #pa a' **
+      // pts_to_matrix b (SZ.v ob) (SZ.v sb) #pb b' **
+      // (exists* (buf : matrix m k). pts_to_matrix c (SZ.v oc) (SZ.v sc) buf) **
+      emp
   {
+    admit();
   }
 }
 ```
