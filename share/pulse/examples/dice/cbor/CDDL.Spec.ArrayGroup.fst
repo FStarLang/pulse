@@ -252,6 +252,8 @@ let array_group3_disjoint_concat #b (a1 a2 a3: array_group3 b) : Lemma
   (ensures (array_group3_disjoint a1 (array_group3_concat a2 a3)))
 = ()
 
+
+
 let rec array_group3_zero_or_more_some
   #b
   (a: array_group3 b)

@@ -687,6 +687,9 @@ let rec array_group_is_nonempty
   | GArrayElem _ _
   | GAlwaysFalse -> RSuccess ()
 
+#push-options "--z3rlimit 64 --split_queries always --query_stats --fuel 4 --ifuel 8"
+
+#restart-solver
 let rec array_group_concat_unique_strong
   (fuel: nat) // to unfold definitions
   (env: ast_env)
@@ -703,7 +706,109 @@ let rec array_group_concat_unique_strong
     | _ -> True
     )
     (decreases fuel)
-= RFailure "array_group_concat_unique_strong"
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match s1 with
+  | WfAChoice g1l g1r s1l s1r ->
+    let res1 = array_group_concat_unique_strong fuel' env s1l g2 in
+    if not (RSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_strong fuel' env s1r g2 in
+    if not (RSuccess? res2)
+    then res2
+    else begin
+      Spec.array_group3_concat_unique_strong_choice_left
+        (array_group_sem env.e_sem_env g1l)
+        (array_group_sem env.e_sem_env g1r)
+        (array_group_sem env.e_sem_env g2);
+      RSuccess ()
+    end
+  | WfAConcat g1l g1r s1l s1r ->
+    let res1 = array_group_concat_unique_strong fuel' env s1r g2 in
+    if not (RSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_strong fuel' env s1l (GConcat g1r g2) in
+    if not (RSuccess? res2)
+    then res2
+    else begin
+      Spec.array_group3_concat_unique_strong_concat_left (array_group_sem env.e_sem_env g1l) (array_group_sem env.e_sem_env g1r) (array_group_sem env.e_sem_env g2);
+      RSuccess ()
+    end
+  | WfAElem _ _ -> RSuccess ()
+  | WfADef n ->
+    begin match env.e_wf n with
+      | None -> RFailure "array_group_concat_unique_strong: unfold left, not proven yet"
+      | Some s -> array_group_concat_unique_strong fuel' env #(env.e_env n) s g2
+    end
+  | _ ->
+    begin match destruct_group g2 with
+    | (GDef _ i, g2r) ->
+      let g2' = GConcat (env.e_env i) g2r in
+      Spec.array_group3_concat_equiv
+        (env.e_sem_env.se_env i)
+        (array_group_sem env.e_sem_env (env.e_env i))
+        (array_group_sem env.e_sem_env g2r)
+        (array_group_sem env.e_sem_env g2r);
+      rewrite_group_correct env.e_sem_env fuel g2';
+      let g22 = rewrite_group fuel _ g2' in
+      Spec.array_group3_concat_unique_strong_equiv
+        (array_group_sem env.e_sem_env g1)
+        (array_group_sem env.e_sem_env g1)
+        (array_group_sem env.e_sem_env g2)
+        (array_group_sem env.e_sem_env g22);
+      array_group_concat_unique_strong fuel' env s1 g22
+    | _ ->
+      begin match s1 with
+      | WfAZeroOrOneOrMore g' s' g1' ->
+        let res1 = array_group_disjoint env fuel false g' g2 in
+        if not (RSuccess? res1)
+        then res1
+        else let res2 = array_group_concat_unique_strong fuel' env s' g' in
+        if not (RSuccess? res2)
+        then res2
+        else let res3 = array_group_concat_unique_strong fuel' env s' g2 in
+        if not (RSuccess? res3)
+        then res3
+        else begin
+          match g1' with
+          | GZeroOrMore _ ->
+            Spec.array_group3_concat_unique_strong_zero_or_more_left
+              (array_group_sem env.e_sem_env g')
+              (array_group_sem env.e_sem_env g2);
+            RSuccess ()
+          | GOneOrMore _ ->
+            Spec.array_group3_concat_unique_strong_one_or_more_left
+              (array_group_sem env.e_sem_env g')
+              (array_group_sem env.e_sem_env g2);
+            RSuccess ()          
+        end
+      | WfAZeroOrOne g' s' ->
+        let res1 = array_group_disjoint env fuel false g' g2 in
+        if not (RSuccess? res1)
+        then res1
+        else let res2 = array_group_concat_unique_strong fuel' env s' g2 in
+        if not (RSuccess? res2)
+        then res2
+        else begin
+          Spec.array_group3_concat_unique_strong_zero_or_one_left
+            (array_group_sem env.e_sem_env g')
+            (array_group_sem env.e_sem_env g2);
+          assert (Spec.array_group3_concat_unique_strong
+            (Spec.array_group3_zero_or_one (array_group_sem env.e_sem_env g'))
+            (array_group_sem env.e_sem_env g2)
+          );
+          assert (Spec.array_group3_concat_unique_strong
+            (array_group_sem env.e_sem_env g1)
+            (array_group_sem env.e_sem_env g2)
+          );
+          RSuccess ()
+        end
+      | _ -> RFailure "array_group_concat_unique_strong"
+      end
+    end
+
+#pop-options
 
 let rec array_group_concat_unique_weak
   (fuel: nat) // to unfold definitions

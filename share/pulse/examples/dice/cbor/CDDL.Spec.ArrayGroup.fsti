@@ -196,6 +196,16 @@ let array_group3_choice #b (a1 a3: array_group3 b) : array_group3 b =
 let array_group3_disjoint #b (a1 a2: array_group3 b) : Tot prop
 = (forall (l: list Cbor.raw_data_item { opt_precedes_list l b }) . ~ (Some? (a1 l) /\ Some? (a2 l)))
 
+val array_group3_concat_unique_strong_choice_left #b (a1 a2 a3: array_group3 b) : Lemma
+  (requires (
+    array_group3_concat_unique_strong a1 a3 /\
+    array_group3_concat_unique_strong a2 a3 /\
+    array_group3_disjoint a1 a2
+  ))
+  (ensures (
+    array_group3_concat_unique_strong (array_group3_choice a1 a2) a3
+  ))
+
 let rec array_group3_zero_or_more' #b (a: array_group3 b) (l: list Cbor.raw_data_item { opt_precedes_list l b }) : Ghost (option (list Cbor.raw_data_item & list Cbor.raw_data_item))
   (requires True)
   (ensures (fun l' -> match l' with None -> True | Some (l1, l2) -> l == l1 `List.Tot.append` l2))
