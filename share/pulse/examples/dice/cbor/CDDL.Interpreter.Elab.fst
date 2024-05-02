@@ -513,7 +513,7 @@ let rec map_group_footprint
 #push-options "--z3rlimit 32"
 
 #restart-solver
-let rec map_group_footprint_correct
+let rec map_group_footprint_correct'
   (env: sem_env)
   (g: group NMapGroup)
 : Lemma
@@ -530,14 +530,38 @@ let rec map_group_footprint_correct
     | _ -> True
   ))
   (decreases g)
-  [SMTPat (spec_map_group_footprint env g)]
 = match g with
   | GZeroOrOne g ->
-    map_group_footprint_correct env g
+    map_group_footprint_correct' env g
   | GChoice g1 g2
   | GConcat g1 g2 ->
-    map_group_footprint_correct env g1;
-    map_group_footprint_correct env g2
+    map_group_footprint_correct' env g1;
+    map_group_footprint_correct' env g2
+  | _ -> ()
+
+let map_group_footprint_correct
+  (env: sem_env)
+  (g: group NMapGroup)
+: Lemma
+  (requires (
+    group_bounded _ env.se_bound g
+  ))
+  (ensures (
+    match spec_map_group_footprint env g, map_group_footprint g with
+    | Some ty, RSuccess t ->
+      typ_bounded env.se_bound t /\
+      ty `Spec.typ_equiv` typ_sem env t /\
+      MapSpec.map_group_footprint (map_group_sem env g) (typ_sem env t)
+    | _, RSuccess _ -> False
+    | Some _, _ -> False
+    | _ -> True
+  ))
+  (decreases g)
+  [SMTPat (spec_map_group_footprint env g)]
+= map_group_footprint_correct' env g;
+  match spec_map_group_footprint env g, map_group_footprint g with
+  | Some ty, RSuccess t ->
+    MapSpec.map_group_footprint_equiv (map_group_sem env g) ty (typ_sem env t)
   | _ -> ()
 
 let coerce_failure
@@ -921,6 +945,95 @@ let rec array_group_concat_unique_weak
       end
     end
 
+#restart-solver
+let rec map_group_choice_compatible_no_cut
+  (fuel: nat) // to unfold definitions
+  (env: ast_env)
+  (#g1: group NMapGroup)
+  (s1: ast0_wf_parse_map_group g1)
+  (#g2: group NMapGroup)
+  (s2: ast0_wf_parse_map_group g2)
+: Pure (result unit)
+    (requires (
+      spec_wf_parse_map_group env.e_sem_env _ s1 /\
+      spec_wf_parse_map_group env.e_sem_env _ s2
+    ))
+    (ensures fun r -> match r with
+    | RSuccess _ -> MapSpec.map_group_choice_compatible_no_cut (map_group_sem env.e_sem_env g1) (map_group_sem env.e_sem_env g2)
+    | _ -> True
+    )
+    (decreases fuel)
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match s1 with
+  | WfMLiteral false key value _ ->
+    MapSpec.map_group_choice_compatible_no_cut_match_item_for_no_cut
+      (eval_literal key)
+      (typ_sem env.e_sem_env value)
+      (map_group_sem env.e_sem_env g2);
+    RSuccess ()
+  | WfMZeroOrMore key value _ _ ->
+    MapSpec.map_group_choice_compatible_no_cut_zero_or_more_match_item_left
+      (typ_sem env.e_sem_env key)
+      (typ_sem env.e_sem_env value)
+      (map_group_sem env.e_sem_env g2);
+    RSuccess ()
+  | WfMChoice g1l s1l g1r s1r ->
+    let res1 = map_group_choice_compatible_no_cut fuel' env s1l s2 in
+    if not (RSuccess? res1)
+    then res1
+    else let res2 = map_group_choice_compatible_no_cut fuel' env s1r s2 in
+    if not (RSuccess? res2)
+    then res2
+    else begin
+      MapSpec.map_group_choice_compatible_no_cut_choice_left
+        (map_group_sem env.e_sem_env g1l)
+        (map_group_sem env.e_sem_env g1r)
+        (map_group_sem env.e_sem_env g2);
+      RSuccess ()
+    end
+  | WfMZeroOrOne g s ->
+    let res1 = map_group_choice_compatible_no_cut fuel' env s s2 in
+    if not (RSuccess? res1)
+    then res1
+    else begin
+      MapSpec.map_group_choice_compatible_no_cut_zero_or_one_left
+        (map_group_sem env.e_sem_env g)
+        (map_group_sem env.e_sem_env g2);
+      RSuccess ()
+    end
+  | WfMLiteral _ key value _ ->
+    map_group_footprint_correct env.e_sem_env g2;
+    let RSuccess f2 = map_group_footprint g2 in
+    let res1 = typ_disjoint env fuel (TElem (ELiteral key)) f2 in
+    if not (RSuccess? res1)
+    then res1
+    else begin
+      MapSpec.map_group_choice_compatible_no_cut_match_item_for_cut
+        (eval_literal key)
+        (typ_sem env.e_sem_env value)
+        (map_group_sem env.e_sem_env g2)
+        (typ_sem env.e_sem_env f2);
+      RSuccess ()
+    end
+  | WfMConcat g1l s1l g1r s1r ->
+    let res1 = map_group_choice_compatible_no_cut fuel' env s1l s2 in
+    if not (RSuccess? res1)
+    then res1
+    else let res2 = map_group_choice_compatible_no_cut fuel' env s1r s2 in
+    if not (RSuccess? res2)
+    then res2
+    else begin
+      MapSpec.map_group_choice_compatible_no_cut_concat_left
+        (map_group_sem env.e_sem_env g1l)
+        (Some?.v (spec_map_group_footprint env.e_sem_env g1l))
+        (map_group_sem env.e_sem_env g1r)
+        (Some?.v (spec_map_group_footprint env.e_sem_env g1r))
+        (map_group_sem env.e_sem_env g2);
+      RSuccess ()
+    end
+
 #pop-options
 
 let rec map_group_choice_compatible
@@ -938,7 +1051,11 @@ let rec map_group_choice_compatible
     | _ -> True
     )
     (decreases fuel)
-= RFailure "map_group_choice_compatible"
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match g1 with
+  | _ -> RFailure "map_group_choice_compatible_no_cut"
 
 #push-options "--z3rlimit 64" // --split_queries always --query_stats"
 

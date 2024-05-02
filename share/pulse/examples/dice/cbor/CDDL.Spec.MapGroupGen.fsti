@@ -22,6 +22,17 @@ let map_group_footprint
   | _ -> False
   end
 
+let map_group_footprint_equiv
+  (g: map_group)
+  (f1 f2: typ)
+: Lemma
+  (requires
+    map_group_footprint g f1 /\
+    typ_equiv f1 f2
+  )
+  (ensures map_group_footprint g f2)
+= ()
+
 #restart-solver
 let map_group_footprint_elim
   (g: map_group)
@@ -648,6 +659,37 @@ let map_group_choice_compatible_no_cut_choice_right
     map_group_choice_compatible_no_cut g (g1 `map_group_choice` g2)
   ))
 = ()
+
+let map_group_choice_compatible_no_cut_match_item_for_no_cut
+  (key: Cbor.raw_data_item)
+  (value: typ)
+  (g: det_map_group)
+: Lemma
+  (map_group_choice_compatible_no_cut (map_group_match_item_for false key value) g)
+= ()
+
+let map_group_choice_compatible_no_cut_zero_or_more_match_item_left
+  (key: typ)
+  (value: typ)
+  (g: det_map_group)
+: Lemma
+  (map_group_choice_compatible_no_cut (map_group_zero_or_more (map_group_match_item false key value)) g)
+= ()
+
+let map_group_choice_compatible_no_cut_match_item_for_cut
+  (key: Cbor.raw_data_item)
+  (value: typ)
+  (g: det_map_group)
+  (f: typ)
+: Lemma
+  (requires (
+    map_group_footprint g f /\
+    typ_disjoint (t_literal key) f
+  ))
+  (ensures (
+    map_group_choice_compatible_no_cut (map_group_match_item_for true key value) g
+  ))
+= map_group_choice_compatible_match_item_for true key value g f
 
 val map_group_footprint_concat_consumes_all_recip
   (g1 g2: map_group)
