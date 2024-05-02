@@ -1,4 +1,4 @@
-module Matmul.Strassen
+module Matmul.Simple
 open Matmul.Matrix
 open Pulse.Lib.Pervasives
 open Pulse.Lib.Array
@@ -37,14 +37,25 @@ fn matrix_idx (p: matrix_ref) #pr (m : SZ.t) (n : SZ.t) (i : SZ.t { SZ.v i < SZ.
 }
 ```
 
-let col_maj_idx_inj () :
-  squash (forall (n i1 j1 i2 j2 : nat). {:pattern (n*i1 + j1 == n*i2 + j2)}
-    (j1 < n /\ j2 < n /\ n*i1 + j1 == n*i2 + j2) ==> (i1 == i2 /\ j1 == j2)) = admit ()
+let col_maj_idx_inj (n i1 j1 i2 j2 : nat) :
+    Lemma ((j1 < n /\ j2 < n /\ n*i1 + j1 == n*i2 + j2) ==> (i1 == i2 /\ j1 == j2)) =
+  introduce (j1 < n /\ j2 < n /\ n*i1 + j1 == n*i2 + j2) ==> (i1 == i2 /\ j1 == j2) with h. begin
+    Math.Lemmas.lemma_mod_plus j1 i1 n;
+    Math.Lemmas.lemma_mod_plus j2 i2 n;
+    assert (j1 == j2)
+  end
+
+let ext' #m #n (a b : matrix m n) (h : (i:_ -> j:_ -> squash (a i j == b i j))) : Lemma (a == b) =
+  introduce forall i j. a i j == b i j with h i j;
+  ext a b
 
 let of_col_maj_upd m n (buf: Seq.seq r { Seq.length buf == m*n }) (i: nat { i < m }) (j: nat { j < n }) (y: r) :
     Lemma (assert (n*i+j < n*(i+1));
       of_col_maj _ _ (Seq.upd buf (n*i+j) y) == upd (of_col_maj m n buf) i j y) =
-  admit ()
+  assert (n*i+j < n*(i+1));
+  ext' (of_col_maj _ _ (Seq.upd buf (n*i+j) y)) (upd (of_col_maj m n buf) i j y) (fun i' j' ->
+    if i = i' && j = j' then () else
+    (col_maj_idx_inj n i j i' j'; assert (n*i+j <> n*i'+j'); assert (n*i'+j' < n*(i'+1))))
 
 ```pulse
 fn matrix_upd (p: matrix_ref) (m : SZ.t) (n : SZ.t) (i : SZ.t { SZ.v i < SZ.v m }) (j : SZ.t { SZ.v j < SZ.v n }) (#a: erased (matrix (SZ.v m) (SZ.v n))) (y: r)
