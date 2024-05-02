@@ -506,7 +506,11 @@ let rec spec_map_group_footprint
     (requires group_bounded NMapGroup env.se_bound g)
     (ensures fun res -> match res with
     | None -> True
-    | Some ty -> MapSpec.map_group_footprint (map_group_sem env g) ty)
+    | Some ty ->
+      let s = map_group_sem env g in
+      MapSpec.map_group_footprint s ty /\
+      MapSpec.map_group_is_det s
+    )
 = match g with
   | GMapElem _ cut (TElem (ELiteral key)) value
   -> MapSpec.map_group_footprint_match_item_for cut (eval_literal key) (typ_sem env value);
@@ -1275,28 +1279,27 @@ and spec_wf_parse_map_group_incr
     spec_wf_typ_incr env env' key s_key;
     spec_wf_typ_incr env env' value s_value
 
-let rec spec_wf_parse_map_group_det
+let rec bounded_wf_parse_map_group_det
   (env: sem_env)
   (g: group NMapGroup)
   (wf: ast0_wf_parse_map_group g)
 : Lemma
-  (requires spec_wf_parse_map_group env g wf)
-  (ensures MapSpec.map_group_is_det (map_group_sem env g) /\
+  (requires bounded_wf_parse_map_group env.se_bound g wf)
+  (ensures
     Some? (spec_map_group_footprint env g)
   )
   (decreases wf)
-  [SMTPat (spec_wf_parse_map_group env g wf)]
+  [SMTPat (bounded_wf_parse_map_group env.se_bound g wf)]
 = match wf with
   | WfMChoice g1' s1 g2' s2 ->
-    spec_wf_parse_map_group_det env g1' s1;
-    spec_wf_parse_map_group_det env g2' s2
+    bounded_wf_parse_map_group_det env g1' s1;
+    bounded_wf_parse_map_group_det env g2' s2
   | WfMConcat g1 s1 g2 s2 ->
-    spec_wf_parse_map_group_det env g1 s1;
-    spec_wf_parse_map_group_det env g2 s2
+    bounded_wf_parse_map_group_det env g1 s1;
+    bounded_wf_parse_map_group_det env g2 s2
   | WfMZeroOrOne g s ->
-    spec_wf_parse_map_group_det env g s
-  | WfMLiteral cut key value _ ->
-    MapSpec.map_group_is_det_match_item_for cut (eval_literal key) (typ_sem env value) 
+    bounded_wf_parse_map_group_det env g s
+  | WfMLiteral _ _ _ _
   | WfMZeroOrMore _ _ _ _
   -> ()
 
