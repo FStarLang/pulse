@@ -1,5 +1,5 @@
-module COSE.AST
-open CDDL.Interpreter
+module COSE.AST.Old
+open CDDL.Interpreter.Old
 module Spec = COSE.Spec
 
 #push-options "--fuel 0"

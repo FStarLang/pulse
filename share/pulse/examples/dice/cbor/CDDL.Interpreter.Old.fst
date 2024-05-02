@@ -1,4 +1,4 @@
-module CDDL.Interpreter
+module CDDL.Interpreter.Old
 module Spec = CDDL.Spec
 module U64 = FStar.UInt64
 
