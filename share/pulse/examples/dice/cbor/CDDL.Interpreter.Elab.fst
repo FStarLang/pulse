@@ -4,21 +4,35 @@ module Spec = CDDL.Spec
 module U64 = FStar.UInt64
 module MapSpec = CDDL.Spec.MapGroupGen
 
+noeq
+type result (t: Type) =
+| RSuccess of t
+| RFailure of string
+| ROutOfFuel
+
 (* Rewriting *)
 
 [@@ sem_attr]
 let rec map_group_is_productive
   (g: group NMapGroup)
-: Tot bool
+: Tot (result unit)
 = match g with
   | GOneOrMore g' -> map_group_is_productive g'
   | GAlwaysFalse
-  | GMapElem _ _ _ _ -> true
-  | GNop
-  | GZeroOrOne _
-  | GZeroOrMore _ -> false
-  | GChoice g1 g2 -> map_group_is_productive g1 && map_group_is_productive g2
-  | GConcat g1 g2 -> map_group_is_productive g1 || map_group_is_productive g2
+  | GMapElem _ _ _ _ -> RSuccess ()
+  | GNop -> RFailure "map_group_is_productive: GNop"
+  | GZeroOrOne _ -> RFailure "map_group_is_productive: GZeroOrOne"
+  | GZeroOrMore _ -> RFailure "map_group_is_productive: GZeroOrMore"
+  | GChoice g1 g2 ->
+    begin match map_group_is_productive g1 with
+    | RSuccess _ -> map_group_is_productive g2
+    | res -> res
+    end
+  | GConcat g1 g2 ->
+    begin match map_group_is_productive g1 with
+    | RFailure _ -> map_group_is_productive g2
+    | res -> res
+    end
 
 let rec map_group_is_productive_correct
   (env: sem_env)
@@ -26,7 +40,7 @@ let rec map_group_is_productive_correct
 : Lemma
   (requires (
     group_bounded NMapGroup env.se_bound g /\
-    map_group_is_productive g == true
+    RSuccess? (map_group_is_productive g)
   ))
   (ensures (
     MapSpec.map_group_is_productive (map_group_sem env g)
@@ -38,7 +52,7 @@ let rec map_group_is_productive_correct
     map_group_is_productive_correct env g1;
     map_group_is_productive_correct env g2
   | GConcat g1 g2 ->
-    if map_group_is_productive g1
+    if RSuccess? (map_group_is_productive g1)
     then map_group_is_productive_correct env g1
     else map_group_is_productive_correct env g2
   | _ -> ()
@@ -94,7 +108,7 @@ and rewrite_group
   | GZeroOrMore (GMapElem sq cut (TElem (ELiteral key)) value) ->
     rewrite_group fuel' kind (GZeroOrOne (GMapElem sq cut (TElem (ELiteral key)) value))
   | GZeroOrMore (GChoice (GMapElem sq cut key value) g') ->
-    if map_group_is_productive g'
+    if RSuccess? (map_group_is_productive g')
     then rewrite_group fuel' kind (GConcat (GZeroOrMore (GMapElem sq cut key value)) (GZeroOrMore g'))
     else g
   | GZeroOrMore g1 -> 
@@ -203,7 +217,7 @@ and rewrite_group_correct
     MapSpec.map_group_zero_or_more_map_group_match_item_for cut (eval_literal key) (typ_sem env value);
     rewrite_group_correct env fuel' (GZeroOrOne (GMapElem sq cut (TElem (ELiteral key)) value))
   | GZeroOrMore (GChoice (GMapElem sq cut key value) g') ->
-    if map_group_is_productive g'
+    if RSuccess? (map_group_is_productive g')
     then begin
       map_group_is_productive_correct env g';
       MapSpec.map_group_zero_or_more_choice (MapSpec.map_group_match_item cut (typ_sem env key) (typ_sem env value)) (map_group_sem env g');
@@ -241,12 +255,6 @@ and rewrite_group_correct
 #pop-options
 
 (* Disjointness *)
-
-noeq
-type result (t: Type) =
-| RSuccess of t
-| RFailure of string
-| ROutOfFuel
 
 let destruct_group
   (#n: name_env_elem)
@@ -532,6 +540,14 @@ let rec map_group_footprint_correct
     map_group_footprint_correct env g2
   | _ -> ()
 
+let coerce_failure
+  (#t1 #t2: Type)
+  (r: result t1 { ~ (RSuccess? r) })
+: Tot (result t2)
+= match r with
+  | RFailure msg -> RFailure msg
+  | ROutOfFuel -> ROutOfFuel
+
 #restart-solver
 let rec restrict_map_group
   (fuel: nat) // for typ_disjoint
@@ -614,17 +630,434 @@ let rec restrict_map_group
         (typ_sem env.e_sem_env value);
       MapSpec.restrict_map_group_refl (map_group_sem env.e_sem_env g);
       RSuccess g
-    | RFailure msg -> RFailure msg
-    | ROutOfFuel -> ROutOfFuel
+    | res -> coerce_failure res
     end
   | GZeroOrMore (GMapElem _ false key value) ->
     begin match typ_disjoint env fuel key left with
     | RSuccess _ ->
       MapSpec.restrict_map_group_refl (map_group_sem env.e_sem_env g);
       RSuccess g
+    | ROutOfFuel -> ROutOfFuel // the restriction heuristics should not depend on the fuel
     | _ ->
       RSuccess GNop
     end
   | _ -> RFailure "restrict_map_group: unsupported cases"
 
 #pop-options
+
+noeq
+type mk_wf_validate_map_group_t (left_elems: Spec.typ) (left_tables: Spec.typ) (g1: group NMapGroup) = {
+  left_elems1: Spec.typ;
+  left_tables1: Spec.typ;
+  wf: ast0_wf_validate_map_group left_elems left_tables g1 left_elems1 left_tables1;
+  left_elems10: typ;
+  left_tables10: typ;
+}
+
+let rec array_group_is_nonempty
+  (fuel: nat) // to unfold definitions
+  (env: ast_env)
+  (g: group NArrayGroup)
+: Pure (result unit)
+    (requires (group_bounded _ env.e_sem_env.se_bound g))
+    (ensures fun r -> match r with
+    | RSuccess _ -> Spec.array_group3_is_nonempty (array_group_sem env.e_sem_env g)
+    | _ -> True
+    )
+    (decreases fuel)
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match g with
+  | GDef _ n -> array_group_is_nonempty fuel' env (env.e_env n)
+  | GOneOrMore g' -> array_group_is_nonempty fuel' env g'
+  | GZeroOrOne _ -> RFailure "array_group_is_nonempty: GZeroOrOne"
+  | GZeroOrMore _ -> RFailure "array_group_is_nonempty: GZeroOrMore"
+  | GNop -> RFailure "array_group_is_nonempty: GNop"
+  | GConcat g1 g2 ->
+    begin match array_group_is_nonempty fuel' env g1 with
+    | RFailure _ -> array_group_is_nonempty fuel' env g2
+    | res -> res
+    end
+  | GChoice g1 g2 ->
+    begin match array_group_is_nonempty fuel' env g1 with
+    | RSuccess _ -> array_group_is_nonempty fuel' env g2
+    | res -> res
+    end
+  | GArrayElem _ _
+  | GAlwaysFalse -> RSuccess ()
+
+let rec array_group_concat_unique_strong
+  (fuel: nat) // to unfold definitions
+  (env: ast_env)
+  (#g1: group NArrayGroup)
+  (s1: ast0_wf_array_group g1)
+  (g2: group NArrayGroup)
+: Pure (result unit)
+    (requires (
+      spec_wf_array_group env.e_sem_env _ s1 /\
+      group_bounded _ env.e_sem_env.se_bound g2
+    ))
+    (ensures fun r -> match r with
+    | RSuccess _ -> Spec.array_group3_concat_unique_strong (array_group_sem env.e_sem_env g1) (array_group_sem env.e_sem_env g2)
+    | _ -> True
+    )
+    (decreases fuel)
+= RFailure "array_group_concat_unique_strong"
+
+let rec array_group_concat_unique_weak
+  (fuel: nat) // to unfold definitions
+  (env: ast_env)
+  (#g1: group NArrayGroup)
+  (s1: ast0_wf_array_group g1)
+  (#g2: group NArrayGroup)
+  (s2: ast0_wf_array_group g2)
+: Pure (result unit)
+    (requires (
+      spec_wf_array_group env.e_sem_env _ s1 /\
+      spec_wf_array_group env.e_sem_env _ s2
+    ))
+    (ensures fun r -> match r with
+    | RSuccess _ -> Spec.array_group3_concat_unique_weak (array_group_sem env.e_sem_env g1) (array_group_sem env.e_sem_env g2)
+    | _ -> True
+    )
+    (decreases fuel)
+= RFailure "array_group_concat_unique_weak"
+
+let rec map_group_choice_compatible
+  (fuel: nat) // to unfold definitions
+  (env: ast_env)
+  (g1: group NMapGroup)
+  (g2: group NMapGroup)
+: Pure (result unit)
+    (requires (
+      group_bounded _ env.e_sem_env.se_bound g1 /\
+      group_bounded _ env.e_sem_env.se_bound g2
+    ))
+    (ensures fun r -> match r with
+    | RSuccess _ -> MapSpec.map_group_choice_compatible (map_group_sem env.e_sem_env g1) (map_group_sem env.e_sem_env g2)
+    | _ -> True
+    )
+    (decreases fuel)
+= RFailure "map_group_choice_compatible"
+
+#push-options "--z3rlimit 64" // --split_queries always --query_stats"
+
+#restart-solver
+let rec mk_wf_typ
+  (fuel: nat) // for typ_disjoint
+  (env: ast_env)
+  (g: typ)
+: Pure (result (ast0_wf_typ g))
+    (requires typ_bounded env.e_sem_env.se_bound g)
+    (ensures fun r -> match r with
+    | RSuccess s -> spec_wf_typ env.e_sem_env g s
+    | _ -> True
+    )
+    (decreases fuel) // because of the restrict_map_group computation
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match g with
+  | TElem e ->
+    RSuccess (WfTElem e)
+  | TArray g' ->
+    begin match mk_wf_array_group fuel' env g' with
+    | RSuccess s' -> RSuccess (WfTArray g' s')
+    | res -> coerce_failure res
+    end
+  | TMap m ->
+    begin match mk_wf_validate_map_group fuel' env Spec.t_always_false Spec.t_always_false (TElem EAlwaysFalse) (TElem EAlwaysFalse) m with
+    | RSuccess s1 ->
+      begin match restrict_map_group fuel env (TElem EAlwaysFalse) m with
+      | RSuccess m2 ->
+        rewrite_group_correct env.e_sem_env fuel m2;
+        let m3 = rewrite_group fuel _ m2 in
+        begin match mk_wf_parse_map_group fuel' env m3 with
+        | RSuccess s3 -> RSuccess (WfTMap m _ _ s1.wf m3 s3)
+        | res -> coerce_failure res
+        end
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | TTagged tag t' ->
+    begin match mk_wf_typ fuel' env t' with
+    | RSuccess s' -> RSuccess (WfTTagged tag t' s')
+    | res -> coerce_failure res
+    end
+  | TChoice t1 t2 ->
+    begin match typ_disjoint env fuel t1 t2 with
+    | RSuccess _ ->
+      begin match mk_wf_typ fuel' env t1 with
+      | RSuccess s1 ->
+        begin match mk_wf_typ fuel' env t2 with
+        | RSuccess s2 -> RSuccess (WfTChoice t1 t2 s1 s2)
+        | res -> coerce_failure res
+        end
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | TDef n -> RSuccess (WfTDef n)
+
+and mk_wf_array_group
+  (fuel: nat) // for typ_disjoint
+  (env: ast_env)
+  (g: group NArrayGroup)
+: Pure (result (ast0_wf_array_group g))
+    (requires group_bounded _ env.e_sem_env.se_bound g)
+    (ensures fun r -> match r with
+    | RSuccess s -> spec_wf_array_group env.e_sem_env g s
+    | _ -> True
+    )
+    (decreases fuel)
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match g with
+  | GArrayElem _ ty ->
+    begin match mk_wf_typ fuel' env ty with
+    | RSuccess s -> RSuccess (WfAElem ty s)
+    | res -> coerce_failure res
+    end
+  | GZeroOrOne g' ->
+    begin match array_group_is_nonempty fuel env g' with
+    | RSuccess _ ->
+      begin match mk_wf_array_group fuel' env g' with
+      | RSuccess s' -> RSuccess (WfAZeroOrOne g' s')
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GConcat g1 g2 ->
+    begin match mk_wf_array_group fuel' env g1 with
+    | RSuccess s1 ->
+      begin match mk_wf_array_group fuel' env g2 with
+      | RSuccess s2 ->
+        begin match array_group_concat_unique_weak fuel env s1 s2 with
+        | RSuccess _ -> RSuccess (WfAConcat g1 g2 s1 s2)
+        | res -> coerce_failure res
+        end
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GChoice g1 g2 ->
+    begin match array_group_disjoint env fuel false g1 g2 with
+    | RSuccess _ ->
+      begin match mk_wf_array_group fuel' env g1 with
+      | RSuccess s1 ->
+        begin match mk_wf_array_group fuel' env g2 with
+        | RSuccess s2 -> RSuccess (WfAChoice g1 g2 s1 s2)
+        | res -> coerce_failure res
+        end
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GDef _ n -> RSuccess (WfADef n)
+  | GNop -> RFailure "mk_wf_array_group: unsupported: GNop"
+  | GAlwaysFalse -> RFailure "mk_wf_array_group: unsupported: GAlwaysFalse"
+  | g ->
+    let g' = match g with
+    | GZeroOrMore g' -> g'
+    | GOneOrMore g' -> g'
+    in
+    begin match array_group_is_nonempty fuel env g' with
+    | RSuccess _ ->
+      begin match mk_wf_array_group fuel' env g' with
+      | RSuccess s' ->
+        begin match array_group_concat_unique_strong fuel env s' g' with
+        | RSuccess _ -> RSuccess (WfAZeroOrOneOrMore g' s' g)
+        | res -> coerce_failure res
+        end
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+
+and mk_wf_parse_map_group
+  (fuel: nat) // for typ_disjoint
+  (env: ast_env)
+  (g: group NMapGroup)
+: Pure (result (ast0_wf_parse_map_group g))
+    (requires group_bounded _ env.e_sem_env.se_bound g)
+    (ensures fun r -> match r with
+    | RSuccess s -> spec_wf_parse_map_group env.e_sem_env g s
+    | _ -> True
+    )
+    (decreases fuel)
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match g with
+  | GChoice g1 g2 ->
+    begin match map_group_choice_compatible fuel env g1 g2 with
+    | RSuccess _ ->
+      begin match mk_wf_parse_map_group fuel' env g1 with
+      | RSuccess s1 ->
+        begin match mk_wf_parse_map_group fuel' env g2 with
+        | RSuccess s2 -> RSuccess (WfMChoice g1 s1 g2 s2)
+        | res -> coerce_failure res
+        end
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GMapElem _ cut (TElem (ELiteral key)) value ->
+    begin match mk_wf_typ fuel' env value with
+    | RSuccess tvalue -> RSuccess (WfMLiteral cut key value tvalue)
+    | res -> coerce_failure res
+    end
+  | GZeroOrMore (GMapElem _ false key value) ->
+    begin match mk_wf_typ fuel' env key with
+    | RSuccess tkey ->
+      begin match mk_wf_typ fuel' env value with
+      | RSuccess tvalue -> RSuccess (WfMZeroOrMore key value tkey tvalue)
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GZeroOrOne g' ->
+    begin match map_group_is_productive g' with
+    | RSuccess _ ->
+      map_group_is_productive_correct env.e_sem_env g';
+      begin match mk_wf_parse_map_group fuel' env g' with
+      | RSuccess s' -> RSuccess (WfMZeroOrOne g' s')
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GConcat g1 g2 ->
+    begin match map_group_footprint g1 with
+    | RSuccess fp1 ->
+      begin match map_group_footprint g2 with
+      | RSuccess fp2 ->
+        map_group_footprint_correct env.e_sem_env g1;
+        map_group_footprint_correct env.e_sem_env g2;
+        begin match typ_disjoint env fuel fp1 fp2 with
+        | RSuccess _ ->
+          begin match mk_wf_parse_map_group fuel' env g1 with
+          | RSuccess s1 ->
+            begin match mk_wf_parse_map_group fuel' env g2 with
+            | RSuccess s2 -> RSuccess (WfMConcat g1 s1 g2 s2)
+            | res -> coerce_failure res
+            end
+          | res -> coerce_failure res
+          end
+        | res -> coerce_failure res
+        end
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | _ -> RFailure "mk_wf_parse_map_group: unsupported"
+
+and mk_wf_validate_map_group
+  (fuel: nat) // for typ_disjoint
+  (env: ast_env)
+  (left_elems: Spec.typ)
+  (left_tables: Spec.typ)
+  (left_elems0: typ)
+  (left_tables0: typ)
+  (g: group NMapGroup)
+: Pure (result (mk_wf_validate_map_group_t left_elems left_tables g))
+    (requires group_bounded _ env.e_sem_env.se_bound g /\
+      typ_bounded env.e_sem_env.se_bound left_elems0 /\
+      typ_bounded env.e_sem_env.se_bound left_tables0 /\
+      typ_sem env.e_sem_env left_elems0 `Spec.typ_equiv` left_elems /\
+      typ_sem env.e_sem_env left_tables0 `Spec.typ_equiv` left_tables
+    )
+    (ensures fun r -> match r with
+    | RSuccess s -> spec_wf_validate_map_group env.e_sem_env left_elems left_tables g s.left_elems1 s.left_tables1 s.wf /\
+      typ_bounded env.e_sem_env.se_bound s.left_elems10 /\
+      typ_bounded env.e_sem_env.se_bound s.left_tables10 /\
+      typ_sem env.e_sem_env s.left_elems10 `Spec.typ_equiv` s.left_elems1 /\
+      typ_sem env.e_sem_env s.left_tables10 `Spec.typ_equiv` s.left_tables1
+    | _ -> True
+    )
+    (decreases fuel)
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match g with
+  | GChoice g1 g2 ->
+    begin match mk_wf_validate_map_group fuel' env left_elems left_tables left_elems0 left_tables0 g1 with
+    | RSuccess s1 ->
+      begin match mk_wf_validate_map_group fuel' env left_elems left_tables left_elems0 left_tables0 g2 with
+      | RSuccess s2 ->
+        RSuccess {
+          left_elems1 = s1.left_elems1 `Spec.t_choice` s2.left_elems1;
+          left_tables1 = s1.left_tables1 `Spec.t_choice` s2.left_tables1;
+          wf = RMChoice left_elems left_tables g1 s1.left_elems1 s1.left_tables1 s1.wf g2 s2.left_elems1 s2.left_tables1 s2.wf;
+          left_elems10 = s1.left_elems10 `TChoice` s2.left_elems10;
+          left_tables10 = s1.left_tables10 `TChoice` s2.left_tables10;
+        }
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GConcat g1 g2 ->
+    begin match mk_wf_validate_map_group fuel' env left_elems left_tables left_elems0 left_tables0 g1 with
+    | RSuccess s1 ->
+      begin match mk_wf_validate_map_group fuel' env s1.left_elems1 s1.left_tables1 s1.left_elems10 s1.left_tables10 g2 with
+      | RSuccess s2 ->
+        RSuccess {
+          left_elems1 = s2.left_elems1;
+          left_tables1 = s2.left_tables1;
+          wf = RMConcat left_elems left_tables g1 s1.left_elems1 s1.left_tables1 s1.wf g2 s2.left_elems1 s2.left_tables1 s2.wf;
+          left_elems10 = s2.left_elems10;
+          left_tables10 = s2.left_tables10;
+        }
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GZeroOrOne g' ->
+    begin match mk_wf_validate_map_group fuel' env left_elems left_tables left_elems0 left_tables0 g' with
+    | RSuccess s' ->
+      RSuccess {
+        left_elems1 = s'.left_elems1;
+        left_tables1 = s'.left_tables1;
+        wf = RMZeroOrOne left_elems left_tables g' s'.left_elems1 s'.left_tables1 s'.wf;
+        left_elems10 = s'.left_elems10;
+        left_tables10 = s'.left_tables10;
+      }
+    | res -> coerce_failure res
+    end
+  | GMapElem _ cut (TElem (ELiteral key)) value ->
+    begin match typ_disjoint env fuel (left_elems0 `TChoice` left_tables0) (TElem (ELiteral key)) with
+    | RSuccess _ ->
+      begin match mk_wf_typ fuel' env value with
+      | RSuccess tvalue -> RSuccess {
+          left_elems1 = _;
+          left_tables1 = _;
+          wf = RMElemLiteral left_elems left_tables cut key value tvalue;
+          left_elems10 = left_elems0 `TChoice` TElem (ELiteral key);
+          left_tables10 = left_tables0;
+        }
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end
+  | GZeroOrMore (GMapElem _ false key value) ->
+    begin match typ_disjoint env fuel left_tables0 key with
+    | RSuccess _ ->
+      begin match mk_wf_typ fuel' env key with
+      | RSuccess tkey ->
+        begin match mk_wf_typ fuel' env value with
+        | RSuccess tvalue -> RSuccess {
+          left_elems1 = _;
+          left_tables1 = _;
+          wf = RMZeroOrMore left_elems left_tables key value tkey tvalue (typ_sem env.e_sem_env key);
+          left_elems10 = left_elems0;
+          left_tables10 = left_tables0 `TChoice` key;
+        }
+        | res -> coerce_failure res
+        end
+      | res -> coerce_failure res
+      end
+    | res -> coerce_failure res
+    end    
+  | _ -> RFailure "mk_wf_validate_map_group: unsupported"
