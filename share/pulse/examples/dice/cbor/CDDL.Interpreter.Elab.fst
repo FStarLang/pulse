@@ -804,12 +804,10 @@ let rec array_group_concat_unique_strong
           );
           RSuccess ()
         end
-      | _ -> RFailure "array_group_concat_unique_strong"
       end
     end
 
-#pop-options
-
+#restart-solver
 let rec array_group_concat_unique_weak
   (fuel: nat) // to unfold definitions
   (env: ast_env)
@@ -827,7 +825,103 @@ let rec array_group_concat_unique_weak
     | _ -> True
     )
     (decreases fuel)
-= RFailure "array_group_concat_unique_weak"
+= if fuel = 0
+  then ROutOfFuel
+  else let fuel' : nat = fuel - 1 in
+  match s1 with
+  | WfAChoice g1l g1r s1l s1r ->
+    let res1 = array_group_concat_unique_weak fuel' env s1l s2 in
+    if not (RSuccess? res1)
+    then res1
+    else let res2 = array_group_concat_unique_weak fuel' env s1r s2 in
+    if not (RSuccess? res2)
+    then res2
+    else begin
+      Spec.array_group3_concat_unique_weak_choice_left
+        (array_group_sem env.e_sem_env g1l)
+        (array_group_sem env.e_sem_env g1r)
+        (array_group_sem env.e_sem_env g2);
+      RSuccess ()
+    end
+  | _ ->
+    begin match s2 with
+    | WfAChoice g2l g2r s2l s2r ->
+      let res1 = array_group_concat_unique_weak fuel' env s1 s2l in
+      if not (RSuccess? res1)
+      then res1
+      else let res2 = array_group_concat_unique_weak fuel' env s1 s2r in
+      if not (RSuccess? res2)
+      then res2
+      else begin
+        Spec.array_group3_concat_unique_weak_choice_right
+          (array_group_sem env.e_sem_env g1)
+          (array_group_sem env.e_sem_env g2l)
+          (array_group_sem env.e_sem_env g2r);
+        RSuccess ()
+      end
+    | _ ->
+      begin match s1 with
+      | WfAElem _ _ -> RSuccess ()
+      | WfAConcat g1l g1r s1l s1r ->
+        let res1 = array_group_concat_unique_weak fuel' env s1r s2 in
+        if not (RSuccess? res1)
+        then res1
+        else let res2 = array_group_concat_unique_weak fuel' env s1l (WfAConcat g1r g2 s1r s2) in
+        if not (RSuccess? res2)
+        then res2
+        else begin
+          Spec.array_group_concat_unique_weak_concat_left
+            (array_group_sem env.e_sem_env g1l)
+            (array_group_sem env.e_sem_env g1r)
+            (array_group_sem env.e_sem_env g2);
+          RSuccess ()
+        end
+      | WfADef n ->
+        begin match env.e_wf n with
+        | None -> RFailure "array_group_concat_unique_weak: unfold left, not proven yet"
+        | Some s1' ->
+          array_group_concat_unique_weak fuel' env #(env.e_env n) s1' s2
+        end
+      | WfAZeroOrOneOrMore g s g' ->
+        let res1 = array_group_disjoint env fuel false g g2 in
+        if not (RSuccess? res1)
+        then res1
+        else let res2 = array_group_concat_unique_strong fuel env s g in
+        if not (RSuccess? res2)
+        then res2
+        else let res3 = array_group_concat_unique_weak fuel' env s s2 in
+        if not (RSuccess? res3)
+        then res3
+        else begin
+          match g' with
+          | GZeroOrMore _ ->
+            Spec.array_group3_concat_unique_weak_zero_or_more_left
+              (array_group_sem env.e_sem_env g)
+              (array_group_sem env.e_sem_env g2);
+            RSuccess ()
+          | GOneOrMore _ ->
+            Spec.array_group3_concat_unique_weak_one_or_more_left
+              (array_group_sem env.e_sem_env g)
+              (array_group_sem env.e_sem_env g2);
+            RSuccess ()
+        end
+      | WfAZeroOrOne g s ->
+        let res1 = array_group_disjoint env fuel false g g2 in
+        if not (RSuccess? res1)
+        then res1
+        else let res2 = array_group_concat_unique_weak fuel' env s s2 in
+        if not (RSuccess? res2)
+        then res2
+        else begin
+          Spec.array_group3_concat_unique_weak_zero_or_one_left
+            (array_group_sem env.e_sem_env g)
+            (array_group_sem env.e_sem_env g2);
+          RSuccess ()
+        end
+      end
+    end
+
+#pop-options
 
 let rec map_group_choice_compatible
   (fuel: nat) // to unfold definitions

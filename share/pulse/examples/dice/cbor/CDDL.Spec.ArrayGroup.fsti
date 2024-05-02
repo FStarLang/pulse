@@ -350,6 +350,47 @@ val array_group3_concat_unique_weak_zero_or_more
     array_group3_concat_unique_weak (array_group3_zero_or_more a1) (array_group3_zero_or_more a2)
   ))
 
+val array_group3_concat_unique_weak_choice_right #b (a1 a2 a3: array_group3 b) : Lemma
+  (requires (
+    array_group3_concat_unique_weak a1 a2 /\
+    array_group3_concat_unique_weak a1 a3
+  ))
+  (ensures (
+    array_group3_concat_unique_weak a1 (array_group3_choice a2 a3)
+  ))
+
+val array_group3_concat_unique_weak_choice_left #b (a1 a2 a3: array_group3 b) : Lemma
+  (requires (
+    array_group3_concat_unique_weak a1 a3 /\
+    array_group3_concat_unique_weak a2 a3 /\
+    array_group3_disjoint a1 a2
+  ))
+  (ensures (
+    array_group3_concat_unique_weak (array_group3_choice a1 a2) a3
+  ))
+
+#restart-solver
+let array_group_concat_unique_weak_concat_left
+  (g1 g2 g3: array_group3 None)
+: Lemma
+  (requires
+    array_group3_concat_unique_weak g1 g2 /\
+    array_group3_concat_unique_weak g2 g3 /\    
+    array_group3_concat_unique_weak g1 (g2 `array_group3_concat` g3)
+  )
+  (ensures
+    array_group3_concat_unique_weak (g1 `array_group3_concat` g2) g3
+  )
+=   let a1 = g1 `array_group3_concat` g2 in
+    let a3 = g3 in
+    array_group3_concat_unique_weak_intro a1 a3
+      (fun l -> ())
+      (fun l1 l2 ->
+        let Some (l1l, l1r) = g1 l1 in
+        List.Tot.append_assoc l1l l1r l2
+      );
+    assert (array_group3_concat_unique_weak a1 a3)
+
 let array_group3_one_or_more #b (a: array_group3 b) : array_group3 b =
   a `array_group3_concat` array_group3_zero_or_more a
 
