@@ -127,6 +127,7 @@ let rec rewrite_typ_correct
     Spec.typ_equiv (typ_sem env t) (typ_sem env t')
   ))
   (decreases fuel)
+  [SMTPat (typ_sem env (rewrite_typ fuel t))]
 = if fuel = 0
   then ()
   else let fuel' : nat = fuel - 1 in
@@ -165,6 +166,10 @@ and rewrite_group_correct
     end
   ))
   (decreases fuel)
+  [SMTPatOr [
+    [SMTPat (map_group_sem env (rewrite_group fuel kind t))];
+    [SMTPat (array_group_sem env (rewrite_group fuel kind t))];
+  ]]
 = if fuel = 0
   then ()
   else let fuel' : nat = fuel - 1 in
@@ -327,6 +332,8 @@ let rec typ_disjoint
     typ_disjoint e fuel' t1' t2
   | TElem EAlwaysFalse, _
   | _, TElem EAlwaysFalse -> RSuccess ()
+  | TElem EAny, _
+  | _, TElem EAny -> RFailure "typ_disjoint: EAny"
   | TChoice t1l t1r, t2
   | t2, TChoice t1l t1r ->
     let rl = typ_disjoint e fuel' t1l t2 in
@@ -469,7 +476,6 @@ and array_group_disjoint
 
 #pop-options
 
-(*
 #restart-solver
 let rec map_group_footprint
   (g: group NMapGroup)
@@ -491,13 +497,44 @@ let rec map_group_footprint
     | res -> res
     end
   | GNop
-  | GAlwaysFalse -> Some Spec.t_always_false
+  | GAlwaysFalse -> RSuccess (TElem EAlwaysFalse)
   | GMapElem _ _ _ _
   | GZeroOrMore _
-  | GOneOrMore _ -> None
+  | GOneOrMore _ -> RFailure "map_group_footprint: unsupported cases. Please `rewrite` your map group before calling"
 
+#push-options "--z3rlimit 32"
 
-let restrict_map_group
+#restart-solver
+let rec map_group_footprint_correct
+  (env: sem_env)
+  (g: group NMapGroup)
+: Lemma
+  (requires (
+    group_bounded _ env.se_bound g
+  ))
+  (ensures (
+    match spec_map_group_footprint env g, map_group_footprint g with
+    | Some ty, RSuccess t ->
+      typ_bounded env.se_bound t /\
+      ty `Spec.typ_equiv` typ_sem env t
+    | _, RSuccess _ -> False
+    | Some _, _ -> False
+    | _ -> True
+  ))
+  (decreases g)
+  [SMTPat (spec_map_group_footprint env g)]
+= match g with
+  | GZeroOrOne g ->
+    map_group_footprint_correct env g
+  | GChoice g1 g2
+  | GConcat g1 g2 ->
+    map_group_footprint_correct env g1;
+    map_group_footprint_correct env g2
+  | _ -> ()
+
+#restart-solver
+let rec restrict_map_group
+  (fuel: nat) // for typ_disjoint
   (env: ast_env)
   (left: typ)
   (g: group NMapGroup)
@@ -521,248 +558,73 @@ let restrict_map_group
       | _ -> True
     ))
   (decreases g)
-= RFailure "not supported"
-
-(*
-
-match s with
-| RMChoice left g1 g1' s1 g2 g2' s2 ->
-    group_bounded NMapGroup env.se_bound g1' /\
-    spec_restrict_map_group env left g1 g1' s1 /\
-    group_bounded NMapGroup env.se_bound g2' /\
-    spec_restrict_map_group env left g2 g2' s2 /\
-    MapSpec.map_group_choice_compatible
-      (map_group_sem env g1')
-      (map_group_sem env g2')
-| RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
-    group_bounded NMapGroup env.se_bound g1 /\
-    spec_restrict_map_group env left g1 g1' s1 /\
-    spec_map_group_footprint env g1 == Some fp1 /\
-    spec_restrict_map_group env (left `Spec.t_choice` fp1) g2 g2' s2
-| RMZeroOrOne left g g' s ->
-    spec_restrict_map_group env left g g' s
-| RMElemLiteral left cut key value s' ->
-    spec_wf_typ env value s' /\
-    Spec.typ_disjoint left (Spec.t_literal (eval_literal key))
-| RMZeroOrMoreKeep left key value s_key s_value ->
-    typ_bounded env.se_bound key /\
-    spec_wf_typ env key s_key /\
-    spec_wf_typ env value s_value /\
-    Spec.typ_disjoint left (typ_sem env key)
-| RMZeroOrMoreSkip left key value s_key s_value ->
-    spec_wf_typ env key s_key /\
-    spec_wf_typ env value s_value
-
-(*
-
-and spec_restrict_map_group
-  (env: sem_env)
-  (left: Spec.typ)
-  (g: group NMapGroup)
-  (g' : group NMapGroup)
-  (s: ast0_restrict_map_group left g g')
-: Tot prop
-  (decreases s)
-= match s with
-| RMChoice left g1 g1' s1 g2 g2' s2 ->
-    group_bounded NMapGroup env.se_bound g1' /\
-    spec_restrict_map_group env left g1 g1' s1 /\
-    group_bounded NMapGroup env.se_bound g2' /\
-    spec_restrict_map_group env left g2 g2' s2 /\
-    MapSpec.map_group_choice_compatible
-      (map_group_sem env g1')
-      (map_group_sem env g2')
-| RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
-    group_bounded NMapGroup env.se_bound g1 /\
-    spec_restrict_map_group env left g1 g1' s1 /\
-    spec_map_group_footprint env g1 == Some fp1 /\
-    spec_restrict_map_group env (left `Spec.t_choice` fp1) g2 g2' s2
-| RMZeroOrOne left g g' s ->
-    spec_restrict_map_group env left g g' s
-| RMElemLiteral left cut key value s' ->
-    spec_wf_typ env value s' /\
-    Spec.typ_disjoint left (Spec.t_literal (eval_literal key))
-| RMZeroOrMoreKeep left key value s_key s_value ->
-    typ_bounded env.se_bound key /\
-    spec_wf_typ env key s_key /\
-    spec_wf_typ env value s_value /\
-    Spec.typ_disjoint left (typ_sem env key)
-| RMZeroOrMoreSkip left key value s_key s_value ->
-    spec_wf_typ env key s_key /\
-    spec_wf_typ env value s_value
-
-
-#restart-solver
-let rec spec_restrict_map_group_correct
-  (env: sem_env)
-  (left: Spec.typ)
-  (g: group NMapGroup)
-  (g' : group NMapGroup)
-  (s: ast0_restrict_map_group left g g')
-: Lemma
-  (requires spec_restrict_map_group env left g g' s)
-  (ensures MapSpec.restrict_map_group
-    (map_group_sem env g)
-    (map_group_sem env g') /\
-    begin match spec_map_group_footprint env g, spec_map_group_footprint env g' with
-    | Some fp, Some fp' -> Spec.typ_included fp' fp /\
-      Spec.typ_disjoint left fp'
-    | _ -> False
+= match g with
+  | GChoice g1 g2 ->
+    begin match restrict_map_group fuel env left g1 with
+    | RSuccess g1' ->
+      begin match restrict_map_group fuel env left g2 with
+      | RSuccess g2' -> RSuccess (GChoice g1' g2')
+      | res -> res
+      end
+    | res -> res
     end
-  )
-  (decreases s)
-  [SMTPat (spec_restrict_map_group env left g g' s)]
-= match s with
-  | RMChoice left g1 g1' s1 g2 g2' s2 ->
-    spec_restrict_map_group_correct env left g1 g1' s1;
-    spec_restrict_map_group_correct env left g2 g2' s2
-  | RMZeroOrOne left g g' s ->
-    spec_restrict_map_group_correct env left g g' s
-  | RMConcat left g1 g1' s1 fp1 g2 g2' s2 ->
-    spec_restrict_map_group_correct env left g1 g1' s1;
-    spec_restrict_map_group_correct env (left `Spec.t_choice` fp1) g2 g2' s2;
-    let Some fp2' = spec_map_group_footprint env g2' in
-    MapSpec.restrict_map_group_concat
-      (map_group_sem env g1)
-      fp1
-      (map_group_sem env g1')
-      (map_group_sem env g2)
-      (map_group_sem env g2')
-      fp2'
-  | RMElemLiteral _ cut key value _ ->
-    MapSpec.restrict_map_group_match_item_for
-      cut
-      (eval_literal key)
-      (typ_sem env value)
-  | RMZeroOrMoreKeep left key value s_key s_value
-  | RMZeroOrMoreSkip left key value s_key s_value -> ()
-
-
-  
-  | TChoice [], _ -> ResultSuccess
-  | TChoice (t1' :: q1'), _ ->
-    let td1 = typ_disjoint e fuel' (TElem t1') t2 in
-    if not (ResultSuccess? td1)
-    then td1
-    else typ_disjoint e fuel' (TChoice q1') t2
-  | _, TChoice _ ->
-    typ_disjoint e fuel' t2 t1
-  | TEscapeHatch _, _
-  | _, TEscapeHatch _ -> ResultFailure "typ_disjoint: TEscapeHatch"
-  | TTag tag1 t1, TTag tag2 t2 ->
-    if tag1 <> tag2
-    then ResultSuccess
-    else typ_disjoint e fuel' (TElem t1) (TElem t2)
-  | _, TTag _ _
-  | TTag _ _, _ -> ResultSuccess
-  | TArray i1, TArray i2 ->
-    Spec.array3_close_array_group (array_group_sem e.e_semenv i1);
-    Spec.array3_close_array_group (array_group_sem e.e_semenv i2);
-    array_group_disjoint e fuel' true i1 i2
-  | TElem (TElemArray i1), TElem (TElemArray i2) ->
-    Spec.array3_close_array_group (array_group_sem e.e_semenv ["", i1]);
-    Spec.array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
-    array_group_disjoint e fuel' true ["", i1] ["", i2]
-  | TArray i1, TElem (TElemArray i2)
-    ->
-    Spec.array3_close_array_group (array_group_sem e.e_semenv i1);
-    Spec.array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
-    array_group_disjoint e fuel' true i1 ["", i2]
-  | TElem (TElemArray i2), TArray i1
-    ->
-    Spec.array3_close_array_group (array_group_sem e.e_semenv i1);
-    Spec.array3_close_array_group (array_group_sem e.e_semenv ["", i2]);
-    array_group_disjoint e fuel' true ["", i2] i1
-  | TArray _, _
-  | _, TArray _ -> ResultSuccess
-  | TElem (TLiteral (TLSimple l1)) , TElem TBool
-  | TElem TBool, TElem (TLiteral (TLSimple l1))
-  -> if l1 = Spec.simple_value_false || l1 = Spec.simple_value_true
-    then ResultFailure "typ_disjoint: TFalse, TBool"
-    else ResultSuccess
-  | TElem (TLiteral (TLString ty1 _)), TElem TByteString
-  | TElem TByteString, TElem (TLiteral (TLString ty1 _))
-  -> if ty1 = cddl_major_type_byte_string
-    then ResultFailure "typ_disjoint: byte_string"
-    else ResultSuccess
-  | TElem (TLiteral (TLString ty1 _)), TElem TTextString
-  | TElem TTextString, TElem (TLiteral (TLString ty1 _))
-  -> if ty1 = cddl_major_type_text_string
-    then ResultFailure "typ_disjoint: byte_string"
-    else ResultSuccess
-  | (TMap _), (TMap _) -> ResultFailure "typ_disjoint: TMap, TMap" // TODO
-  | TMap _, _ | _, TMap _ -> ResultSuccess
-  | TElem e1, TElem e2 ->
-    if e1 <> e2
-    then ResultSuccess
-    else ResultFailure "typ_disjoint: TElem equal"
-
-and array_group_disjoint
-  (e: ast_env)
-  (fuel: nat)
-  (close: bool)
-  (t1: array_group)
-  (t2: array_group)
-: Pure result
-  (requires (
-    array_group_bounded e.e_semenv.se_bound t1 /\
-    array_group_bounded e.e_semenv.se_bound t2
-  ))
-  (ensures (fun b ->
-    array_group_bounded e.e_semenv.se_bound t1 /\
-    array_group_bounded e.e_semenv.se_bound t2 /\
-    (b == ResultSuccess ==> Spec.array_group3_disjoint
-      (Spec.maybe_close_array_group (array_group_sem e.e_semenv t1) close)
-      (Spec.maybe_close_array_group (array_group_sem e.e_semenv t2) close)
-  )))
-  (decreases fuel)
-= if fuel = 0
-  then ResultOutOfFuel
-  else let fuel' : nat = fuel - 1 in
-  match t1, t2 with
-  | (_, TAAtom (TADef i1)) :: q1, _ ->
-    let s1 = e.e_semenv.se_env i1 in
-    if SEArrayGroup? s1
-    then
-      let t1' = e.e_env i1 in
-      array_group_disjoint e fuel' close (t1' `List.Tot.append` q1) t2
-    else ResultSuccess
-  | _, (_, TAAtom (TADef _)) :: _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | (name, TAZeroOrMore t1') :: q, _ ->
-    let res1 = array_group_disjoint e fuel' close q t2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else if ResultSuccess? (array_group_disjoint e fuel' false [name, TAAtom t1'] t2) // loop-free shortcut, but will miss things like "disjoint? (a* ) (ab)"
-    then ResultSuccess
-    else array_group_disjoint e fuel' close ((name, TAAtom t1') :: (name, TAZeroOrMore t1') :: q) t2 // general rule, possible source of loops
-  | _, (_, TAZeroOrMore _) :: _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | (name, TAOneOrMore t1') :: q, _ ->
-    array_group_disjoint e fuel' close ((name, TAAtom t1') :: (name, TAZeroOrMore t1') :: q) t2
-  | _, (_, TAOneOrMore _) :: _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | (name, TAZeroOrOne t1') :: q, _ ->
-    let res1 = array_group_disjoint e fuel' close q t2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else array_group_disjoint e fuel' close ((name, TAAtom t1') :: q) t2
-  | _, (_, TAZeroOrOne _) :: _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | [], [] -> ResultFailure "array_group_disjoint: [], []"
-  | _, [] -> if close then ResultSuccess else ResultFailure "array_group_disjoint: cons, nil, not close"
-  | [], _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | (n1, TAAtom (TAElem t1')) :: q1, (n2, TAAtom (TAElem t2')) :: q2 ->
-    array_group_sem_cons e.e_semenv n1 (TAAtom (TAElem t1')) q1;
-    array_group_sem_cons e.e_semenv n2 (TAAtom (TAElem t2')) q2;
-    if ResultSuccess? (typ_disjoint e fuel' (TElem t1') (TElem t2'))
-    then ResultSuccess
-    else if typ_equiv e fuel' (TElem t1') (TElem t2')
-    then
-      let res = array_group_disjoint e fuel' close q1 q2 in
-      res
-    else ResultFailure "array_group_disjoint: TAElem"
-//  | _ -> false
+  | GConcat g1 g2 ->
+    begin match restrict_map_group fuel env left g1 with
+    | RSuccess g1' ->
+      let RSuccess fp1 = map_group_footprint g1 in
+      begin match restrict_map_group fuel env (left `TChoice` fp1) g2 with
+      | RSuccess g2' ->
+        let f2' = Ghost.hide (Some?.v (spec_map_group_footprint env.e_sem_env g2')) in
+        MapSpec.restrict_map_group_concat
+          (map_group_sem env.e_sem_env g1)
+          (typ_sem env.e_sem_env fp1)
+          (map_group_sem env.e_sem_env g1')
+          (map_group_sem env.e_sem_env g2)
+          (map_group_sem env.e_sem_env g2')
+          f2';
+        let g' = GConcat g1' g2' in
+        assert (MapSpec.restrict_map_group
+          (map_group_sem env.e_sem_env g)
+          (map_group_sem env.e_sem_env g')
+        );
+        assert (Some? (spec_map_group_footprint env.e_sem_env g));
+        assert (Some? (spec_map_group_footprint env.e_sem_env g'));
+        assert (
+          let Some fp = spec_map_group_footprint env.e_sem_env g in
+          let Some fp' = spec_map_group_footprint env.e_sem_env g' in
+          Spec.typ_included fp' fp /\
+          Spec.typ_disjoint (typ_sem env.e_sem_env left) fp'
+        );
+        RSuccess g' // (rewrite_group fuel _ g')
+      | res -> res
+      end
+    | res -> res
+    end
+  | GZeroOrOne g1 ->
+    begin match restrict_map_group fuel env left g1 with
+    | RSuccess g1' -> RSuccess (GZeroOrOne g1')
+    | res -> res
+    end
+  | GMapElem sq cut (TElem (ELiteral key)) value ->
+    begin match typ_disjoint env fuel (TElem (ELiteral key)) left with
+    | RSuccess _ ->
+      MapSpec.map_group_is_det_match_item_for
+        cut
+        (eval_literal key)
+        (typ_sem env.e_sem_env value);
+      MapSpec.restrict_map_group_refl (map_group_sem env.e_sem_env g);
+      RSuccess g
+    | RFailure msg -> RFailure msg
+    | ROutOfFuel -> ROutOfFuel
+    end
+  | GZeroOrMore (GMapElem _ false key value) ->
+    begin match typ_disjoint env fuel key left with
+    | RSuccess _ ->
+      MapSpec.restrict_map_group_refl (map_group_sem env.e_sem_env g);
+      RSuccess g
+    | _ ->
+      RSuccess GNop
+    end
+  | _ -> RFailure "restrict_map_group: unsupported cases"
 
 #pop-options
