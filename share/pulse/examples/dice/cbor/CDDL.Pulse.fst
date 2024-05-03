@@ -1119,3 +1119,49 @@ ensures
     }
 }
 ```
+
+// Right-to-left serialization
+
+let impl_serialize_post
+  (#source: typ)
+  (#target: Type)
+  (#target_prop: target -> prop)
+  (#parse: parser_spec source target target_prop)
+  (serialize: serializer_spec parse)
+  (pos: SZ.t)
+  (x: target)
+  (va' : Seq.seq U8.t)
+  (res: SZ.t)
+: Tot prop
+= SZ.v pos <= Seq.length va' /\
+  (SZ.v res < SZ.v pos <==> (
+    target_prop x /\
+    Seq.length (serialize_cbor (serialize x)) <= SZ.v pos
+  )) /\
+  (SZ.v res < SZ.v pos ==>
+    Seq.slice va' (SZ.v res) (SZ.v pos) == serialize_cbor (serialize x)
+  )
+
+inline_for_extraction noextract [@@noextract_to "krml"]
+let impl_serialize
+  (#source: typ)
+  (#target: Type)
+  (#target_prop: target -> prop)
+  (#parse: parser_spec source target target_prop)
+  (serialize: serializer_spec parse)
+  (#impl: Type0)
+  (r: impl -> target -> vprop)
+: Type
+= (a: A.array U8.t) ->
+  (pos: SZ.t) ->
+  (x: impl) ->
+  (#v: Ghost.erased target) ->
+  (#va: Ghost.erased (Seq.seq U8.t)) ->
+  stt SZ.t
+    (A.pts_to a va ** r x v ** pure (
+      (SZ.v pos < A.length a)
+    ))
+    (fun res -> exists* va' .
+        r x v **
+        A.pts_to a va' ** pure (impl_serialize_post serialize pos v va' res)
+    )
