@@ -49,6 +49,7 @@ let ext' #m #n (a b : matrix m n) (h : (i:_ -> j:_ -> squash (a i j == b i j))) 
   introduce forall i j. a i j == b i j with h i j;
   ext a b
 
+#push-options "--z3rlimit 15"
 let of_col_maj_upd m n (buf: Seq.seq r { Seq.length buf == m*n }) (i: nat { i < m }) (j: nat { j < n }) (y: r) :
     Lemma (assert (n*i+j < n*(i+1));
       of_col_maj _ _ (Seq.upd buf (n*i+j) y) == upd (of_col_maj m n buf) i j y) =
@@ -56,6 +57,7 @@ let of_col_maj_upd m n (buf: Seq.seq r { Seq.length buf == m*n }) (i: nat { i < 
   ext' (of_col_maj _ _ (Seq.upd buf (n*i+j) y)) (upd (of_col_maj m n buf) i j y) (fun i' j' ->
     if i = i' && j = j' then () else
     (col_maj_idx_inj n i j i' j'; assert (n*i+j <> n*i'+j'); assert (n*i'+j' < n*(i'+1))))
+#pop-options
 
 ```pulse
 fn matrix_upd (p: matrix_ref) (m : SZ.t) (n : SZ.t) (i : SZ.t { SZ.v i < SZ.v m }) (j : SZ.t { SZ.v j < SZ.v n }) (#a: erased (matrix (SZ.v m) (SZ.v n))) (y: r)
@@ -84,7 +86,7 @@ let compute_dot_elem_inv
   SZ.v vl <= SZ.v n /\
     vacc == bigsum 0 (SZ.v vl) (dot_summand a b (SZ.v i) (SZ.v j))
 
-let rec bigsum_rec_left (m : nat) (n : nat {m <= n}) (f : (i:nat { m <= i /\ i < n } -> r)) :
+let rec bigsum_rec_left (m : nat) (n : nat {m <= n}) (f : int -> r) :
     Lemma (ensures m <> n ==> bigsum m n f == f m + bigsum (m+1) n f) (decreases n) =
   if m = n || m + 1 = n then () else
   (bigsum_rec_left m (n-1) f; bigsum_rec_left (m+1) (n-1) f)

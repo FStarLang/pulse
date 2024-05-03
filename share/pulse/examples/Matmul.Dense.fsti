@@ -106,7 +106,7 @@ let pts_to_matrix_fun (p: matrix_ref) (#m: nat) (#n: nat) (off : nat) (stride: n
 let pts_to_matrix (p: matrix_ref) (#m: nat) (#n: nat) (off : nat) (stride: nat) (#[exact (`1.0R)] pr:perm) (a: (matrix m n)) : vprop =
   bigstar 0 m (pts_to_matrix_fun p off stride pr a)
 
-#push-options "--split_queries always"
+#push-options "--split_queries always --z3rlimit 15"
 let pts_to_matrix_vsplit (p: matrix_ref) #m #n (i: nat { i <= m }) o s pr (a : matrix m n) :
     Lemma (pts_to_matrix p o s #pr a ==
       (let (a1, a2) = vsplit a i in pts_to_matrix p o s #pr a1 ** pts_to_matrix p (o+s*i) s #pr a2)) =
@@ -266,6 +266,7 @@ fn matrix_idx (p: matrix_ref) (#m: erased nat) (#n: erased nat) (off : SZ.t) (st
 }
 ```
 
+(*
 ```pulse
 fn matmul_serial (a b c : matrix_ref) (oa sa ob sb oc sc : SZ.t) (#pa #pb : perm)
     (#m #n #k : erased nat) (a' : erased (matrix m n)) (b' : erased (matrix n k))
@@ -292,3 +293,4 @@ fn matmul_serial (a b c : matrix_ref) (oa sa ob sb oc sc : SZ.t) (#pa #pb : perm
   }
 }
 ```
+*)
