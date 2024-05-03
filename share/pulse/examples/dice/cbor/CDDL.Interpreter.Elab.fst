@@ -1566,6 +1566,18 @@ let mk_wf_typ_fuel_for_intro
 = fuel
 
 [@@sem_attr]
+let compute_wf_typ
+  (e: wf_ast_env)
+  (new_name: string)
+  (new_name_is_type: squash (e.e_sem_env.se_bound new_name == None))
+  (t: typ)
+  (fuel: mk_wf_typ_fuel_for e t)
+: Tot (t_wf: ast0_wf_typ t {
+    wf_ast_env_extend_typ_with_weak_pre e new_name t t_wf
+  })
+= RSuccess?._0 (mk_wf_typ fuel e t)
+
+[@@sem_attr]
 let wf_ast_env_extend_typ
   (e: wf_ast_env)
   (new_name: string)

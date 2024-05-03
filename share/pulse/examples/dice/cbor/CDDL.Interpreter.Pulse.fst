@@ -42,6 +42,26 @@ let rec impl_type_sem
   | TTOption a -> option (impl_type_sem env a)
   | TTElem e -> impl_elem_type_sem e
 
+let impl_type_sem_incr
+  (#bound: name_env)
+  (env: target_spec_env bound)
+  (#bound': name_env)
+  (env': target_spec_env bound')
+  (t: target_type)
+: Lemma
+  (requires target_type_bounded bound t /\
+    target_spec_env_included env env'
+  )
+  (ensures
+    target_type_bounded bound' t /\
+    impl_type_sem env' t == impl_type_sem env t
+  )
+  [SMTPatOr [
+    [SMTPat (target_spec_env_included env env'); SMTPat (impl_type_sem env t)];
+    [SMTPat (target_spec_env_included env env'); SMTPat (impl_type_sem env' t)];
+  ]]
+= admit ()
+
 noeq
 type impl_env
     (#bound: name_env)
@@ -50,6 +70,18 @@ type impl_env
         i_low: target_spec_env bound;
         i_r: (n: name bound) -> i_low n -> high n -> vprop;
     }
+
+let impl_env_included
+    (#bound: name_env)
+    (#high: target_spec_env bound)
+    (env: impl_env high)
+    (#bound': name_env)
+    (#high': target_spec_env bound')
+    (env': impl_env high')
+: Tot prop
+= target_spec_env_included high high' /\
+  target_spec_env_included env.i_low env'.i_low /\
+  (forall (n: name bound) . env.i_r n == env'.i_r n)
 
 let impl_rel_pure
     (t: Type)
@@ -178,6 +210,23 @@ let rec impl_rel
   | TTArray a -> impl_rel_array_of_list (impl_rel env a)
   | TTTable t1 t2 -> impl_rel_array_of_list (impl_rel_pair (impl_rel env t1) (impl_rel env t2))
   | TTOption a -> impl_rel_option (impl_rel env a)
+
+let impl_rel_incr
+    (#bound: name_env)
+    (#high: target_spec_env bound)
+    (env: impl_env high)
+    (#bound': name_env)
+    (#high': target_spec_env bound')
+    (env': impl_env high')
+    (t: target_type {target_type_bounded bound t})
+: Lemma
+  (requires impl_env_included env env')
+  (ensures impl_rel env' t == impl_rel env t)
+  [SMTPatOr [
+    [SMTPat (impl_rel env t); SMTPat (impl_env_included env env')];
+    [SMTPat (impl_rel env' t); SMTPat (impl_env_included env env')];
+  ]]
+= admit ()
 
 let impl_rel_bij_l
   (#left #right: Type)
