@@ -1004,3 +1004,118 @@ let impl_str_size
     (sz: SZ.t {SZ.fits_u64})
 : impl_typ (str_size ty (SZ.v sz))
 = impl_str_size' ty sz
+
+inline_for_extraction noextract [@@noextract_to "krml"]
+let impl_parse
+    (#source: typ)
+    (#target: Type)
+    (#target_prop: target -> prop)
+    (parse: parser_spec source target target_prop)
+    (#impl: Type)
+    (r: impl -> target -> vprop)
+: Type
+= 
+    (c: cbor) ->
+    (#p: perm) ->
+    (#v: Ghost.erased raw_data_item) ->
+    stt impl
+    (raw_data_item_match p c v **
+        pure (source v)
+    )
+    (fun w -> exists* x .
+        raw_data_item_match p c v **
+        r w x **
+        pure (source v /\
+            parse v == x
+        )
+    )
+
+let cbor_read_with_parser_success_postcond
+  (#source: typ)
+  (#target: Type)
+  (#target_prop: target -> prop)
+  (parse: parser_spec source target target_prop)
+  (va: Ghost.erased (Seq.seq U8.t))
+  (w: target)
+: Tot prop
+= exists c v rem .
+    cbor_read_with_typ_success_postcond source va c v rem /\
+    parse v == w
+
+let cbor_parse_object_success_post
+  (#source: typ)
+  (#target: Type)
+  (#target_prop: target -> prop)
+  (parse: parser_spec source target target_prop)
+  (#impl: Type)
+  (r: impl -> target -> vprop)
+  (va: Ghost.erased (Seq.seq U8.t))
+  (c: impl)
+: Tot vprop
+= exists* v .
+    r c v **
+    pure (cbor_read_with_parser_success_postcond parse va v)
+
+let cbor_parse_object_error_post
+  (t: typ)
+  (va: Ghost.erased (Seq.seq U8.t))
+: Tot vprop
+= pure (cbor_read_with_typ_error_postcond t va)
+
+let cbor_parse_object_post
+  (#source: typ)
+  (#target: Type)
+  (#target_prop: target -> prop)
+  (parse: parser_spec source target target_prop)
+  (#impl: Type)
+  (r: impl -> target -> vprop)
+  (va: Ghost.erased (Seq.seq U8.t))
+  (res: option impl)
+: Tot vprop
+= match res with
+  | Some w -> cbor_parse_object_success_post parse r va w
+  | None -> cbor_parse_object_error_post source va
+
+inline_for_extraction noextract [@@noextract_to "krml"]
+```pulse
+fn cbor_parse_object
+  (#source: typ)
+  (ft: impl_typ source)
+  (#target: Type)
+  (#target_prop: target -> prop)
+  (#parse: parser_spec source target target_prop)
+  (#impl: Type0)
+  (#r: impl -> target -> vprop)
+  (ip: impl_parse parse r)
+  (a: A.array U8.t)
+  (sz: SZ.t)
+  (#va: Ghost.erased (Seq.seq U8.t))
+  (#p: perm)
+requires
+    (A.pts_to a #p va ** pure (
+      (SZ.v sz == Seq.length va \/ SZ.v sz == A.length a)
+    ))
+returns res: option impl
+ensures
+    A.pts_to a #p va **
+    cbor_parse_object_post parse r va res
+{
+    let tmp = cbor_read_with_typ ft a sz;
+    if (tmp.cbor_read_is_success) {
+        rewrite (cbor_read_with_typ_post source a p va tmp) as (cbor_read_with_typ_success_post source a p va tmp);
+        unfold (cbor_read_with_typ_success_post source a p va tmp);
+        let w = ip tmp.cbor_read_payload;
+        elim_stick0 ();
+        let res = Some w;
+        fold (cbor_parse_object_success_post parse r va w);
+        rewrite (cbor_parse_object_success_post parse r va w) as (cbor_parse_object_post parse r va res);
+        res
+    } else {
+        rewrite (cbor_read_with_typ_post source a p va tmp) as (cbor_read_with_typ_error_post source a p va);
+        unfold (cbor_read_with_typ_error_post source a p va);
+        fold (cbor_parse_object_error_post source va);
+        rewrite (cbor_parse_object_error_post source va) as (cbor_parse_object_post parse r va None);
+        None #impl
+    }
+}
+```
