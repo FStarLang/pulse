@@ -2482,6 +2482,7 @@ type target_ast_env = {
   );
 *)
   ta_tgt: wf_target_spec_env (ta_ast.e_sem_env.se_bound);
+(*  
   ta_bij: (n: name ta_ast.e_sem_env.se_bound) -> Spec.bijection // in general, this bijection is the identity, except for recursive types
     (target_type_sem ta_tgt.wft_env.tss_env (target_type_of_wf_ast_elem (ta_ast.e_env n) (Some?.v (ta_ast.e_wf n))))
     (ta_tgt.wft_env.tss_env n);
@@ -2493,6 +2494,7 @@ type target_ast_env = {
     (x : target_type_sem ta_tgt.wft_env.tss_env (target_type_of_wf_array_group (Some?.v (ta_ast.e_wf n)))) .
     wf_array_group_size ta_tgt.wft_env #(ta_ast.e_env n) (Some?.v (ta_ast.e_wf n)) x == ta_tgt.wft_env.tss_group_size n ((ta_bij n).bij_from_to x)
   );
+*)
 }
 
 noeq

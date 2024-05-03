@@ -18,7 +18,7 @@ module CDDL.Pulse
 open Pulse.Lib.Pervasives
 open Pulse.Lib.Stick
 open CBOR.Spec
-open CBOR.Pulse
+include CBOR.Pulse
 open CDDL.Spec
 
 
