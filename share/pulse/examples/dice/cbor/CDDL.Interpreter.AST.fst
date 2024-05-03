@@ -2,8 +2,6 @@ module CDDL.Interpreter.AST
 module Spec = CDDL.Spec
 module U64 = FStar.UInt64
 
-irreducible let bounded_attr : unit = ()
-
 irreducible let sem_attr : unit = ()
 
 let char_is_ascii (c: FStar.Char.char) : Tot bool =
@@ -60,8 +58,10 @@ let literal_eq (l1 l2: literal) : Pure bool
 type elem_typ =
 | ELiteral of literal
 | EBool
-| EByteString
+| EByteString // TODO: add length constraints, etc.
 | ETextString
+| EUInt // TODO: add range constraints, etc.
+| ENInt
 | EAlwaysFalse
 | EAny
 
@@ -71,7 +71,7 @@ type name_env_elem =
 | NMapGroup
 
 type group (kind: name_env_elem) =
-| GDef: squash (kind == NArrayGroup) -> string -> group kind // names for map groups are UNSOUND because of restrict_map_group
+| GDef: squash (kind == NArrayGroup) -> string -> group kind // TODO: add back names for map groups that can be kept as is
 | GArrayElem: squash (kind == NArrayGroup) -> typ -> group kind
 | GMapElem: squash (kind == NMapGroup) -> (cut: bool) -> (key: typ) -> (value: typ) -> group kind
 | GAlwaysFalse
@@ -90,9 +90,12 @@ and typ =
 | TTagged: (tag: U64.t) -> (body: typ) -> typ
 | TChoice: typ -> typ -> typ
 
+[@@  sem_attr]
+let tint = TChoice (TElem EUInt) (TElem ENInt)
+
 type name_env = (string -> Tot (option name_env_elem))
 
-[@@ bounded_attr]
+
 let name_mem (s: string) (e: name_env) : Tot bool = Some? (e s)
 
 let name (e: name_env) : eqtype = (s: string { name_mem s e })
@@ -101,24 +104,24 @@ let typ_name (e: name_env) : eqtype = (s: string { e s == Some NType })
 let array_group_name (e: name_env) : eqtype = (s: string { e s == Some NArrayGroup })
 let map_group_name (e: name_env) : eqtype = (s: string { e s == Some NMapGroup })
 
-[@@ bounded_attr; sem_attr]
+[@@  sem_attr]
 let name_intro (s: string) (e: name_env) (sq: squash (name_mem s e)) : Tot (name e) =
   s
 
-[@@bounded_attr]
+
 let empty_name_env (_: string) : Tot (option name_env_elem) = None
 
 [@@"opaque_to_smt"] irreducible
 let name_empty_elim (t: Type) (x: name empty_name_env) : Tot t = false_elim ()
 
-[@@bounded_attr]
+
 let extend_name_env (e: name_env) (new_name: string) (elem: name_env_elem) (s: string) : Tot (option name_env_elem) =
   if s = new_name then Some elem else e s
 
 let name_env_included (s1 s2: name_env) : Tot prop =
   (forall (i: name s1) . s2 i == s1 i)
 
-[@@bounded_attr; sem_attr]
+[@@ sem_attr]
 let rec group_bounded
   (kind: name_env_elem)
   (env: name_env)
@@ -213,7 +216,7 @@ and typ_bounded_incr
 
 module MapSpec = CDDL.Spec.MapGroupGen
 
-[@@ bounded_attr; sem_attr]
+[@@  sem_attr]
 let sem_env_elem
   (kind: name_env_elem)
 : Tot Type
@@ -222,7 +225,7 @@ let sem_env_elem
   | NArrayGroup -> Spec.array_group3 None
   | NMapGroup -> MapSpec.map_group
 
-[@@ bounded_attr; sem_attr]
+[@@  sem_attr]
 noeq
 type sem_env = {
   se_bound: name_env;
@@ -235,7 +238,7 @@ let se_env_empty
 : Tot (sem_env_elem (Some?.v (empty_name_env n)))
 = false_elim ()
 
-[@@ bounded_attr; sem_attr]
+[@@  sem_attr]
 let empty_sem_env = {
   se_bound = empty_name_env;
   se_env = se_env_empty;
@@ -251,7 +254,7 @@ let sem_env_included_trans (s1 s2 s3: sem_env) : Lemma
   [SMTPat (sem_env_included s1 s3); SMTPat (sem_env_included s1 s2)]
 = ()
 
-[@@"opaque_to_smt"; bounded_attr; sem_attr]
+[@@"opaque_to_smt";  sem_attr]
 let sem_env_extend_gen
   (se: sem_env)
   (new_name: string)
@@ -347,6 +350,8 @@ let elem_typ_sem
   | EBool -> Spec.t_bool
   | EByteString -> Spec.bstr
   | ETextString -> Spec.tstr
+  | EUInt -> Spec.uint
+  | ENInt -> Spec.nint
   | EAlwaysFalse -> Spec.t_always_false
   | EAny -> Spec.any
 
@@ -1303,24 +1308,44 @@ let rec bounded_wf_parse_map_group_det
   | WfMZeroOrMore _ _ _ _
   -> ()
 
-[@@ sem_attr]
+[@@  sem_attr]
 let ast_env_elem0 (s: name_env_elem) : Type0 =
   match s with
   | NType -> typ
   | NArrayGroup -> group NArrayGroup
   | NMapGroup -> group NMapGroup
 
-let ast_env_elem_prop (e_sem_env: sem_env) (s: name_env_elem) (phi: sem_env_elem s) (x: ast_env_elem0 s) : Tot prop =
+[@@  sem_attr]
+let ast_env_elem0_bounded (env: name_env) (#s: name_env_elem) (x: ast_env_elem0 s) : Tot bool =
   match s with
   | NType ->
-    typ_bounded e_sem_env.se_bound x /\
-    Spec.typ_equiv (typ_sem e_sem_env x) phi
+    typ_bounded env x
   | NArrayGroup ->
-    group_bounded NArrayGroup e_sem_env.se_bound x /\
-    Spec.array_group3_equiv (array_group_sem e_sem_env x) phi
+    group_bounded NArrayGroup env x
   | NMapGroup ->
-    group_bounded NMapGroup e_sem_env.se_bound x /\
-    map_group_sem e_sem_env x == phi
+    group_bounded NMapGroup env x
+
+[@@ sem_attr]
+let ast_env_elem0_sem (e_sem_env: sem_env) (#s: name_env_elem) (x: ast_env_elem0 s) : Pure (sem_env_elem s)
+  (requires ast_env_elem0_bounded e_sem_env.se_bound x)
+  (ensures fun _ -> True)
+= match s with
+  | NType -> typ_sem e_sem_env x
+  | NArrayGroup -> array_group_sem e_sem_env x
+  | NMapGroup -> map_group_sem e_sem_env x
+  
+let ast_env_elem_prop (e_sem_env: sem_env) (s: name_env_elem) (phi: sem_env_elem s) (x: ast_env_elem0 s) : Tot prop =
+  ast_env_elem0_bounded e_sem_env.se_bound x /\
+  begin
+    let sem = ast_env_elem0_sem e_sem_env x in
+    match s with
+    | NType ->
+      Spec.typ_equiv #None sem phi
+    | NArrayGroup ->
+      Spec.array_group3_equiv #None sem phi
+    | NMapGroup ->
+      sem == phi
+  end
 
 let ast_env_elem_prop_included (e1 e2: sem_env) (s: name_env_elem) (phi: sem_env_elem s) (x: ast_env_elem0 s) : Lemma
   (requires sem_env_included e1 e2 /\
@@ -1362,7 +1387,7 @@ let wf_ast_env_elem_prop_included (e1 e2: sem_env) (s: name_env_elem) (x: ast_en
 let wf_ast_env_elem (e_sem_env: sem_env) (s: name_env_elem) (x: ast_env_elem0 s) =
   (y: option (wf_ast_env_elem0 s x) { wf_ast_env_elem_prop e_sem_env s x y })
 
-[@@ bounded_attr; sem_attr]
+[@@  sem_attr]
 noeq
 type ast_env = {
   e_sem_env: sem_env;
@@ -1376,7 +1401,7 @@ let e_env_empty (i: name empty_name_env) : Tot (ast_env_elem empty_sem_env (Some
 [@@"opaque_to_smt"] irreducible // because of false_elim
 let e_wf_empty (i: name empty_name_env) : Tot (wf_ast_env_elem empty_sem_env (Some?.v (empty_name_env i)) (e_env_empty i)) = false_elim ()
 
-[@@"opaque_to_smt"; bounded_attr; sem_attr]
+[@@"opaque_to_smt";  sem_attr]
 let empty_ast_env : (e: ast_env {
   e.e_sem_env.se_bound == empty_name_env
 }) = {
@@ -1398,23 +1423,26 @@ let ast_env_included_trans (s1 s2 s3: ast_env) : Lemma
   [SMTPat (ast_env_included s1 s3); SMTPat (ast_env_included s1 s2)]
 = ()
 
-[@@"opaque_to_smt"; bounded_attr; sem_attr]
+[@@"opaque_to_smt";  sem_attr]
 let ast_env_extend_gen
   (e: ast_env)
   (new_name: string)
   (kind: name_env_elem)
-  (s: sem_env_elem kind)
-  (x: ast_env_elem e.e_sem_env kind s)
+  (x: ast_env_elem0 kind)
 : Pure ast_env
     (requires
+      ast_env_elem0_bounded e.e_sem_env.se_bound x /\
       (~ (new_name `name_mem` e.e_sem_env.se_bound))
     )
     (ensures fun e' ->
+      let s = ast_env_elem0_sem e.e_sem_env x in
       e'.e_sem_env == sem_env_extend_gen e.e_sem_env new_name kind s /\
       ast_env_included e e' /\
-      e'.e_env new_name == x
+      e'.e_env new_name == x /\
+      None? (e'.e_wf new_name)
     )
-= let se' = sem_env_extend_gen e.e_sem_env new_name kind s in
+= let s = ast_env_elem0_sem e.e_sem_env x in
+  let se' = sem_env_extend_gen e.e_sem_env new_name kind s in
   {
     e_sem_env = se';
     e_env = (fun (i: name se'.se_bound) ->
@@ -1429,7 +1457,23 @@ let ast_env_extend_gen
     );
   }
 
-[@@"opaque_to_smt"; bounded_attr; sem_attr]
+[@@ sem_attr]
+let ast_env_extend_gen'
+  (e: ast_env)
+  (new_name: string)
+  (new_name_fresh: squash (~ (new_name `name_mem` e.e_sem_env.se_bound)))
+  (kind: name_env_elem)
+  (x: ast_env_elem0 kind)
+  (x_bounded: squash (ast_env_elem0_bounded e.e_sem_env.se_bound x))
+: Tot (e' : ast_env {
+      let s = ast_env_elem0_sem e.e_sem_env x in
+      e'.e_sem_env == sem_env_extend_gen e.e_sem_env new_name kind s /\
+      ast_env_included e e' /\
+      e'.e_env new_name == x
+  })
+= ast_env_extend_gen e new_name kind x
+
+[@@"opaque_to_smt";  sem_attr]
 let ast_env_set_wf
   (e: ast_env)
   (new_name: name e.e_sem_env.se_bound)
@@ -1454,6 +1498,9 @@ let ast_env_set_wf
   }
 
 let wf_ast_env = (e: ast_env { forall i . Some? (e.e_wf i) })
+
+[@@ sem_attr]
+let empty_wf_ast_env : wf_ast_env = empty_ast_env
 
 let bounded_wf_ast_env_elem
   (env: name_env)
@@ -1792,6 +1839,8 @@ let target_type_of_elem_typ
   | EBool -> TTBool
   | EByteString
   | ETextString -> TTString
+  | EUInt
+  | ENInt -> TTUInt64
   | EAny -> TTAny
   | EAlwaysFalse -> TTAlwaysFalse
 
@@ -2574,1118 +2623,10 @@ and spec_of_wf_map_group
       _
   | _ -> admit ()
 
-(*
-
-
-
-(*
-
-let forall_intro_requires_2
-      (#a: Type)
-      (#b: (a -> Type))
-      (#p: (x: a -> b x -> GTot Type0))
-      (#q: (x: a -> b x -> GTot Type0))
-      ($prf: (x: a -> y: b x -> Lemma (requires p x y) (ensures q x y)))
-    : Lemma (forall (x: a) (y: b x). p x y ==> q x y)
-= Classical.forall_intro_2 (fun x y -> Classical.move_requires (prf x) y)
-
-#push-options "--z3rlimit 32"
-
-#restart-solver
-let rec spec_map_group_restrict_correct
-  (env: sem_env)
-  (g: group NMapGroup)
-  (left: Spec.typ)
-  (g'fp' : (MapSpec.map_group & Spec.typ))
-: Lemma
-    (requires 
-      group_bounded NMapGroup env.se_bound g /\
-      spec_map_group_restrict env left g g'fp'
-    )
-    (ensures (
-      group_bounded NMapGroup env.se_bound g /\
-      spec_map_group_restrict env left g g'fp' /\
-      begin match spec_map_group_footprint env g with
-      | Some fp ->
-        let (g', fp') = g'fp' in
-        MapSpec.restrict_map_group (map_group_sem env g) g' /\
-        MapSpec.map_group_footprint g' fp' /\
-        Spec.typ_included fp' fp /\
-        Spec.typ_disjoint left fp'
-      | _ -> False
-      end
-    ))
-    (decreases g)
-= match g with
-  | GDef n -> ()
-  | GChoice g1 g2 ->
-    let g1'fp1' = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun g1'fp1' ->
-      spec_map_group_restrict env left g1 g1'fp1' /\
-      (exists g2'fp2' . spec_map_group_restrict env left g2 g2'fp2' /\
-        (let (g1', fp1') = g1'fp1' in
-        let (g2', fp2') = g2'fp2' in
-        g'fp' == (g1' `MapSpec.map_group_choice` g2', fp1' `Spec.t_choice` fp2')))
-    )
-    in
-    let g2'fp2' = FStar.IndefiniteDescription.indefinite_description_ghost _ (fun g2'fp2' ->
-      spec_map_group_restrict env left g2 g2'fp2' /\
-        (let (g1', fp1') = g1'fp1' in
-        let (g2', fp2') = g2'fp2' in
-        g'fp' == (g1' `MapSpec.map_group_choice` g2', fp1' `Spec.t_choice` fp2'))
-    )
-    in
-    let (g1', fp1') = g1'fp1' in
-    let (g2', fp2') = g2'fp2' in
-    spec_map_group_restrict_correct env g1 left g1'fp1';
-    spec_map_group_restrict_correct env g2 left g2'fp2';
-    MapSpec.restrict_map_group_choice (map_group_sem env g1) g1' (map_group_sem env g2) g2';
-    ()
-  | _ -> assume False
-
-#pop-options
-
-
-(*
-          MapSpec.restrict_map_group_concat
-            (map_group_sem env g1)
-            fp1
-            g1'
-            (map_group_sem env g2)
-            g2'
-            fp2';
-          assert (MapSpec.restrict_map_group (map_group_sem env g) g');
-          MapSpec.map_group_footprint_concat g1' g2' fp1' fp2';
-          assert (MapSpec.map_group_footprint g' fp');
-          assert (Spec.typ_included fp' (fp1 `Spec.t_choice` fp2));
-          assert (Spec.typ_disjoint left fp');
-
-
-    MapSpec.map_group_footprint_match_item_for cut vkey (typ_sem env value);
-
-*)
-
-
-(*
-
-(* TODO: support recursion on types *)
-
-noeq
-type result =
-| ResultSuccess
-| ResultFailure of string
-| ResultOutOfFuel
-
-(* Equivalence and disjointness *)
-
-#push-options "--z3rlimit 32"
-
-[@@"opaque_to_smt"]
-let rec typ_equiv
-  (e: ast_env)
-  (fuel: nat)
-  (t1: typ)
-  (t2: typ)
-: Pure bool
-  (requires (
-    typ_bounded e.e_sem_env.se_bound t1 /\
-    typ_bounded e.e_sem_env.se_bound t2
-  ))
-  (ensures (fun b ->
-    typ_bounded e.e_sem_env.se_bound t1 /\
-    typ_bounded e.e_sem_env.se_bound t2 /\
-    (b == true ==> Spec.typ_equiv (typ_sem e.e_sem_env t1) (typ_sem e.e_sem_env t2))
-  ))
-  (decreases fuel)
-= if t1 `typ_eq` t2
-  then true
-  else if fuel = 0
-  then false
-  else let fuel' : nat = fuel - 1 in
-  match t1, t2 with
-  | TElem (TDef i), _ ->
-    let s1 = e.e_sem_env.se_env i in
-    if SEType? s1
-    then
-      let t1' = e.e_env i in
-      typ_equiv e fuel' t1' t2
-    else false
-  | _, TElem (TDef _) ->
-    typ_equiv e fuel' t2 t1
-  | TEscapeHatch _, _
-  | _, TEscapeHatch _ -> false
-  | TChoice [], TChoice [] -> true
-  | TChoice (t1' :: q1'), TChoice (t2' :: q2') ->
-    if typ_equiv e fuel' (TElem t1') (TElem t2')
-    then typ_equiv e fuel' (TChoice q1') (TChoice q2')
-    else false
-  | TTag tag1 t1, TTag tag2 t2 ->
-    if tag1 <> tag2
-    then false
-    else typ_equiv e fuel' (TElem t1) (TElem t2)
-  | TArray t1, TArray t2 ->
-    array_group_equiv e fuel' t1 t2
-  | TElem (TElemArray i1), TElem (TElemArray i2) ->
-    array_group_equiv e fuel' ["", i1] ["", i2]
-  | (TMap i1), (TMap i2) -> i1 = i2 // TODO
-  | _ -> false
-
-and array_group_equiv
-  (e: ast_env)
-  (fuel: nat)
-  (t1: array_group)
-  (t2: array_group)
-: Pure bool
-  (requires (
-    array_group_bounded e.e_sem_env.se_bound t1 /\
-    array_group_bounded e.e_sem_env.se_bound t2
-  ))
-  (ensures (fun b ->
-    array_group_bounded e.e_sem_env.se_bound t1 /\
-    array_group_bounded e.e_sem_env.se_bound t2 /\
-    (b == true ==> Spec.array_group3_equiv (array_group_sem e.e_sem_env t1) (array_group_sem e.e_sem_env t2))
-  ))
-  (decreases fuel)
-= if t1 = t2
-  then true
-  else if fuel = 0
-  then false
-  else let fuel' : nat = fuel - 1 in
-  match t1, t2 with
-  | [], [] -> true
-  | (_, TAAtom (TADef i1)) :: q1', _ ->
-    let s1 = e.e_sem_env.se_env i1 in
-    if SEArrayGroup? s1
-    then
-      let t1' = e.e_env i1 in
-      array_group_equiv e fuel' (t1' `List.Tot.append` q1') t2
-    else false
-  | _, (_, TAAtom (TADef _)) :: _ ->
-    array_group_equiv e fuel' t2 t1
-  | (_, TAAtom (TAElem t1)) :: q1, (_, TAAtom (TAElem t2)) :: q2 ->
-    if typ_equiv e fuel' (TElem t1) (TElem t2)
-    then array_group_equiv e fuel' q1 q2
-    else false
-  | (s1, TAZeroOrMore t1) :: q1, (s2, TAZeroOrMore t2) :: q2 ->
-    if array_group_equiv e fuel' [s1, TAAtom t1] [s2, TAAtom t2]
-    then begin
-       assert (Spec.array_group3_equiv (atom_array_group_sem e.e_sem_env t1) (atom_array_group_sem e.e_sem_env t2));
-       assert (Spec.array_group3_equiv (Spec.array_group3_zero_or_more (atom_array_group_sem e.e_sem_env t1)) (Spec.array_group3_zero_or_more (atom_array_group_sem e.e_sem_env t2)));
-       array_group_equiv e fuel' q1 q2
-    end
-    else false
-  | (s1, TAOneOrMore t1) :: q1, (s2, TAOneOrMore t2) :: q2 ->
-    if array_group_equiv e fuel' [s1, TAAtom t1] [s2, TAAtom t2]
-    then begin
-       assert (Spec.array_group3_equiv (atom_array_group_sem e.e_sem_env t1) (atom_array_group_sem e.e_sem_env t2));
-       assert (Spec.array_group3_equiv (Spec.array_group3_one_or_more (atom_array_group_sem e.e_sem_env t1)) (Spec.array_group3_one_or_more (atom_array_group_sem e.e_sem_env t2)));
-       array_group_equiv e fuel' q1 q2
-    end
-    else false
-  | (s1, TAZeroOrOne t1) :: q1, (s2, TAZeroOrOne t2) :: q2 ->
-    if array_group_equiv e fuel' [s1, TAAtom t1] [s2, TAAtom t2]
-    then begin
-       assert (Spec.array_group3_equiv (atom_array_group_sem e.e_sem_env t1) (atom_array_group_sem e.e_sem_env t2));
-       assert (Spec.array_group3_equiv (Spec.array_group3_zero_or_one (atom_array_group_sem e.e_sem_env t1)) (Spec.array_group3_zero_or_one (atom_array_group_sem e.e_sem_env t2)));
-       array_group_equiv e fuel' q1 q2
-    end
-    else false
-  | _ -> false
-
-#pop-options
-
-#push-options "--z3rlimit 64 --split_queries always"
-
-#restart-solver
-[@@"opaque_to_smt"]
-let rec typ_disjoint
-  (e: ast_env)
-  (fuel: nat)
-  (t1: typ)
-  (t2: typ)
-: Pure result
-  (requires (
-    typ_bounded e.e_sem_env.se_bound t1 /\
-    typ_bounded e.e_sem_env.se_bound t2
-  ))
-  (ensures (fun b ->
-    typ_bounded e.e_sem_env.se_bound t1 /\
-    typ_bounded e.e_sem_env.se_bound t2 /\
-    (b == ResultSuccess ==> Spec.typ_disjoint (typ_sem e.e_sem_env t1) (typ_sem e.e_sem_env t2))
-  ))
-  (decreases fuel)
-= if fuel = 0
-  then ResultOutOfFuel
-  else let fuel' : nat = fuel - 1 in
-  match t1, t2 with
-  | TElem (TDef i), _ ->
-    let s1 = e.e_sem_env.se_env i in
-    if SEType? s1
-    then
-      let t1' = e.e_env i in
-      typ_disjoint e fuel' t1' t2
-    else ResultSuccess
-  | _, TElem (TDef _) ->
-    typ_disjoint e fuel' t2 t1
-  | TChoice [], _ -> ResultSuccess
-  | TChoice (t1' :: q1'), _ ->
-    let td1 = typ_disjoint e fuel' (TElem t1') t2 in
-    if not (ResultSuccess? td1)
-    then td1
-    else typ_disjoint e fuel' (TChoice q1') t2
-  | _, TChoice _ ->
-    typ_disjoint e fuel' t2 t1
-  | TEscapeHatch _, _
-  | _, TEscapeHatch _ -> ResultFailure "typ_disjoint: TEscapeHatch"
-  | TTag tag1 t1, TTag tag2 t2 ->
-    if tag1 <> tag2
-    then ResultSuccess
-    else typ_disjoint e fuel' (TElem t1) (TElem t2)
-  | _, TTag _ _
-  | TTag _ _, _ -> ResultSuccess
-  | TArray i1, TArray i2 ->
-    Spec.array3_close_array_group (array_group_sem e.e_sem_env i1);
-    Spec.array3_close_array_group (array_group_sem e.e_sem_env i2);
-    array_group_disjoint e fuel' true i1 i2
-  | TElem (TElemArray i1), TElem (TElemArray i2) ->
-    Spec.array3_close_array_group (array_group_sem e.e_sem_env ["", i1]);
-    Spec.array3_close_array_group (array_group_sem e.e_sem_env ["", i2]);
-    array_group_disjoint e fuel' true ["", i1] ["", i2]
-  | TArray i1, TElem (TElemArray i2)
-    ->
-    Spec.array3_close_array_group (array_group_sem e.e_sem_env i1);
-    Spec.array3_close_array_group (array_group_sem e.e_sem_env ["", i2]);
-    array_group_disjoint e fuel' true i1 ["", i2]
-  | TElem (TElemArray i2), TArray i1
-    ->
-    Spec.array3_close_array_group (array_group_sem e.e_sem_env i1);
-    Spec.array3_close_array_group (array_group_sem e.e_sem_env ["", i2]);
-    array_group_disjoint e fuel' true ["", i2] i1
-  | TArray _, _
-  | _, TArray _ -> ResultSuccess
-  | TElem (TLiteral (TLSimple l1)) , TElem TBool
-  | TElem TBool, TElem (TLiteral (TLSimple l1))
-  -> if l1 = Spec.simple_value_false || l1 = Spec.simple_value_true
-    then ResultFailure "typ_disjoint: TFalse, TBool"
-    else ResultSuccess
-  | TElem (TLiteral (TLString ty1 _)), TElem TByteString
-  | TElem TByteString, TElem (TLiteral (TLString ty1 _))
-  -> if ty1 = cddl_major_type_byte_string
-    then ResultFailure "typ_disjoint: byte_string"
-    else ResultSuccess
-  | TElem (TLiteral (TLString ty1 _)), TElem TTextString
-  | TElem TTextString, TElem (TLiteral (TLString ty1 _))
-  -> if ty1 = cddl_major_type_text_string
-    then ResultFailure "typ_disjoint: byte_string"
-    else ResultSuccess
-  | (TMap _), (TMap _) -> ResultFailure "typ_disjoint: TMap, TMap" // TODO
-  | TMap _, _ | _, TMap _ -> ResultSuccess
-  | TElem e1, TElem e2 ->
-    if e1 <> e2
-    then ResultSuccess
-    else ResultFailure "typ_disjoint: TElem equal"
-
-and array_group_disjoint
-  (e: ast_env)
-  (fuel: nat)
-  (close: bool)
-  (t1: array_group)
-  (t2: array_group)
-: Pure result
-  (requires (
-    array_group_bounded e.e_sem_env.se_bound t1 /\
-    array_group_bounded e.e_sem_env.se_bound t2
-  ))
-  (ensures (fun b ->
-    array_group_bounded e.e_sem_env.se_bound t1 /\
-    array_group_bounded e.e_sem_env.se_bound t2 /\
-    (b == ResultSuccess ==> Spec.array_group3_disjoint
-      (Spec.maybe_close_array_group (array_group_sem e.e_sem_env t1) close)
-      (Spec.maybe_close_array_group (array_group_sem e.e_sem_env t2) close)
-  )))
-  (decreases fuel)
-= if fuel = 0
-  then ResultOutOfFuel
-  else let fuel' : nat = fuel - 1 in
-  match t1, t2 with
-  | (_, TAAtom (TADef i1)) :: q1, _ ->
-    let s1 = e.e_sem_env.se_env i1 in
-    if SEArrayGroup? s1
-    then
-      let t1' = e.e_env i1 in
-      array_group_disjoint e fuel' close (t1' `List.Tot.append` q1) t2
-    else ResultSuccess
-  | _, (_, TAAtom (TADef _)) :: _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | (name, TAZeroOrMore t1') :: q, _ ->
-    let res1 = array_group_disjoint e fuel' close q t2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else if ResultSuccess? (array_group_disjoint e fuel' false [name, TAAtom t1'] t2) // loop-free shortcut, but will miss things like "disjoint? (a* ) (ab)"
-    then ResultSuccess
-    else array_group_disjoint e fuel' close ((name, TAAtom t1') :: (name, TAZeroOrMore t1') :: q) t2 // general rule, possible source of loops
-  | _, (_, TAZeroOrMore _) :: _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | (name, TAOneOrMore t1') :: q, _ ->
-    array_group_disjoint e fuel' close ((name, TAAtom t1') :: (name, TAZeroOrMore t1') :: q) t2
-  | _, (_, TAOneOrMore _) :: _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | (name, TAZeroOrOne t1') :: q, _ ->
-    let res1 = array_group_disjoint e fuel' close q t2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else array_group_disjoint e fuel' close ((name, TAAtom t1') :: q) t2
-  | _, (_, TAZeroOrOne _) :: _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | [], [] -> ResultFailure "array_group_disjoint: [], []"
-  | _, [] -> if close then ResultSuccess else ResultFailure "array_group_disjoint: cons, nil, not close"
-  | [], _ ->
-    array_group_disjoint e fuel' close t2 t1
-  | (n1, TAAtom (TAElem t1')) :: q1, (n2, TAAtom (TAElem t2')) :: q2 ->
-    array_group_sem_cons e.e_sem_env n1 (TAAtom (TAElem t1')) q1;
-    array_group_sem_cons e.e_sem_env n2 (TAAtom (TAElem t2')) q2;
-    if ResultSuccess? (typ_disjoint e fuel' (TElem t1') (TElem t2'))
-    then ResultSuccess
-    else if typ_equiv e fuel' (TElem t1') (TElem t2')
-    then
-      let res = array_group_disjoint e fuel' close q1 q2 in
-      res
-    else ResultFailure "array_group_disjoint: TAElem"
-//  | _ -> false
-
-#pop-options
-
-let rec spec_array_group_splittable
-  (e: sem_env)
-  (a: array_group)
-: Tot prop
-= array_group_bounded e.se_bound a /\
-  begin match a with
-  | [] -> True
-  | [_] -> True
-  | (_, t) :: q ->
-    Spec.array_group3_concat_unique_weak
-      (elem_array_group_sem e t)
-      (array_group_sem e q) /\
-    spec_array_group_splittable e q
-  end
-
-let rec spec_array_group_splittable_included
-  (e1 e2: sem_env)
-  (a: array_group)
-: Lemma
-  (requires
-     sem_env_included e1 e2 /\
-     array_group_bounded e1.se_bound a
-  )
-  (ensures
-    spec_array_group_splittable e1 a <==> spec_array_group_splittable e2 a
-  )
-= match a with
-  | [] -> ()
-  | [_, t] -> elem_array_group_sem_included e1 e2 t
-  | (_, t) :: q ->
-    elem_array_group_sem_included e1 e2 t;
-    array_group_sem_included e1 e2 q;
-    spec_array_group_splittable_included e1 e2 q
-
-#push-options "--z3rlimit 32"
-
-#restart-solver
-let rec spec_array_group_splittable_fold
-  (e: sem_env)
-  (g1 g2: array_group)
-: Lemma
-  (requires
-    spec_array_group_splittable e g1 /\
-    spec_array_group_splittable e (g1 `List.Tot.append` g2)
-  )
-  (ensures
-    spec_array_group_splittable e g2 /\
-    Spec.array_group3_concat_unique_weak
-      (array_group_sem e g1)
-      (array_group_sem e g2)
-  )
-  (decreases g1)
-= match g1 with
-  | [] -> ()
-  | [_] -> ()
-  | (n1, t1) :: g1' ->
-    spec_array_group_splittable_fold e g1' g2;
-    let a1 = array_group_sem e g1 in
-    let a3 = array_group_sem e g2 in
-    Spec.array_group3_concat_unique_weak_intro a1 a3
-      (fun l -> ())
-      (fun l1 l2 ->
-        let Some (l1l, l1r) = elem_array_group_sem e t1 l1 in
-        List.Tot.append_assoc l1l l1r l2
-      );
-    assert (Spec.array_group3_concat_unique_weak a1 a3)
-
-#pop-options
-
-// the converse does not hold: consider a* b* a*, then [a] has two decompositions: [a] [] [] and [] [] [a]
-
-#push-options "--z3rlimit 64"
-
-#restart-solver
-let rec spec_array_group_splittable_fold_gen
-  (e: sem_env)
-  (g1 g2 g3: array_group)
-  (n2: string)
-  (g2': elem_array_group)
-: Lemma
-  (requires
-    spec_array_group_splittable e g2 /\
-    spec_array_group_splittable e (g1 `List.Tot.append` (g2 `List.Tot.append` g3)) /\
-    elem_array_group_bounded e.se_bound g2' /\
-    elem_array_group_sem e g2' `Spec.array_group3_equiv` array_group_sem e g2
-  )
-  (ensures
-    spec_array_group_splittable e g3 /\
-    spec_array_group_splittable e (g1 `List.Tot.append` ((n2, g2') :: g3))
-  )
-  (decreases g1)
-= match g1 with
-  | [] -> spec_array_group_splittable_fold e g2 g3
-  | _ :: g1' ->
-    spec_array_group_splittable_fold_gen e g1' g2 g3 n2 g2';
-    assert (
-      array_group_sem e ((n2, g2') :: g3) `Spec.array_group3_equiv`
-      array_group_sem e (g2 `List.Tot.append` g3)
-    );
-//    array_group_bounded_append e.se_bound g1' (g2 `List.Tot.append` g3);
-    array_group_sem_append e g1' ((n2, g2') :: g3);
-    array_group_sem_append e g1' (g2 `List.Tot.append` g3);
-    assert (Spec.array_group3_equiv
-      (array_group_sem e (g1' `List.Tot.append` ((n2, g2') :: g3)))
-      (array_group_sem e (g1' `List.Tot.append` (g2 `List.Tot.append` g3)))
-    )
-
-#pop-options
-
-let spec_array_group_splittable_threshold
-  (e: ast_env)
-: Tot Type
-= (i: string) -> Pure bool
-    (requires True)
-    (ensures fun b ->
-      b == true ==> 
-      (i `name_mem` e.e_sem_env.se_bound /\
-        SEArrayGroup? (e.e_sem_env.se_env i) /\
-        spec_array_group_splittable e.e_sem_env (e.e_env i)
-    ))
-
-#push-options "--z3rlimit 256 --split_queries always --ifuel 8 --fuel 8 --query_stats"
-
-#restart-solver
-[@@"opaque_to_smt"]
-let rec array_group_concat_unique_strong
-  (e: ast_env)
-  (e_thr: spec_array_group_splittable_threshold e)
-  (fuel: nat)
-  (a1 a2: array_group)
-: Pure result
-  (requires
-    spec_array_group_splittable e.e_sem_env a1 /\
-    array_group_bounded e.e_sem_env.se_bound a2
-  )
-  (ensures fun b ->
-    b == ResultSuccess ==> Spec.array_group3_concat_unique_strong
-      (array_group_sem e.e_sem_env a1)
-      (array_group_sem e.e_sem_env a2)
-  )
-  (decreases fuel)
-= if fuel = 0
-  then ResultOutOfFuel
-  else let fuel' : nat = fuel - 1 in
-  match a1, a2 with
-  | [], _ -> ResultSuccess
-  | (n1, t1l) :: t1r :: q, _ ->
-    let a1' = t1r :: q in
-    let res1 = array_group_concat_unique_strong e e_thr fuel' a1' a2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else let res2 = array_group_concat_unique_strong e e_thr fuel' [n1, t1l] (a1' `List.Tot.append` a2) in
-    if not (ResultSuccess? res2)
-    then res2
-    else begin
-      assert (Spec.array_group3_concat_unique_strong
-        (array_group_sem e.e_sem_env [n1, t1l])
-        (array_group_sem e.e_sem_env (a1' `List.Tot.append` a2))
-      );
-      array_group_sem_cons e.e_sem_env n1 t1l a1';
-      array_group_sem_append e.e_sem_env a1' a2;
-      assert (array_group_sem e.e_sem_env [n1, t1l] == elem_array_group_sem e.e_sem_env t1l);
-      Spec.array_group3_concat_unique_strong_equiv
-        (array_group_sem e.e_sem_env [n1, t1l])
-        (elem_array_group_sem e.e_sem_env t1l)
-        (array_group_sem e.e_sem_env (a1' `List.Tot.append` a2))
-        (array_group_sem e.e_sem_env a1' `Spec.array_group3_concat` array_group_sem e.e_sem_env a2);
-      assert (Spec.array_group3_concat_unique_strong
-        (elem_array_group_sem e.e_sem_env t1l)
-        (array_group_sem e.e_sem_env a1' `Spec.array_group3_concat` array_group_sem e.e_sem_env a2)
-      );
-      Spec.array_group3_concat_unique_strong_concat_left (elem_array_group_sem e.e_sem_env t1l) (array_group_sem e.e_sem_env a1') (array_group_sem e.e_sem_env a2);
-      assert (Spec.array_group3_concat_unique_strong
-        (array_group_sem e.e_sem_env a1)
-        (array_group_sem e.e_sem_env a2)
-      );
-      ResultSuccess
-    end
-  | [_, TAAtom (TAElem _)], _ -> ResultSuccess
-  | [n1, TAAtom (TADef i)], _ ->
-    if SEArrayGroup? (e.e_sem_env.se_env i)
-    then
-      if not (e_thr i)
-      then ResultFailure "array_group_concat_unique_strong: unfold left, beyond threshold"
-      else
-        let t1 = e.e_env i in
-        let res = array_group_concat_unique_strong e e_thr fuel' t1 a2 in
-        assert (res == ResultSuccess ==> Spec.array_group3_concat_unique_strong
-          (array_group_sem e.e_sem_env a1)
-          (array_group_sem e.e_sem_env a2)
-        );
-        res
-    else ResultSuccess
-  | _, (n2, TAAtom (TADef i)) :: a2' ->
-    array_group_sem_cons e.e_sem_env n2 (TAAtom (TADef i)) a2';
-    if SEArrayGroup? (e.e_sem_env.se_env i)
-    then
-      let t1 = e.e_env i in
-      array_group_sem_append e.e_sem_env t1 a2';
-      Spec.array_group3_concat_equiv
-        (elem_array_group_sem e.e_sem_env (TAAtom (TADef i)))
-        (array_group_sem e.e_sem_env t1)
-        (array_group_sem e.e_sem_env a2')
-        (array_group_sem e.e_sem_env a2');
-      let res = array_group_concat_unique_strong e e_thr fuel' a1 (t1 `List.Tot.append` a2') in
-      if ResultSuccess? res
-      then begin
-        assert (Spec.array_group3_concat_unique_strong
-          (array_group_sem e.e_sem_env a1)
-          (array_group_sem e.e_sem_env a2)
-        );
-        ResultSuccess
-      end
-      else res
-    else ResultSuccess
-  | [n1, TAZeroOrMore t1], _ ->
-    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else let res2 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] [n1, TAAtom t1] in
-    if not (ResultSuccess? res2)
-    then res2
-    else let res3 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res3)
-    then res3
-    else begin
-      Spec.array_group3_concat_unique_strong_zero_or_more_left
-        (atom_array_group_sem e.e_sem_env t1)
-        (array_group_sem e.e_sem_env a2);
-      ResultSuccess
-    end
-  | [n1, TAOneOrMore t1], _ ->
-    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else let res2 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] [n1, TAAtom t1] in
-    if not (ResultSuccess? res2)
-    then res2
-    else let res3 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res3)
-    then res3
-    else begin
-      Spec.array_group3_concat_unique_strong_one_or_more_left
-        (atom_array_group_sem e.e_sem_env t1)
-        (array_group_sem e.e_sem_env a2);
-      ResultSuccess
-    end
-  | [n1, TAZeroOrOne t1], _ ->
-    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else let res2 = array_group_concat_unique_strong e e_thr fuel' [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res2)
-    then res2
-    else begin
-      Spec.array_group3_concat_unique_strong_zero_or_one_left
-        (atom_array_group_sem e.e_sem_env t1)
-        (array_group_sem e.e_sem_env a2);
-      ResultSuccess
-    end
-//  | _ -> false
-
-#pop-options
-
-#push-options "--z3rlimit 32 --split_queries always"
-
-#restart-solver
-[@@"opaque_to_smt"]
-let rec array_group_splittable
-  (e: ast_env)
-  (e_thr: spec_array_group_splittable_threshold e)
-  (fuel: nat)
-  (a1 a2: array_group)
-: Pure result
-  (requires spec_array_group_splittable e.e_sem_env a2 /\
-    array_group_bounded e.e_sem_env.se_bound a1
-  )
-  (ensures fun b ->
-    array_group_bounded e.e_sem_env.se_bound (a1 `List.Tot.append` a2) /\
-    (b == ResultSuccess ==> spec_array_group_splittable e.e_sem_env (a1 `List.Tot.append` a2))
-  )
-  (decreases fuel)
-= if fuel = 0
-  then ResultOutOfFuel
-  else let fuel' : nat = fuel - 1 in
-  match a1, a2 with
-  | [], _ -> ResultSuccess
-  | t1l :: t1r :: q1, _ ->
-    let a1' = t1r :: q1 in
-    let res1 = array_group_splittable e e_thr fuel' a1' a2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else array_group_splittable e e_thr fuel' [t1l] (a1' `List.Tot.append` a2)
-  | _, [] -> ResultSuccess
-  | [_, TAAtom (TADef i)], _ ->
-    if SEArrayGroup? (e.e_sem_env.se_env i)
-    then
-      if not (e_thr i)
-      then ResultFailure "array_group_splittable: unfold left, beyond threshold"
-      else
-        let t1 = e.e_env i in
-        let res = array_group_splittable e e_thr fuel' t1 a2 in
-        if not (ResultSuccess? res)
-        then res
-        else begin
-          spec_array_group_splittable_fold e.e_sem_env t1 a2;
-          ResultSuccess
-        end
-    else ResultSuccess
-  | [_, TAAtom (TAElem _)], _ -> ResultSuccess
-  | _, (n2, TAAtom (TADef i)) :: a2' ->
-    if SEArrayGroup? (e.e_sem_env.se_env i)
-    then
-      if not (e_thr i)
-      then ResultFailure "array_group_splittable: unfold right, beyond threshold"
-      else
-        let t1 = e.e_env i in
-        let res1 = array_group_splittable e e_thr fuel' t1 a2' in // necessary because of the infamous a* b* a* counterexample
-        if not (ResultSuccess? res1)
-        then res1
-        else let res2 = array_group_splittable e e_thr fuel' a1 (t1 `List.Tot.append` a2') in
-        if not (ResultSuccess? res2)
-        then res2
-        else begin
-            spec_array_group_splittable_fold_gen e.e_sem_env a1 t1 a2' n2 (TAAtom (TADef i));
-            ResultSuccess
-        end
-    else ResultSuccess
-  | [n1, TAZeroOrMore t1], _ ->
-    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else let res2 = array_group_concat_unique_strong e e_thr fuel [n1, TAAtom t1] [n1, TAAtom t1] in
-    if not (ResultSuccess? res2)
-    then res2
-    else let res3 = array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res3)
-    then res3
-    else begin
-      Spec.array_group3_concat_unique_weak_zero_or_more_left
-        (atom_array_group_sem e.e_sem_env t1)
-        (array_group_sem e.e_sem_env a2);
-      ResultSuccess
-    end
-  | [n1, TAOneOrMore t1], _ ->
-    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else let res2 = array_group_concat_unique_strong e e_thr fuel [n1, TAAtom t1] [n1, TAAtom t1] in
-    if not (ResultSuccess? res2)
-    then res2
-    else let res3 = array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res3)
-    then res3
-    else begin
-      Spec.array_group3_concat_unique_weak_one_or_more_left
-        (atom_array_group_sem e.e_sem_env t1)
-        (array_group_sem e.e_sem_env a2);
-      ResultSuccess
-    end
-  | [n1, TAZeroOrOne t1], _ ->
-    let res1 = array_group_disjoint e fuel false [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res1)
-    then res1
-    else let res2 = array_group_splittable e e_thr fuel' [n1, TAAtom t1] a2 in
-    if not (ResultSuccess? res2)
-    then res2
-    else begin
-      Spec.array_group3_concat_unique_weak_zero_or_one_left
-        (atom_array_group_sem e.e_sem_env t1)
-        (array_group_sem e.e_sem_env a2);
-      ResultSuccess
-    end
-//  | _ -> false
-
-#pop-options
-
-let rec spec_choice_typ_well_formed
-  (env: sem_env)
-  (l: list elem_typ)
-: Tot prop
-= typ_bounded env.se_bound (TChoice l) /\
-  begin match l with
-  | [] -> True
-  | [_] -> True
-  | a :: q ->
-    Spec.typ_disjoint (typ_sem env (TElem a)) (typ_sem env (TChoice q)) /\
-    spec_choice_typ_well_formed env q
-  end
-
-let rec spec_choice_typ_well_formed_included
-  (env1 env2: sem_env)
-  (l: list elem_typ)
-: Lemma
-  (requires
-    sem_env_included env1 env2 /\
-    spec_choice_typ_well_formed env1 l
-  )
-  (ensures
-    spec_choice_typ_well_formed env2 l
-  )
-= match l with
-  | [] -> ()
-  | [_] -> ()
-  | a :: q ->
-    spec_choice_typ_well_formed_included env1 env2 q
-
-let rec choice_typ_well_formed
-  (e: ast_env)
-  (fuel: nat)
-  (l: list elem_typ)
-: Pure result
-  (requires typ_bounded e.e_sem_env.se_bound (TChoice l))
-  (ensures fun b ->
-    b == ResultSuccess ==>  spec_choice_typ_well_formed e.e_sem_env l
-  )
-  (decreases l)
-= match l with
-  | [] -> ResultSuccess
-  | [_] -> ResultSuccess
-  | a :: q ->
-    let res1 = typ_disjoint e fuel (TElem a) (TChoice q) in
-    if not (ResultSuccess? res1)
-    then res1
-    else choice_typ_well_formed e fuel q
-
-let spec_ast_env_elem_well_formed
-  (env: sem_env)
-  (#s: sem_env_elem)
-  (e: ast_env_elem env s)
-: GTot prop
-= match s with
-  | SEType _ ->
-    let e' : typ = e in
-    begin match e' with
-    | TArray l -> spec_array_group_splittable env l
-    | TChoice l -> spec_choice_typ_well_formed env l
-    | _ -> True
-    end
-  | SEArrayGroup _ -> spec_array_group_splittable env e
-  | SEMapGroup _ -> True // TODO
-
-let ast_env_elem_well_formed'
-  (e: ast_env)
-  (e_thr: spec_array_group_splittable_threshold e)
-  (fuel: nat)
-  (#s: sem_env_elem)
-  (x: ast_env_elem e.e_sem_env s)
-: Pure result
-    (requires True)
-    (ensures fun res ->
-      res == ResultSuccess ==> spec_ast_env_elem_well_formed e.e_sem_env x
-    )
-= match s with
-  | SEType _ ->
-    let e' : typ = x in
-    begin match e' with
-    | TArray l -> array_group_splittable e e_thr fuel l []
-    | TChoice l -> choice_typ_well_formed e fuel l
-    | _ -> ResultSuccess
-    end
-  | SEArrayGroup _ -> array_group_splittable e e_thr fuel x []
-  | SEMapGroup _ -> ResultSuccess
-
-let spec_ast_env_elem_well_formed_threshold
-  (e: ast_env)
-: Tot Type
-= (i: string) -> Pure bool
-    (requires True)
-    (ensures fun b ->
-      b == true ==> 
-      (i `name_mem` e.e_sem_env.se_bound /\
-        spec_ast_env_elem_well_formed e.e_sem_env (e.e_env i)
-    ))
-
-[@@ bounded_attr; sem_attr]
-noeq
-type wf_ast_env = {
-  we_env: ast_env;
-  we_env_wf: spec_ast_env_elem_well_formed_threshold we_env;
-  we_env_wf_prop: squash (forall (i: name we_env.e_sem_env.se_bound) . we_env_wf i == true);
-}
-
-[@@"opaque_to_smt"]
-let spec_array_group_splittable_threshold_of_ast_elem_well_formed_threshold
-  (e: ast_env)
-  (f: spec_ast_env_elem_well_formed_threshold e)
-: Tot (spec_array_group_splittable_threshold e)
-= (fun i ->
-    if f i
-    then SEArrayGroup? (e.e_sem_env.se_env i)
-    else false
-  )
-
-let ast_env_elem_well_formed
-  (e: ast_env)
-  (e_thr: spec_ast_env_elem_well_formed_threshold e)
-  (fuel: nat)
-  (#s: sem_env_elem)
-  (x: ast_env_elem e.e_sem_env s)
-: Pure result
-    (requires True)
-    (ensures fun res ->
-      res == ResultSuccess ==> spec_ast_env_elem_well_formed e.e_sem_env x
-    )
-= ast_env_elem_well_formed' e (spec_array_group_splittable_threshold_of_ast_elem_well_formed_threshold e e_thr) fuel x
-
-[@@"opaque_to_smt"]
-let spec_ast_env_elem_well_formed_threshold_empty
-  (e: ast_env)
-: Tot (spec_ast_env_elem_well_formed_threshold e)
-= (fun _ -> false)
-
-[@@ bounded_attr; sem_attr]
-let empty_wf_ast_env = {
-  we_env = empty_ast_env;
-  we_env_wf = spec_ast_env_elem_well_formed_threshold_empty _;
-  we_env_wf_prop = ();
-}
-
-let spec_array_group_splittable_nil
-  (e: sem_env)
-: Lemma
-  (ensures (spec_array_group_splittable e []))
-  [SMTPat (spec_array_group_splittable e [])]
-= assert_norm (spec_array_group_splittable e []) // would need 1 fuel
-
-let spec_ast_env_elem_well_formed_threshold_fuel
-  (#e: ast_env)
-  (e_thr: spec_ast_env_elem_well_formed_threshold e)
-  (new_name: name e.e_sem_env.se_bound)
-: Tot Type0
-= (fuel: nat {
-    ast_env_elem_well_formed e e_thr fuel (e.e_env new_name) == ResultSuccess
-  })
-
-let spec_ast_env_elem_well_formed_threshold_fuel_intro
-  (fuel: nat)
-  (e: ast_env)
-  (e_thr: spec_ast_env_elem_well_formed_threshold e)
-  (new_name: name e.e_sem_env.se_bound)
-  (prf: squash (ast_env_elem_well_formed e e_thr fuel (e.e_env new_name) == ResultSuccess))
-: Tot (spec_ast_env_elem_well_formed_threshold_fuel e_thr new_name)
-= fuel
-
-let spec_ast_env_elem_well_formed_threshold_extend
-  (#e: ast_env)
-  (e_thr: spec_ast_env_elem_well_formed_threshold e)
-  (new_name: name e.e_sem_env.se_bound)
-  (fuel: spec_ast_env_elem_well_formed_threshold_fuel e_thr new_name)
-: Tot (spec_ast_env_elem_well_formed_threshold e)
-= (fun i -> if i = new_name then true else e_thr i)
-
-let spec_ast_env_elem_well_formed_included
-  (e1 e2: sem_env)
-  (#s: sem_env_elem)
-  (x: ast_env_elem e1 s)
-: Lemma
-  (requires
-    sem_env_included e1 e2 /\
-    spec_ast_env_elem_well_formed e1 x
-  )
-  (ensures
-    spec_ast_env_elem_well_formed e2 x
-  )
-= match s with
-  | SEType _ ->
-    let e' : typ = x in
-    begin match e' with
-    | TArray l -> spec_array_group_splittable_included e1 e2 l
-    | TChoice l -> spec_choice_typ_well_formed_included e1 e2 l
-    | _ -> ()
-    end
-  | SEArrayGroup _ -> spec_array_group_splittable_included e1 e2 x
-  | SEMapGroup _ -> ()
-
-let spec_ast_env_elem_well_formed_threshold_extend_env
-  (#e1: ast_env)
-  (e_thr: spec_ast_env_elem_well_formed_threshold e1)
-  (e2: ast_env { ast_env_included e1 e2 })
-: Tot (spec_ast_env_elem_well_formed_threshold e2)
-= (fun i ->
-     if e_thr i
-     then begin
-       spec_ast_env_elem_well_formed_included e1.e_sem_env e2.e_sem_env (e1.e_env i);
-       true
-     end
-     else false
-  )
-
-let wf_ast_env_included
-  (e1 e2: wf_ast_env)
-: Tot prop
-= ast_env_included e1.we_env e2.we_env
-
-[@@"opaque_to_smt"; bounded_attr; sem_attr]
-let wf_ast_env_extend_gen
-  (e: wf_ast_env)
-  (new_name: string { (~ (new_name `name_mem` e.we_env.e_sem_env.se_bound)) } )
-  (s: sem_env_elem)
-  (x: ast_env_elem e.we_env.e_sem_env s)
-  (fuel: spec_ast_env_elem_well_formed_threshold_fuel
-    (spec_ast_env_elem_well_formed_threshold_extend_env
-      e.we_env_wf
-      (ast_env_extend_gen e.we_env new_name s x))
-    new_name
-  )
-: Pure wf_ast_env
-    (requires True)
-    (ensures fun e' ->
-      e'.we_env.e_sem_env.se_bound == e.we_env.e_sem_env.se_bound `extend_name_env` new_name /\
-      wf_ast_env_included e e' /\
-      e'.we_env.e_sem_env.se_env new_name == s /\
-      e'.we_env.e_env new_name == x
-    )
-= let ae' = ast_env_extend_gen e.we_env new_name s x in
-  {
-    we_env = ae';
-    we_env_wf = spec_ast_env_elem_well_formed_threshold_extend
-      (spec_ast_env_elem_well_formed_threshold_extend_env e.we_env_wf ae')
-      new_name
-      fuel;
-    we_env_wf_prop = ();
-  }
-
-[@@ bounded_attr; sem_attr]
-let wf_ast_env_extend_typ
-  (e: wf_ast_env)
-  (new_name: string)
-  (new_name_fresh: squash (~ (new_name `name_mem` e.we_env.e_sem_env.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
-  (a: typ)
-  (sq: squash (
-    typ_bounded e.we_env.e_sem_env.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
-  ))
-  (fuel: spec_ast_env_elem_well_formed_threshold_fuel
-    (spec_ast_env_elem_well_formed_threshold_extend_env
-      e.we_env_wf
-      (ast_env_extend_typ e.we_env new_name new_name_fresh a sq))
-    (name_intro new_name (ast_env_extend_typ e.we_env new_name new_name_fresh a sq).e_sem_env.se_bound new_name_fresh)
-  )
-: Tot (e': wf_ast_env {
-      e'.we_env.e_sem_env.se_bound == e.we_env.e_sem_env.se_bound `extend_name_env` new_name /\
-      wf_ast_env_included e e' /\
-      e'.we_env.e_sem_env.se_env new_name == SEType (typ_sem e.we_env.e_sem_env a)   /\
-      e'.we_env.e_env new_name == a
-  })
-= wf_ast_env_extend_gen e new_name (SEType (typ_sem e.we_env.e_sem_env a)) a fuel
-
-[@@ bounded_attr; sem_attr]
-let wf_ast_env_extend_array_group
-  (e: wf_ast_env)
-  (new_name: string) // ideally by SMT
-  (new_name_fresh: squash (~ (new_name `name_mem` e.we_env.e_sem_env.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
-  (a: array_group)
-  (sq: squash (
-    array_group_bounded e.we_env.e_sem_env.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
-  ))
-  (fuel: spec_ast_env_elem_well_formed_threshold_fuel
-    (spec_ast_env_elem_well_formed_threshold_extend_env
-      e.we_env_wf
-      (ast_env_extend_array_group e.we_env new_name new_name_fresh a sq))
-    (name_intro new_name (ast_env_extend_array_group e.we_env new_name new_name_fresh a sq).e_sem_env.se_bound new_name_fresh)
-  )
-: Tot (e': wf_ast_env {
-      e'.we_env.e_sem_env.se_bound == e.we_env.e_sem_env.se_bound `extend_name_env` new_name /\
-      wf_ast_env_included e e' /\
-      e'.we_env.e_sem_env.se_env new_name == SEArrayGroup (array_group_sem e.we_env.e_sem_env a) /\
-      e'.we_env.e_env new_name == a
-  })
-= wf_ast_env_extend_gen e new_name (SEArrayGroup (array_group_sem e.we_env.e_sem_env a)) a fuel
-
-[@@ bounded_attr; sem_attr]
-let wf_ast_env_extend_map_group
-  (e: wf_ast_env)
-  (new_name: string) // ideally by SMT
-  (new_name_fresh: squash (~ (new_name `name_mem` e.we_env.e_sem_env.se_bound))) // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
-  (a: map_group)
-  (sq: squash (
-    map_group_bounded e.we_env.e_sem_env.se_bound a // ideally by normalization with (delta_attr [`%bounded_attr; iota; zeta; primops]) + SMT
-  ))
-  (fuel: spec_ast_env_elem_well_formed_threshold_fuel
-    (spec_ast_env_elem_well_formed_threshold_extend_env
-      e.we_env_wf
-      (ast_env_extend_map_group e.we_env new_name new_name_fresh a sq))
-    (name_intro new_name (ast_env_extend_map_group e.we_env new_name new_name_fresh a sq).e_sem_env.se_bound new_name_fresh)
-  )
-: Tot (e': wf_ast_env {
-      e'.we_env.e_sem_env.se_bound == e.we_env.e_sem_env.se_bound `extend_name_env` new_name /\
-      wf_ast_env_included e e' /\
-      e'.we_env.e_sem_env.se_env new_name == SEMapGroup (map_group_sem e.we_env.e_sem_env a) /\
-      e'.we_env.e_env new_name == a
-  })
-= wf_ast_env_extend_gen e new_name (SEMapGroup (map_group_sem e.we_env.e_sem_env a)) a fuel
-
-let solve_bounded () : FStar.Tactics.Tac unit =
-  FStar.Tactics.norm [delta_attr [`%bounded_attr]; iota; zeta; primops; nbe];
+let solve_by_norm () : FStar.Tactics.Tac unit =
+  FStar.Tactics.norm [delta; iota; zeta; primops; nbe];
   FStar.Tactics.smt ()
 
-exception ExceptionOutOfFuel
-
-let solve_spec_ast_env_elem_well_formed () : FStar.Tactics.Tac unit =
-  let rec aux (n: nat) : FStar.Tactics.Tac unit =
-    FStar.Tactics.try_with
-    (fun _ ->
-      FStar.Tactics.print ("solve_spec_ast_env_elem_well_formed with fuel " ^ string_of_int n ^ "\n");
-      FStar.Tactics.apply (FStar.Tactics.mk_app (`spec_ast_env_elem_well_formed_threshold_fuel_intro) [quote n, FStar.Tactics.Q_Explicit]);
-      FStar.Tactics.norm [delta; iota; zeta; primops];
-      FStar.Tactics.try_with
-        (fun _ ->
-          FStar.Tactics.trefl ()
-        )
-        (fun e -> 
-          let g = FStar.Tactics.cur_goal () in
-          FStar.Tactics.print ("solve_spec_ast_env_elem_well_formed Failure: " ^ FStar.Tactics.term_to_string g ^ "\n");
-          let g0 = quote (squash (ResultOutOfFuel == ResultSuccess)) in
-          FStar.Tactics.print ("Comparing with " ^ FStar.Tactics.term_to_string g0 ^ "\n");
-          let e' =
-            if g `FStar.Tactics.term_eq` g0
-            then ExceptionOutOfFuel
-            else e
-          in
-          FStar.Tactics.raise e'
-        )
-      )
-      (fun e ->
-        match e with
-        | ExceptionOutOfFuel -> aux (n + 1)
-        | _ -> FStar.Tactics.raise e
-      )
-  in
-  aux 0
-
-let solve_sem_equiv () : FStar.Tactics.Tac unit =
+let solve_sem () : FStar.Tactics.Tac unit =
   FStar.Tactics.norm [delta_attr [`%sem_attr]; iota; zeta; primops; nbe];
   FStar.Tactics.smt ()

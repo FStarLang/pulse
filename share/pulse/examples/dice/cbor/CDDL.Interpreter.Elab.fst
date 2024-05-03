@@ -366,6 +366,16 @@ let rec typ_disjoint
     else if v = Spec.simple_value_false
     then RFailure "typ_disjoint: Bool vs. simple_value_false"
     else RSuccess ()
+  | TElem (ELiteral (LInt ty _)), TElem EUInt
+  | TElem EUInt, TElem (ELiteral (LInt ty _)) ->
+    if ty = CBOR.Spec.cbor_major_type_uint64
+    then RFailure "typ_disjoint: uint64"
+    else RSuccess ()
+  | TElem (ELiteral (LInt ty _)), TElem ENInt
+  | TElem ENInt, TElem (ELiteral (LInt ty _)) ->
+    if ty = CBOR.Spec.cbor_major_type_neg_int64
+    then RFailure "typ_disjoint: neg_int64"
+    else RSuccess ()
   | TElem (ELiteral (LString ty _)), TElem EByteString
   | TElem EByteString, TElem (ELiteral (LString ty _)) ->
     if ty = CBOR.Spec.cbor_major_type_byte_string
@@ -1190,6 +1200,10 @@ let rec map_group_choice_compatible
       end
     end
 
+#pop-options
+
+#push-options "--z3rlimit 128 --split_queries always --query_stats --fuel 4 --ifuel 8"
+
 #restart-solver
 let rec mk_wf_typ
   (fuel: nat) // for typ_disjoint
@@ -1508,3 +1522,107 @@ and mk_wf_validate_map_group
     | res -> coerce_failure res
     end    
   | _ -> RFailure "mk_wf_validate_map_group: unsupported"
+
+#pop-options
+
+let mk_wf_typ'
+  (fuel: nat) // for typ_disjoint
+  (env: ast_env)
+  (g: typ)
+: Tot (result (ast0_wf_typ g))
+= if typ_bounded env.e_sem_env.se_bound g
+  then mk_wf_typ fuel env g
+  else RFailure "mk_wf_typ: not bounded"
+
+let prune_result
+  (#t: Type)
+  (r: result t)
+: Tot (result unit)
+= match r with
+  | RSuccess _ -> RSuccess ()
+  | res -> coerce_failure res
+
+let typ_of
+  (e: ast_env)
+  (name: string)
+: Tot typ
+= match e.e_sem_env.se_bound name with
+  | Some NType -> e.e_env name
+  | _ -> TElem EAlwaysFalse
+
+let mk_wf_typ_fuel_for
+  (e: ast_env)
+  (t: typ)
+: Tot Type0
+= (fuel: nat { prune_result (mk_wf_typ' fuel e t) == RSuccess () })
+
+[@@sem_attr]
+let mk_wf_typ_fuel_for_intro
+  (fuel: nat)
+  (e: ast_env)
+  (t: typ)
+  (prf: squash (prune_result (mk_wf_typ' fuel e t) == RSuccess ()))
+: Tot (mk_wf_typ_fuel_for e t)
+= fuel
+
+[@@sem_attr]
+let ast_env_set_wf_typ
+  (e: ast_env)
+  (new_name: string)
+  (new_name_is_type: squash (e.e_sem_env.se_bound new_name == Some NType))
+  (wf_undef: squash (None? (e.e_wf new_name)))
+  (fuel: mk_wf_typ_fuel_for e (typ_of e new_name))
+: Tot (e': ast_env {
+      e'.e_sem_env == e.e_sem_env /\
+      ast_env_included e e' /\
+      Some? (e'.e_wf new_name)
+  })
+= ast_env_set_wf e new_name (Some (RSuccess?._0 (mk_wf_typ fuel e (e.e_env new_name))))
+
+[@@sem_attr]
+let wf_ast_env_extend_typ
+  (e: wf_ast_env)
+  (new_name: string)
+  (new_name_is_type: squash (e.e_sem_env.se_bound new_name == None))
+  (t: typ)
+  (fuel: mk_wf_typ_fuel_for e t)
+: Tot (e': wf_ast_env {
+      ast_env_included e e' /\
+      e'.e_sem_env.se_bound new_name == Some NType /\
+      t == e'.e_env new_name
+  })
+= ast_env_set_wf (ast_env_extend_gen e new_name NType t) new_name (Some (RSuccess?._0 (mk_wf_typ fuel e t)))
+
+exception ExceptionOutOfFuel
+
+let solve_mk_wf_typ_fuel_for () : FStar.Tactics.Tac unit =
+  let rec aux (n: nat) : FStar.Tactics.Tac unit =
+    FStar.Tactics.try_with
+    (fun _ ->
+      FStar.Tactics.print ("solve_mk_wf_typ_fuel_for with fuel " ^ string_of_int n ^ "\n");
+      FStar.Tactics.apply (FStar.Tactics.mk_app (`mk_wf_typ_fuel_for_intro) [quote n, FStar.Tactics.Q_Explicit]);
+      FStar.Tactics.norm [delta; iota; zeta; primops];
+      FStar.Tactics.try_with
+        (fun _ ->
+          FStar.Tactics.trefl ()
+        )
+        (fun e -> 
+          let g = FStar.Tactics.cur_goal () in
+          FStar.Tactics.print ("solve_mk_wf_typ_fuel_for Failure: " ^ FStar.Tactics.term_to_string g ^ "\n");
+          let g0 = quote (squash (ROutOfFuel == RSuccess ())) in
+          FStar.Tactics.print ("Comparing with " ^ FStar.Tactics.term_to_string g0 ^ "\n");
+          let e' =
+            if g `FStar.Tactics.term_eq` g0
+            then ExceptionOutOfFuel
+            else e
+          in
+          FStar.Tactics.raise e'
+        )
+      )
+      (fun e ->
+        match e with
+        | ExceptionOutOfFuel -> aux (n + 1)
+        | _ -> FStar.Tactics.raise e
+      )
+  in
+  aux 0
