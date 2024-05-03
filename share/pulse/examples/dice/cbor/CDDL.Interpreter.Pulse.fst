@@ -62,13 +62,15 @@ let impl_type_sem_incr
   ]]
 = admit ()
 
+let rel (t1 t2: Type) = t1 -> t2 -> vprop
+
 noeq
 type impl_env
     (#bound: name_env)
     (high: target_spec_env bound)
 =   {
         i_low: target_spec_env bound;
-        i_r: (n: name bound) -> i_low n -> high n -> vprop;
+        i_r: (n: name bound) -> rel (i_low n) (high n);
     }
 
 let impl_env_included
@@ -82,6 +84,22 @@ let impl_env_included
 = target_spec_env_included high high' /\
   target_spec_env_included env.i_low env'.i_low /\
   (forall (n: name bound) . env.i_r n == env'.i_r n)
+
+let impl_env_extend
+    (#bound: name_env)
+    (#high_env: target_spec_env bound)
+    (env: impl_env high_env)
+    (n: string { ~ (name_mem n bound) })
+  (s: name_env_elem)
+  (high: Type0)
+  (low: Type0)
+  (r: rel low high)
+: Tot (env' : impl_env (target_spec_env_extend _ high_env n s high) {
+  impl_env_included env env' /\
+  env'.i_low n == low /\
+  env'.i_r n == r
+})
+= admit ()
 
 let impl_rel_pure
     (t: Type)
@@ -98,7 +116,7 @@ let impl_rel_scalar_array
 
 let impl_rel_array_of_list
   (#low #high: Type)
-  (r: low -> high -> vprop)
+  (r: rel low high)
   (x: A.array low)
   (y: list high)
 : vprop
@@ -154,7 +172,7 @@ decreases l
 
 let impl_rel_elem
     (t: target_elem_type)
-: impl_elem_type_sem t -> target_elem_type_sem t -> vprop
+: rel (impl_elem_type_sem t) (target_elem_type_sem t)
 = match t with
   | TTSimple
   | TTUInt64
@@ -166,18 +184,18 @@ let impl_rel_elem
 
 let impl_rel_pair
   (#low1 #high1: Type)
-  (r1: low1 -> high1 -> vprop)
+  (r1: rel low1 high1)
   (#low2 #high2: Type)
-  (r2: low2 -> high2 -> vprop)
+  (r2: rel low2 high2)
   (xlow: (low1 & low2)) (xhigh: (high1 & high2))
 : vprop
 = r1 (fst xlow) (fst xhigh) ** r2 (snd xlow) (snd xhigh)
 
 let impl_rel_either
   (#low1 #high1: Type)
-  (r1: low1 -> high1 -> vprop)
+  (r1: rel low1 high1)
   (#low2 #high2: Type)
-  (r2: low2 -> high2 -> vprop)
+  (r2: rel low2 high2)
   (xlow: (low1 `either` low2)) (xhigh: (high1 `either` high2))
 : vprop
 = match xlow, xhigh with
@@ -201,7 +219,7 @@ let rec impl_rel
     (#high: target_spec_env bound)
     (env: impl_env high)
     (t: target_type {target_type_bounded bound t})
-: impl_type_sem env.i_low t -> target_type_sem high t -> vprop
+: rel (impl_type_sem env.i_low t) (target_type_sem high t)
 = match t with
   | TTDef s -> env.i_r s
   | TTElem e -> impl_rel_elem e
@@ -221,7 +239,12 @@ let impl_rel_incr
     (t: target_type {target_type_bounded bound t})
 : Lemma
   (requires impl_env_included env env')
-  (ensures impl_rel env' t == impl_rel env t)
+  (ensures
+    impl_type_sem env.i_low t == impl_type_sem env'.i_low t /\
+    target_type_sem  high t == target_type_sem high' t /\
+     impl_rel env' t == coerce_eq () (impl_rel env t)
+//    impl_rel env' t == impl_rel env t // FIXME: WHY WHY WHY?
+  )
   [SMTPatOr [
     [SMTPat (impl_rel env t); SMTPat (impl_env_included env env')];
     [SMTPat (impl_rel env' t); SMTPat (impl_env_included env env')];
@@ -230,23 +253,26 @@ let impl_rel_incr
 
 let impl_rel_bij_l
   (#left #right: Type)
-  (r: left -> right -> vprop)
+  (r: rel left right)
   (#left': Type)
   (bij: Spec.bijection left left')
+: rel left' right
+= fun
   (x: left')
-  (y: right)
-: vprop
-= r (bij.bij_to_from x) y
+  (y: right) ->
+   r (bij.bij_to_from x) y
 
 let impl_rel_bij_r
   (#left #right: Type)
-  (r: left -> right -> vprop)
+  (r: rel left right)
   (#right': Type)
   (bij: Spec.bijection right right')
+: rel left right'
+= fun
   (x: left)
   (y: right')
-: vprop
-= r x (bij.bij_to_from y)
+->
+ r x (bij.bij_to_from y)
 
 inline_for_extraction [@@noextract_to "krml"]
 noeq
@@ -272,3 +298,31 @@ type total_env = {
       (te_impl_typ.i_r n)
      ;
 }
+
+assume val empty_total_env : (env: total_env {
+  env.te_ast.ta_ast == empty_ast_env
+})
+
+assume val total_env_extend_typ
+  (env: total_env)
+  (new_name: string)
+  (t: typ)
+  (t_wf: ast0_wf_typ t {
+    wf_ast_env_extend_typ_with_weak_pre env.te_ast.ta_ast new_name t t_wf
+  })
+  (high: Type0)
+  (bij_high: Spec.bijection (target_type_sem env.te_ast.ta_tgt.wft_env.tss_env (target_type_of_wf_typ t_wf)) high)
+  (low: Type0)
+  (bij_low: Spec.bijection (impl_type_sem env.te_impl_typ.i_low (target_type_of_wf_typ t_wf)) low)
+: Tot (env' : total_env {
+  env'.te_ast == target_ast_env_extend_typ env.te_ast new_name t t_wf high bij_high /\
+  env'.te_spec == spec_env_extend_typ env.te_ast.ta_ast new_name t t_wf env.te_spec high bij_high /\
+  env'.te_impl_typ == impl_env_extend env.te_impl_typ new_name NType high low
+    (impl_rel_bij_l
+      (impl_rel_bij_r
+        (impl_rel env.te_impl_typ (target_type_of_wf_typ t_wf))
+        bij_high
+      )
+      bij_low
+    )
+})
