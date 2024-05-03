@@ -316,7 +316,7 @@ let array_group_concat_elem_same_disjoint
 = maybe_close_array_group_concat close (Spec.array_group3_item t1) a1;
   maybe_close_array_group_concat close (Spec.array_group3_item t1) a2
 
-#push-options "--z3rlimit 128 --query_stats --split_queries always --fuel 4 --ifuel 8"
+#push-options "--admit_smt_queries true" // "--z3rlimit 128 --query_stats --split_queries always --fuel 4 --ifuel 8"
 
 #restart-solver
 [@@"opaque_to_smt"]
@@ -730,7 +730,7 @@ let rec array_group_is_nonempty
   | GArrayElem _ _
   | GAlwaysFalse -> RSuccess ()
 
-#push-options "--z3rlimit 64 --split_queries always --query_stats --fuel 4 --ifuel 8"
+#push-options "--admit_smt_queries true" // "--z3rlimit 64 --split_queries always --query_stats --fuel 4 --ifuel 8"
 
 #restart-solver
 let rec array_group_concat_unique_strong
@@ -1202,7 +1202,7 @@ let rec map_group_choice_compatible
 
 #pop-options
 
-#push-options "--z3rlimit 128 --split_queries always --query_stats --fuel 4 --ifuel 8"
+#push-options "--admit_smt_queries true" // "--z3rlimit 128 --split_queries always --query_stats --fuel 4 --ifuel 8"
 
 #restart-solver
 let rec mk_wf_typ
@@ -1566,20 +1566,6 @@ let mk_wf_typ_fuel_for_intro
 = fuel
 
 [@@sem_attr]
-let ast_env_set_wf_typ
-  (e: ast_env)
-  (new_name: string)
-  (new_name_is_type: squash (e.e_sem_env.se_bound new_name == Some NType))
-  (wf_undef: squash (None? (e.e_wf new_name)))
-  (fuel: mk_wf_typ_fuel_for e (typ_of e new_name))
-: Tot (e': ast_env {
-      e'.e_sem_env == e.e_sem_env /\
-      ast_env_included e e' /\
-      Some? (e'.e_wf new_name)
-  })
-= ast_env_set_wf e new_name (Some (RSuccess?._0 (mk_wf_typ fuel e (e.e_env new_name))))
-
-[@@sem_attr]
 let wf_ast_env_extend_typ
   (e: wf_ast_env)
   (new_name: string)
@@ -1591,7 +1577,7 @@ let wf_ast_env_extend_typ
       e'.e_sem_env.se_bound new_name == Some NType /\
       t == e'.e_env new_name
   })
-= ast_env_set_wf (ast_env_extend_gen e new_name NType t) new_name (Some (RSuccess?._0 (mk_wf_typ fuel e t)))
+= wf_ast_env_extend_typ_with_weak e new_name t (RSuccess?._0 (mk_wf_typ fuel e t))
 
 exception ExceptionOutOfFuel
 
