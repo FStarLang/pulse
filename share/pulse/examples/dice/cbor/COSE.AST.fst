@@ -2,7 +2,7 @@ module COSE.AST
 open CDDL.Interpreter
 module Spec = COSE.Spec
 
-#push-options "--fuel 0"
+#push-options "--fuel 0 --ifuel 0"
 
 [@@  sem_attr]
 let e0 = empty_total_env
@@ -22,19 +22,18 @@ let header_map_wf = // PLEASE normalize this
   compute_wf_typ
     e0.te_ast.ta_ast
     "header_map"
-    (_ by (FStar.Tactics.tadmit ()))
+    (_ by (solve_by_norm ()))
     header_map
-    (_ by (FStar.Tactics.tadmit ())) // solve_mk_wf_typ_fuel_for ()))
+    (_ by (solve_mk_wf_typ_fuel_for ()))
 
 inline_for_extraction noextract
 let e1 = total_env_extend_typ
   e0
   "header_map"
+  header_map
   header_map_wf
-  high_typ
-  high_typ_bij
-  low_typ
-  low_typ_bij
+  _ (CDDL.Spec.bij_id _)
+  _ (CDDL.Spec.bij_id _)
 
 let header_map_validator = e1.te_impl_validate "header_map" //PLEASE normalize
 let header_map_parser = e1.te_impl_parse "header_map" //PLEASE normalize
@@ -44,6 +43,7 @@ inline_for_extraction noextract
 let e2 = total_env_replace
   e1
   "header_map"
+  () // (_ by (solve_by_norm ()))
   header_map_validator
   header_map_parser
   header_map_serializer
@@ -53,7 +53,6 @@ let e2 = total_env_replace
 1 => string
 2 => int
 * (int => any)
-*)
 
 
 let header_map_wf = e0.te_impl_validate

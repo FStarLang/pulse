@@ -1644,6 +1644,10 @@ let rec target_type_bounded_incr
 type target_spec_env (bound: name_env) =
   (name bound -> Type0)
 
+irreducible [@@"opaque_to_smt"]
+let empty_target_spec_env : target_spec_env empty_name_env =
+  fun _ -> false_elim ()
+
 let target_spec_env_included (#bound1: name_env) (t1: target_spec_env bound1) (#bound2: name_env) (t2: target_spec_env bound2) : Tot prop =
   name_env_included bound1 bound2 /\
   (forall (x: name bound1) . t1 x == t2 x)
@@ -2026,6 +2030,12 @@ type target_spec_size_env (b: name_env) = {
   tss_group_size: (n: array_group_name b) -> tss_env n -> GTot nat;
 }
 
+[@@"opaque_to_smt"] irreducible
+let empty_target_spec_size_env : target_spec_size_env empty_name_env = {
+  tss_env = empty_target_spec_env;
+  tss_group_size = (fun _ _ -> false_elim ());
+}
+
 let target_spec_size_env_included (#bound1: name_env) (t1: target_spec_size_env bound1) (#bound2: name_env) (t2: target_spec_size_env bound2) : Tot prop =
   target_spec_env_included t1.tss_env t2.tss_env /\
   (forall (x: array_group_name bound1) . t1.tss_group_size x == t2.tss_group_size x) // equality needed because it will be used as a type index for parser specifications
@@ -2240,6 +2250,12 @@ noeq
 type wf_target_spec_env (b: name_env) = {
   wft_env: target_spec_size_env b;
   wft_serializable: (n: name b) -> (x: wft_env.tss_env n) -> Tot prop;
+}
+
+irreducible [@@"opaque_to_smt"]
+let empty_wf_target_spec_env: wf_target_spec_env empty_name_env = {
+  wft_env = empty_target_spec_size_env;
+  wft_serializable = (fun _ _ -> False);
 }
 
 let wf_target_spec_env_included (#bound1: name_env) (t1: wf_target_spec_env bound1) (#bound2: name_env) (t2: wf_target_spec_env bound2) : Tot prop =
@@ -2555,10 +2571,9 @@ let wf_typ_serializable_incr'
 
 let wf_typ_serializable_bij
   (e: wf_ast_env)
-  (new_name: string)
   (t: typ)
   (t_wf: ast0_wf_typ t {
-    wf_ast_env_extend_typ_with_weak_pre e new_name t t_wf
+    spec_wf_typ e.e_sem_env t t_wf
   })
   (wft: wf_target_spec_env e.e_sem_env.se_bound)
   (t': Type0)
@@ -2583,7 +2598,7 @@ let wf_target_spec_env_extend_typ
   })
 = {
     wft_env = target_spec_size_env_extend_typ e new_name t t_wf wft.wft_env t' bij;
-    wft_serializable = (fun n -> if n = new_name then wf_typ_serializable_bij e new_name t t_wf wft t' bij else wft.wft_serializable n);
+    wft_serializable = (fun n -> if n = new_name then wf_typ_serializable_bij e t t_wf wft t' bij else wft.wft_serializable n);
   }
 
 let bounded_target_type (env: name_env) =
@@ -2615,6 +2630,11 @@ type target_ast_env = {
 *)
 }
 
+let empty_target_ast_env = {
+  ta_ast = empty_wf_ast_env;
+  ta_tgt = empty_wf_target_spec_env;
+}
+
 let target_ast_env_included
   (env env' : target_ast_env)
 : Tot prop
@@ -2644,6 +2664,12 @@ noeq
 type spec_env (tp_sem: sem_env) (tp_tgt: wf_target_spec_env (tp_sem.se_bound)) = {
   tp_spec_typ: (n: typ_name tp_sem.se_bound) -> Spec.spec (tp_sem.se_env n) (tp_tgt.wft_env.tss_env n) (tp_tgt.wft_serializable n);
   tp_spec_array_group: (n: array_group_name tp_sem.se_bound) -> Spec.ag_spec (tp_sem.se_env n) (tp_tgt.wft_env.tss_group_size n) (tp_tgt.wft_serializable n);
+}
+
+[@@"opaque_to_smt"] irreducible
+let empty_spec_env (e: wf_target_spec_env empty_name_env) : spec_env empty_sem_env e = {
+  tp_spec_typ = (fun _ -> false_elim ());
+  tp_spec_array_group = (fun _ -> false_elim ());
 }
 
 let spec_of_elem_typ

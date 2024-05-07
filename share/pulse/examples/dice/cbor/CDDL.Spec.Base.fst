@@ -76,6 +76,14 @@ type bijection (from to: Type) = {
   bij_to_from_to: squash (forall (x: from) . bij_to_from (bij_from_to x) == x);
 }
 
+inline_for_extraction
+let bij_id (t: Type) : bijection t t = {
+  bij_from_to = (fun x -> x);
+  bij_to_from = (fun x -> x);
+  bij_from_to_from = ();
+  bij_to_from_to = ();
+}
+
 let parser_spec (source:typ) (target: Type0) (target_prop: target -> prop) = (c: CBOR.Spec.raw_data_item { source c }) -> GTot (y: target { target_prop y })
 
 let serializer_spec (#source:typ) (#target: Type0) (#target_prop: target -> prop) (p: parser_spec source target target_prop) =
