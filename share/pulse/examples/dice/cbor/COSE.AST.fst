@@ -16,7 +16,7 @@ let generic_headers: group NMapGroup =
 
 
 [@@  sem_attr]
-let header_map = rewrite_typ 42 (TMap generic_headers) // TODO: embed this "rewrite" in the environment extension
+let header_map = TMap generic_headers
 
 let header_map_wf = // PLEASE normalize this
   compute_wf_typ

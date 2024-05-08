@@ -96,6 +96,15 @@ type spec (source:typ) (target: Type0) (target_prop: target -> prop) = {
   serializer: serializer_spec parser;
 }
 
+let spec_ext
+  (#source: typ) (#target: Type0) (#target_prop: target -> prop) (s: spec source target target_prop) (source' : typ) : Pure (spec source' target target_prop)
+    (requires typ_equiv source source')
+    (ensures fun _ -> True)
+= {
+  parser = (fun x -> s.parser x);
+  serializer = (fun x -> s.serializer x);
+}
+
 let spec_coerce_target_prop
   (#source:typ) (#target: Type0) (#target_prop: target -> prop)
   (p: spec source target target_prop)

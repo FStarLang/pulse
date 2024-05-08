@@ -1531,7 +1531,13 @@ let mk_wf_typ'
   (g: typ)
 : Tot (result (ast0_wf_typ g))
 = if typ_bounded env.e_sem_env.se_bound g
-  then mk_wf_typ fuel env g
+  then begin
+    rewrite_typ_correct env.e_sem_env fuel g;
+    let g' = rewrite_typ fuel g in
+    match mk_wf_typ fuel env g' with
+    | RSuccess s' -> RSuccess (WfTRewrite g g' s')
+    | res -> coerce_failure res
+  end
   else RFailure "mk_wf_typ: not bounded"
 
 let prune_result
@@ -1575,7 +1581,7 @@ let compute_wf_typ
 : Tot (t_wf: ast0_wf_typ t {
     wf_ast_env_extend_typ_with_weak_pre e new_name t t_wf
   })
-= RSuccess?._0 (mk_wf_typ fuel e t)
+= RSuccess?._0 (mk_wf_typ' fuel e t)
 
 [@@sem_attr]
 let wf_ast_env_extend_typ
@@ -1589,7 +1595,7 @@ let wf_ast_env_extend_typ
       e'.e_sem_env.se_bound new_name == Some NType /\
       t == e'.e_env new_name
   })
-= wf_ast_env_extend_typ_with_weak e new_name t (RSuccess?._0 (mk_wf_typ fuel e t))
+= wf_ast_env_extend_typ_with_weak e new_name t (RSuccess?._0 (mk_wf_typ' fuel e t))
 
 exception ExceptionOutOfFuel
 

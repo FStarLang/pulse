@@ -568,6 +568,12 @@ noeq
 type ast0_wf_typ
 : typ -> Type
 = 
+| WfTRewrite:
+  (t: typ) ->
+  (t' : typ) ->
+  ast0_wf_typ t' ->
+  ast0_wf_typ t
+  
 | WfTArray:
   (g: group NArrayGroup) ->
   (s: ast0_wf_array_group g) ->
@@ -722,6 +728,10 @@ let rec bounded_wf_typ
 : Tot prop
   (decreases wf)
 = match wf with
+| WfTRewrite t t' s' ->
+  typ_bounded env t /\
+  typ_bounded env t' /\
+  bounded_wf_typ env _ s'
 | WfTArray g s ->
   bounded_wf_array_group env g s
 | WfTTagged _ t' s' ->
@@ -837,6 +847,8 @@ let rec bounded_wf_typ_incr
     [SMTPat (name_env_included env env'); SMTPat (bounded_wf_typ env' g wf)];
   ]]
 = match wf with
+  | WfTRewrite _ _ s' ->
+    bounded_wf_typ_incr env env' _ s'
   | WfTArray g s ->
     bounded_wf_array_group_incr env env' g s
   | WfTTagged _ t' s' ->
@@ -957,6 +969,8 @@ let rec bounded_wf_typ_bounded
   (decreases wf)
   [SMTPat (bounded_wf_typ env g wf)]
 = match wf with
+  | WfTRewrite _ _ s' ->
+    bounded_wf_typ_bounded env _ s'
   | WfTArray g s ->
     bounded_wf_array_group_bounded env g s
   | WfTTagged _ t' s' ->
@@ -1055,6 +1069,9 @@ let rec spec_wf_typ
 : Tot prop
   (decreases wf)
 = bounded_wf_typ env.se_bound t wf /\ begin match wf with
+| WfTRewrite t t' s' ->
+  spec_wf_typ env _ s' /\
+  Spec.typ_equiv (typ_sem env t) (typ_sem env t')
 | WfTArray g s ->
   spec_wf_array_group env g s
 | WfTTagged _ t' s' ->
@@ -1178,6 +1195,8 @@ let rec spec_wf_typ_incr
     [SMTPat (sem_env_included env env'); SMTPat (spec_wf_typ env' g wf)];
   ]]
 = match wf with
+  | WfTRewrite _ _ s' ->
+    spec_wf_typ_incr env env' _ s'
   | WfTArray g s ->
     spec_wf_array_group_incr env env' g s
   | WfTTagged _ t' s' ->
@@ -1919,6 +1938,7 @@ let rec target_type_of_wf_typ
 : Tot target_type
   (decreases wf)
 = match wf with
+  | WfTRewrite _ _ s -> target_type_of_wf_typ s
   | WfTArray _ s -> target_type_of_wf_array_group s
   | WfTTagged _ _ s -> target_type_of_wf_typ s
   | WfTMap _ _ _ _ _ s -> target_type_of_wf_map_group s
@@ -1973,6 +1993,7 @@ let rec target_type_of_wf_typ_bounded
   (decreases wf)
   [SMTPat (target_type_bounded env (target_type_of_wf_typ wf))]
 = match wf with
+  | WfTRewrite _ _ s -> target_type_of_wf_typ_bounded env s
   | WfTArray _ s -> target_type_of_wf_array_group_bounded env s
   | WfTTagged _ _ s -> target_type_of_wf_typ_bounded env s
   | WfTMap _ _ _ _ _ s -> target_type_of_wf_map_group_bounded env s
@@ -2340,6 +2361,8 @@ and wf_typ_serializable
 : Tot (target_type_sem env.wft_env.tss_env (target_type_of_wf_typ wf) -> prop)
   (decreases wf)
 = match wf with
+  | WfTRewrite _ _ s ->
+    wf_typ_serializable env s
   | WfTArray _ s ->
     begin fun z ->
     wf_array_group_serializable env s z /\
@@ -2497,6 +2520,8 @@ and wf_typ_serializable_incr
   )
   (decreases wf)
 = match wf with
+  | WfTRewrite _ _ s ->
+    wf_typ_serializable_incr env env' s z
   | WfTArray _ s ->
     wf_array_group_serializable_incr env env' s z;
     wf_array_group_size_incr env.wft_env env'.wft_env s z // FIXME: WHY WHY WHY does the pattern not trigger?
@@ -2697,6 +2722,8 @@ let rec spec_of_wf_typ
 : Tot (Spec.spec (typ_sem tp_sem t) (target_type_sem tp_tgt.wft_env.tss_env (target_type_of_wf_typ wf)) (wf_typ_serializable tp_tgt wf))
   (decreases wf)
 = match wf with
+  | WfTRewrite _ _ s ->
+    Spec.spec_ext (spec_of_wf_typ env s) _
   | WfTArray g s ->
     Spec.spec_array_group (spec_of_wf_array_group env s) _
   | WfTTagged tag t' s ->
