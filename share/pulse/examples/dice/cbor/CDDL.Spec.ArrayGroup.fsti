@@ -588,28 +588,28 @@ let array_group_serializer_spec
 noeq
 type ag_spec
   (source: array_group3 None)
-  (#target: Type0)
-  (target_size: target -> GTot nat)
-  (target_prop: target -> prop)
+  (target: Type0)
 = {
-  ag_parser: array_group_parser_spec source target_size target_prop;
+  ag_size: target -> GTot nat;
+  ag_serializable: target -> prop;
+  ag_parser: array_group_parser_spec source ag_size ag_serializable;
   ag_serializer: array_group_serializer_spec ag_parser;
 }
 
 let ag_spec_coerce_target_prop
   (#source: array_group3 None)
   (#target: Type0)
-  (#target_size: target -> GTot nat)
-  (#target_prop: target -> prop)
-  (p: ag_spec source target_size target_prop)
+  (p: ag_spec source target)
   (target_size': target -> GTot nat {
-    forall x . target_size' x == target_size x
+    forall x . target_size' x == p.ag_size x
   })
   (target_prop': target -> prop {
-    forall x . target_prop' x <==> target_prop x
+    forall x . target_prop' x <==> p.ag_serializable x
   })
-: ag_spec source target_size' target_prop'
+: ag_spec source target
 = {
+  ag_size = target_size';
+  ag_serializable = target_prop';
   ag_parser = (p.ag_parser <: array_group_parser_spec source target_size' target_prop');
   ag_serializer = p.ag_serializer;
 }
@@ -639,19 +639,24 @@ let serializer_spec_array_group
 : Tot (serializer_spec (parser_spec_array_group p target_prop'))
 = fun x -> Cbor.Array (s x)
 
+let spec_array_group_serializable
+  (#source: array_group3 None)
+  (#target: Type0)
+  (p: ag_spec source target)
+  (x: target)
+: Tot prop
+= p.ag_serializable x /\
+  p.ag_size x < pow2 64
+
 let spec_array_group
   (#source: array_group3 None)
   (#target: Type0)
-  (#target_size: target -> GTot nat)
-  (#target_prop: target -> prop)
-  (p: ag_spec source target_size target_prop)
-  (target_prop' : target -> prop {
-    forall x . target_prop' x <==> (target_prop x /\ target_size x < pow2 64) // serializability condition
-  })
-: Tot (spec (t_array3 source) target target_prop')
+  (p: ag_spec source target)
+: Tot (spec (t_array3 source) target)
 = {
-  parser = parser_spec_array_group p.ag_parser target_prop';
-  serializer = serializer_spec_array_group p.ag_serializer target_prop';
+  serializable = spec_array_group_serializable p;
+  parser = parser_spec_array_group p.ag_parser _;
+  serializer = serializer_spec_array_group p.ag_serializer _;
 }
 
 let array_group_parser_spec_bij
@@ -687,23 +692,38 @@ let array_group_serializer_spec_bij
 : Tot (array_group_serializer_spec (array_group_parser_spec_bij f target_size2 target_prop2 bij))
 = fun x -> s (bij.bij_to_from x)
 
+let ag_spec_bij_size
+  (#source: array_group3 None)
+  (#target1: Type0)
+  (f: ag_spec source target1)
+  (#target2: Type0)
+  (bij: bijection target1 target2)
+  (x2: target2)
+: GTot nat
+= f.ag_size (bij.bij_to_from x2)
+
+let ag_spec_bij_serializable
+  (#source: array_group3 None)
+  (#target1: Type0)
+  (f: ag_spec source target1)
+  (#target2: Type0)
+  (bij: bijection target1 target2)
+  (x2: target2)
+: Tot prop
+= f.ag_serializable (bij.bij_to_from x2)
+
 let ag_spec_bij
   (#source: array_group3 None)
   (#target1: Type0)
-  (#target_size1: target1 -> GTot nat)
-  (#target_prop1: target1 -> prop)
-  (f: ag_spec source target_size1 target_prop1)
+  (f: ag_spec source target1)
   (#target2: Type0)
-  (target_size2: target2 -> GTot nat)
-  (target_prop2: target2 -> prop)
-  (bij: bijection target1 target2 {
-    (forall x2 . target_size2 x2 == target_size1 (bij.bij_to_from x2)) /\
-    (forall x2 . target_prop2 x2 <==> target_prop1 (bij.bij_to_from x2))
-  })
-: Tot (ag_spec source target_size2 target_prop2)
+  (bij: bijection target1 target2)
+: Tot (ag_spec source target2)
 = {
-  ag_parser = array_group_parser_spec_bij f.ag_parser target_size2 target_prop2 bij;
-  ag_serializer = array_group_serializer_spec_bij f.ag_serializer target_size2 target_prop2 bij;
+  ag_size = ag_spec_bij_size f bij;
+  ag_serializable = ag_spec_bij_serializable f bij;
+  ag_parser = array_group_parser_spec_bij f.ag_parser _ _ bij;
+  ag_serializer = array_group_serializer_spec_bij f.ag_serializer _ _ bij;
 }
 
 let array_group_parser_spec_item
@@ -729,18 +749,22 @@ let array_group_serializer_spec_item
 : Tot (array_group_serializer_spec (array_group_parser_spec_item p target_size))
 = fun x -> [s x]
 
+let ag_spec_item_size
+  (target: Type)
+  (x: target)
+: GTot nat
+= 1
+
 let ag_spec_item
   (#ty: typ)
   (#target: Type)
-  (#target_prop: target -> GTot prop)
-  (p: spec ty target target_prop)
-  (target_size: target -> GTot nat {
-    forall x . target_size x == 1
-  })
-: Tot (ag_spec (array_group3_item ty) target_size target_prop)
+  (p: spec ty target)
+: Tot (ag_spec (array_group3_item ty) target)
 = {
-  ag_parser = array_group_parser_spec_item p.parser target_size;
-  ag_serializer = array_group_serializer_spec_item p.serializer target_size;
+  ag_size = ag_spec_item_size target;
+  ag_serializable = p.serializable;
+  ag_parser = array_group_parser_spec_item p.parser _;
+  ag_serializer = array_group_serializer_spec_item p.serializer _;
 }
 
 val array_group_parser_spec_concat
@@ -821,29 +845,43 @@ let array_group_serializer_spec_concat
     array_group3_concat_unique_weak_elim2 source1 source2 l1 l2;
     res
 
+let ag_spec_concat_size
+  (#source1: array_group3 None)
+  (#target1: Type)
+  (p1: ag_spec source1 target1)
+  (#source2: array_group3 None)
+  (#target2: Type)
+  (p2: ag_spec source2 target2)
+  (x: (target1 & target2))
+: GTot nat
+= p1.ag_size (fst x) + p2.ag_size (snd x)
+
+let ag_spec_concat_serializable
+  (#source1: array_group3 None)
+  (#target1: Type)
+  (p1: ag_spec source1 target1)
+  (#source2: array_group3 None)
+  (#target2: Type)
+  (p2: ag_spec source2 target2)
+  (x: (target1 & target2))
+: Tot prop
+= p1.ag_serializable (fst x) /\ p2.ag_serializable (snd x)
+
 let ag_spec_concat
   (#source1: array_group3 None)
   (#target1: Type)
-  (#target_size1: target1 -> GTot nat)
-  (#target_prop1: target1 -> prop)
-  (p1: ag_spec source1 target_size1 target_prop1)
+  (p1: ag_spec source1 target1)
   (#source2: array_group3 None)
   (#target2: Type)
-  (#target_size2: target2 -> GTot nat)
-  (#target_prop2: target2 -> prop)
-  (p2: ag_spec source2 target_size2 target_prop2 {
+  (p2: ag_spec source2 target2 {
     array_group3_concat_unique_weak source1 source2
   })
-  (target_size: (target1 & target2) -> GTot nat {
-    forall x . target_size x == target_size1 (fst x) + target_size2 (snd x)
-  })
-  (target_prop: (target1 & target2) -> prop {
-    forall x . target_prop x <==> (target_prop1 (fst x) /\ target_prop2 (snd x))
-  })
-: Tot (ag_spec (array_group3_concat source1 source2) target_size target_prop)
+: Tot (ag_spec (array_group3_concat source1 source2) (target1 & target2))
 = {
-  ag_parser = array_group_parser_spec_concat p1.ag_parser p2.ag_parser target_size target_prop;
-  ag_serializer = array_group_serializer_spec_concat p1.ag_serializer p2.ag_serializer target_size target_prop;
+  ag_size = ag_spec_concat_size p1 p2;
+  ag_serializable = ag_spec_concat_serializable p1 p2;
+  ag_parser = array_group_parser_spec_concat p1.ag_parser p2.ag_parser _ _;
+  ag_serializer = array_group_serializer_spec_concat p1.ag_serializer p2.ag_serializer _ _;
 }
 
 let rec array_group_parser_spec_zero_or_more'
@@ -952,24 +990,37 @@ let array_group_serializer_spec_zero_or_more
 : Tot (array_group_serializer_spec (array_group_parser_spec_zero_or_more p target_size' target_prop'))
 = array_group_serializer_spec_zero_or_more' s target_size' target_prop'
 
+let rec ag_spec_zero_or_more_size
+  (#source: array_group3 None)
+  (#target: Type)
+  (p: ag_spec source target)
+  (l: list target)
+: GTot nat
+  (decreases l)
+= match l with
+  | [] -> 0
+  | hd :: tl -> p.ag_size hd + ag_spec_zero_or_more_size p tl
+
+let ag_spec_zero_or_more_serializable
+  (#source: array_group3 None)
+  (#target: Type)
+  (p: ag_spec source target)
+  (x: list target)
+: Tot prop
+= forall y . List.Tot.memP y x ==> p.ag_serializable y
+
 let ag_spec_zero_or_more
   (#source: nonempty_array_group3)
   (#target: Type)
-  (#target_size: target -> GTot nat)
-  (#target_prop: target -> prop)
-  (p: ag_spec source target_size target_prop {
+  (p: ag_spec source target {
     array_group3_concat_unique_strong source source
   })
-  (target_size' : list target -> GTot nat {
-    forall (l: list target) . target_size' l == (if Nil? l then 0 else target_size (List.Tot.hd l) + target_size' (List.Tot.tl l))
-  })
-  (target_prop' : list target -> prop {
-    forall x . target_prop' x <==> (forall y . List.Tot.memP y x ==> target_prop y)
-  })
-: Tot (ag_spec (array_group3_zero_or_more source) target_size' target_prop')
+: Tot (ag_spec (array_group3_zero_or_more source) (list target))
 = {
-  ag_parser = array_group_parser_spec_zero_or_more p.ag_parser target_size' target_prop';
-  ag_serializer = array_group_serializer_spec_zero_or_more p.ag_serializer target_size' target_prop';
+  ag_size = ag_spec_zero_or_more_size p;
+  ag_serializable = ag_spec_zero_or_more_serializable p;
+  ag_parser = array_group_parser_spec_zero_or_more p.ag_parser _ _;
+  ag_serializer = array_group_serializer_spec_zero_or_more p.ag_serializer _ _;
 }
 
 let array_group_parser_spec_one_or_more
@@ -1017,24 +1068,27 @@ let array_group_serializer_spec_one_or_more
   List.Tot.append_length l1 l2;
   l1 `List.Tot.append` l2
 
+let ag_spec_one_or_more_serializable
+  (#source: array_group3 None)
+  (#target: Type)
+  (p: ag_spec source target)
+  (x: list target)
+: Tot prop
+= Cons? x /\
+  ag_spec_zero_or_more_serializable p x
+
 let ag_spec_one_or_more
   (#source: nonempty_array_group3)
   (#target: Type)
-  (#target_size: target -> GTot nat)
-  (#target_prop: target -> prop)
-  (p: ag_spec source target_size target_prop {
+  (p: ag_spec source target {
     array_group3_concat_unique_strong source source
   })
-  (target_size1 : list target -> GTot nat {
-    forall (l: list target) . target_size1 l == (if Nil? l then 0 else target_size (List.Tot.hd l) + target_size1 (List.Tot.tl l))
-  })
-  (target_prop1 : list target -> prop {
-    forall x . target_prop1 x <==> (Cons? x /\ (forall y . List.Tot.memP y x ==> target_prop y))
-  })
-: Tot (ag_spec (array_group3_one_or_more source) target_size1 target_prop1)
+: Tot (ag_spec (array_group3_one_or_more source) (list target))
 = {
-  ag_parser = array_group_parser_spec_one_or_more p.ag_parser target_size1 target_prop1;
-  ag_serializer = array_group_serializer_spec_one_or_more p.ag_serializer target_size1 target_prop1;
+  ag_size = ag_spec_zero_or_more_size p;
+  ag_serializable = ag_spec_one_or_more_serializable p;
+  ag_parser = array_group_parser_spec_one_or_more p.ag_parser _ _;
+  ag_serializer = array_group_serializer_spec_one_or_more p.ag_serializer _ _;
 }
 
 let array_group_parser_spec_choice
@@ -1096,33 +1150,45 @@ let array_group_serializer_spec_choice
   | Inl y -> s1 y
   | Inr y -> s2 y
 
+let ag_spec_choice_size
+  (#source1: array_group3 None)
+  (#target1: Type0)
+  (p1: ag_spec source1 target1)
+  (#source2: array_group3 None)
+  (#target2: Type0)
+  (p2: ag_spec source2 target2)
+  (x: either target1 target2)
+: GTot nat
+= match x with
+  | Inl x1 -> p1.ag_size x1
+  | Inr x2 -> p2.ag_size x2
+
+let ag_spec_choice_serializable
+  (#source1: array_group3 None)
+  (#target1: Type0)
+  (p1: ag_spec source1 target1)
+  (#source2: array_group3 None)
+  (#target2: Type0)
+  (p2: ag_spec source2 target2)
+  (x: either target1 target2)
+: GTot prop
+= match x with
+  | Inl x1 -> p1.ag_serializable x1
+  | Inr x2 -> p2.ag_serializable x2
+
 let ag_spec_choice
   (#source1: array_group3 None)
   (#target1: Type0)
-  (#target_size1: target1 -> GTot nat)
-  (#target_prop1: target1 -> prop)
-  (p1: ag_spec source1 target_size1 target_prop1)
+  (p1: ag_spec source1 target1)
   (#source2: array_group3 None)
   (#target2: Type0)
-  (#target_size2: target2 -> GTot nat)
-  (#target_prop2: target2 -> prop)
-  (p2: ag_spec source2 target_size2 target_prop2  { source1 `array_group3_disjoint` source2 })
-  (target_size: (target1 `either` target2) -> GTot nat {
-    forall x . target_size x == begin match x with
-    | Inl y -> target_size1 y
-    | Inr y -> target_size2 y
-    end
-  })
-  (target_prop: (target1 `either` target2) -> prop {
-    forall x . target_prop x <==> begin match x with
-    | Inl x1 -> target_prop1 x1
-    | Inr x2 -> target_prop2 x2
-    end
-  })
-: Tot (ag_spec (source1 `array_group3_choice` source2) target_size target_prop)
+  (p2: ag_spec source2 target2  { source1 `array_group3_disjoint` source2 })
+: Tot (ag_spec (source1 `array_group3_choice` source2) (either target1 target2))
 = {
-  ag_parser = array_group_parser_spec_choice p1.ag_parser p2.ag_parser target_size target_prop;
-  ag_serializer = array_group_serializer_spec_choice p1.ag_serializer p2.ag_serializer target_size target_prop;
+  ag_size = ag_spec_choice_size p1 p2;
+  ag_serializable = ag_spec_choice_serializable p1 p2;
+  ag_parser = array_group_parser_spec_choice p1.ag_parser p2.ag_parser _ _;
+  ag_serializer = array_group_serializer_spec_choice p1.ag_serializer p2.ag_serializer _ _;
 }
 
 let array_group_parser_spec_zero_or_one
@@ -1174,26 +1240,34 @@ let array_group_serializer_spec_zero_or_one
     | None -> []
     | Some y -> s y
 
+let ag_spec_zero_or_one_size
+  (#source: nonempty_array_group3)
+  (#target: Type)
+  (p: ag_spec source target)
+  (x: option target)
+: GTot nat
+= match x with
+  | None -> 0
+  | Some x' -> p.ag_size x'
+
+let ag_spec_zero_or_one_serializable
+  (#source: nonempty_array_group3)
+  (#target: Type)
+  (p: ag_spec source target)
+  (x: option target)
+: Tot prop
+= match x with
+  | None -> True
+  | Some x' -> p.ag_serializable x'
+
 let ag_spec_zero_or_one
   (#source: nonempty_array_group3)
   (#target: Type)
-  (#target_size: target -> GTot nat)
-  (#target_prop: target -> prop)
-  (p: ag_spec source target_size target_prop)
-  (target_size': option target -> GTot nat {
-    forall x . target_size' x == begin match x with
-    | None -> 0
-    | Some x -> target_size x
-    end
-  })
-  (target_prop': option target -> prop {
-    forall x . target_prop' x <==> begin match x with
-    | None -> True
-    | Some x -> target_prop x
-    end
-  })
-: Tot (ag_spec (array_group3_zero_or_one source) target_size' target_prop')
+  (p: ag_spec source target)
+: Tot (ag_spec (array_group3_zero_or_one source) (option target))
 = {
-  ag_parser = array_group_parser_spec_zero_or_one p.ag_parser target_size' target_prop';
-  ag_serializer = array_group_serializer_spec_zero_or_one p.ag_serializer target_size' target_prop';
+  ag_size = ag_spec_zero_or_one_size p;
+  ag_serializable = ag_spec_zero_or_one_serializable p;
+  ag_parser = array_group_parser_spec_zero_or_one p.ag_parser _ _;
+  ag_serializer = array_group_serializer_spec_zero_or_one p.ag_serializer _ _;
 }

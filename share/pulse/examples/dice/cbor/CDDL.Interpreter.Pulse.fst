@@ -285,7 +285,7 @@ noeq
 type total_env = {
   te_ast: target_ast_env;
   te_spec: spec_env (te_ast.ta_ast.e_sem_env) (te_ast.ta_tgt);
-  te_impl_typ: impl_env te_ast.ta_tgt.wft_env.tss_env;
+  te_impl_typ: impl_env te_ast.ta_tgt;
 (*
   te_impl_bij: (n: name te_ast.ta_ast.e_sem_env.se_bound) -> Spec.bijection
     (target_type_sem te_impl_typ.i_low (target_type_of_wf_ast_elem (te_ast.ta_ast.e_env n) (Some?.v (te_ast.ta_ast.e_wf n))))
@@ -310,13 +310,13 @@ let empty_impl_validate (n: typ_name empty_name_env) : CP.impl_typ #None (empty_
   false_elim ()
 
 [@@"opaque_to_smt"; noextract_to "krml"] irreducible noextract
-let empty_impl_parse (env: wf_target_spec_env empty_name_env) (n: typ_name empty_name_env) : CP.impl_parse
+let empty_impl_parse (env: target_spec_env empty_name_env) (n: typ_name empty_name_env) : CP.impl_parse
   ((empty_spec_env env).tp_spec_typ n).parser
   ((empty_impl_env _).i_r n)
 = false_elim ()
 
 [@@"opaque_to_smt"; noextract_to "krml"] irreducible noextract
-let empty_impl_serialize (env: wf_target_spec_env empty_name_env) (n: typ_name empty_name_env) : CP.impl_serialize
+let empty_impl_serialize (env: target_spec_env empty_name_env) (n: typ_name empty_name_env) : CP.impl_serialize
   ((empty_spec_env env).tp_spec_typ n).serializer
   ((empty_impl_env _).i_r n)
 = false_elim ()
@@ -345,13 +345,12 @@ assume val gen_impl_parse
     spec_wf_typ env.te_ast.ta_ast.e_sem_env t t_wf
   })
   (high: Type0)
-  (bij_high: Spec.bijection (target_type_sem env.te_ast.ta_tgt.wft_env.tss_env (target_type_of_wf_typ t_wf)) high)
+  (bij_high: Spec.bijection (target_type_sem env.te_ast.ta_tgt (target_type_of_wf_typ t_wf)) high)
   (low: Type0)
   (bij_low: Spec.bijection (impl_type_sem env.te_impl_typ.i_low (target_type_of_wf_typ t_wf)) low)
 : CP.impl_parse
     (Spec.spec_bij
       (spec_of_wf_typ env.te_spec t_wf)
-      (wf_typ_serializable_bij env.te_ast.ta_ast t t_wf env.te_ast.ta_tgt _ bij_high)
       bij_high
     ).parser
     (impl_rel_bij_l
@@ -369,13 +368,12 @@ assume val gen_impl_serialize
     spec_wf_typ env.te_ast.ta_ast.e_sem_env t t_wf
   })
   (high: Type0)
-  (bij_high: Spec.bijection (target_type_sem env.te_ast.ta_tgt.wft_env.tss_env (target_type_of_wf_typ t_wf)) high)
+  (bij_high: Spec.bijection (target_type_sem env.te_ast.ta_tgt (target_type_of_wf_typ t_wf)) high)
   (low: Type0)
   (bij_low: Spec.bijection (impl_type_sem env.te_impl_typ.i_low (target_type_of_wf_typ t_wf)) low)
 : CP.impl_serialize
     (Spec.spec_bij
       (spec_of_wf_typ env.te_spec t_wf)
-      (wf_typ_serializable_bij env.te_ast.ta_ast t t_wf env.te_ast.ta_tgt _ bij_high)
       bij_high
     ).serializer
     (impl_rel_bij_l
@@ -389,6 +387,9 @@ assume val gen_impl_serialize
 inline_for_extraction
 let inline_coerce_eq (#a:Type) (#b:Type) (_:squash (a == b)) (x:a) : b = x
 
+#push-options "--z3rlimit 16"
+
+#restart-solver
 inline_for_extraction
 let total_env_extend_typ
   (env: total_env)
@@ -398,7 +399,7 @@ let total_env_extend_typ
     wf_ast_env_extend_typ_with_weak_pre env.te_ast.ta_ast new_name t t_wf
   })
   (high: Type0)
-  (bij_high: Spec.bijection (target_type_sem env.te_ast.ta_tgt.wft_env.tss_env (target_type_of_wf_typ t_wf)) high)
+  (bij_high: Spec.bijection (target_type_sem env.te_ast.ta_tgt (target_type_of_wf_typ t_wf)) high)
   (low: Type0)
   (bij_low: Spec.bijection (impl_type_sem env.te_impl_typ.i_low (target_type_of_wf_typ t_wf)) low)
 : Tot (env' : total_env {
@@ -415,7 +416,7 @@ let total_env_extend_typ
 })
 = {
   te_ast = target_ast_env_extend_typ env.te_ast new_name t t_wf high bij_high;
-  te_spec = spec_env_extend_typ _ _ _ _ env.te_spec _ _;
+  te_spec = spec_env_extend_typ env.te_ast.ta_ast new_name t t_wf env.te_spec high bij_high;
   te_impl_typ = impl_env_extend env.te_impl_typ new_name NType high low
     (impl_rel_bij_l
       (impl_rel_bij_r
@@ -428,6 +429,8 @@ let total_env_extend_typ
   te_impl_parse = (fun n -> if n = new_name then gen_impl_parse env t t_wf _ bij_high _ bij_low else inline_coerce_eq () (env.te_impl_parse n));
   te_impl_serialize = (fun n -> if n = new_name then gen_impl_serialize env t t_wf _ bij_high _ bij_low else inline_coerce_eq () (env.te_impl_serialize n));
 }
+
+#pop-options
 
 inline_for_extraction
 let total_env_replace

@@ -66,10 +66,10 @@ let spec_tag
   (tag: U64.t)
   (#t: typ)
   (#target: Type)
-  (#target_prop: target -> prop)
-  (p: spec t target target_prop)
-: Tot (spec (t_tag tag t) target target_prop)
+  (p: spec t target)
+: Tot (spec (t_tag tag t) target)
 = {
+  serializable = p.serializable;
   parser = (function Cbor.Tagged _ v -> p.parser v);
   serializer = (fun x -> Cbor.Tagged tag (p.serializer x));
 }

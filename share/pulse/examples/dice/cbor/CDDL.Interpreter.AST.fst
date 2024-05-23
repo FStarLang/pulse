@@ -2043,589 +2043,6 @@ and target_type_of_wf_map_group_bounded
     target_type_of_wf_typ_bounded env s_key;
     target_type_of_wf_typ_bounded env s_value
 
-(* Serializability condition needed because array and map sizes are bounded *)
-
-noeq
-type target_spec_size_env (b: name_env) = {
-  tss_env: target_spec_env b;
-  tss_group_size: (n: array_group_name b) -> tss_env n -> GTot nat;
-}
-
-[@@"opaque_to_smt"] irreducible
-let empty_target_spec_size_env : target_spec_size_env empty_name_env = {
-  tss_env = empty_target_spec_env;
-  tss_group_size = (fun _ _ -> false_elim ());
-}
-
-let target_spec_size_env_included (#bound1: name_env) (t1: target_spec_size_env bound1) (#bound2: name_env) (t2: target_spec_size_env bound2) : Tot prop =
-  target_spec_env_included t1.tss_env t2.tss_env /\
-  (forall (x: array_group_name bound1) . t1.tss_group_size x == t2.tss_group_size x) // equality needed because it will be used as a type index for parser specifications
-
-let target_spec_size_env_extend_typ
-  (e: wf_ast_env)
-  (new_name: string)
-  (t: typ)
-  (t_wf: ast0_wf_typ t {
-    wf_ast_env_extend_typ_with_weak_pre e new_name t t_wf // TODO: support recursive types
-  })
-  (tss: target_spec_size_env e.e_sem_env.se_bound)
-  (t': Type0)
-  (bij: Spec.bijection (target_type_sem tss.tss_env (target_type_of_wf_typ t_wf)) t')
-: Tot (tss': target_spec_size_env (wf_ast_env_extend_typ_with_weak e new_name t t_wf).e_sem_env.se_bound {
-    target_spec_size_env_included tss tss' /\
-    tss'.tss_env new_name == t'
-  })
-= {
-    tss_env = target_spec_env_extend _ tss.tss_env new_name NType t';
-    tss_group_size = tss.tss_group_size;
-  }
-
-let rec list_sum
-  (#t: Type)
-  (s: (t -> GTot nat))
-  (l: list t)
-: GTot nat
-= match l with
-  | [] -> 0
-  | a :: q -> s a + list_sum s q
-
-let rec list_sum_ext
-  (#t1: Type)
-  (s1: t1 -> GTot nat)
-  (#t2: Type)
-  (s2: (t2 -> GTot nat))
-  (l1: list t1)
-  (l2: list t2)
-: Lemma
-  (requires (
-    t1 == t2 /\
-    (forall x . s1 x == s2 x) /\
-    l1 == l2
-  ))
-  (ensures (list_sum s1 l1 == list_sum s2 l2))
-= match l1, l2 with
-  | [], [] -> ()
-  | _ :: q1, _ :: q2 -> list_sum_ext s1 s2 q1 q2
-
-let rec wf_array_group_size
-  (#ne: name_env)
-  (env: target_spec_size_env ne)
-  (#x: group NArrayGroup)
-  (wf: ast0_wf_array_group x {bounded_wf_array_group ne x wf})
-: Tot (target_type_sem env.tss_env (target_type_of_wf_array_group wf) -> GTot nat)
-  (decreases wf)
-= match wf with
-  | WfAChoice _ _ s1 s2 -> 
-    begin fun (z: target_type_sem env.tss_env (target_type_of_wf_array_group s1) `either` target_type_sem env.tss_env (target_type_of_wf_array_group s2)) -> match z with
-    | Inl z1 -> wf_array_group_size env s1 z1
-    | Inr z2 -> wf_array_group_size env s2 z2
-    end
-  | WfAConcat _ _ s1 s2 ->
-    begin fun (z: target_type_sem env.tss_env (ttpair (target_type_of_wf_array_group s1) (target_type_of_wf_array_group s2))) ->
-    let (z1, z2) = destruct_ttpair env.tss_env (target_type_of_wf_array_group s1) (target_type_of_wf_array_group s2) z in
-    wf_array_group_size env s1 z1 + wf_array_group_size env s2 z2
-    end
-  | WfAElem _ _ -> (fun _ -> 1)
-  | WfAZeroOrOne _ s' ->
-    begin fun (z: option (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) -> match z with
-    | Some z' -> wf_array_group_size env s' z'
-    | None -> 0
-    end
-  | WfAZeroOrOneOrMore _ s' g' ->
-    list_sum (wf_array_group_size env s') 
-  | WfADef n ->
-    env.tss_group_size n
-
-let rec wf_map_group_size
-  (#ne: name_env)
-  (env: target_spec_size_env ne)
-  (#x: group NMapGroup)
-  (wf: ast0_wf_parse_map_group x {bounded_wf_parse_map_group ne x wf})
-: Tot (target_type_sem env.tss_env (target_type_of_wf_map_group wf) -> GTot nat)
-  (decreases wf)
-= match wf with
-  | WfMChoice _ s1 _ s2 -> 
-    begin fun (z: target_type_sem env.tss_env (target_type_of_wf_map_group s1) `either` target_type_sem env.tss_env (target_type_of_wf_map_group s2)) -> match z with
-    | Inl z1 -> wf_map_group_size env s1 z1
-    | Inr z2 -> wf_map_group_size env s2 z2
-    end
-  | WfMConcat _ s1 _ s2 ->
-    begin fun (z: target_type_sem env.tss_env (ttpair (target_type_of_wf_map_group s1) (target_type_of_wf_map_group s2))) ->
-    let (z1, z2) = destruct_ttpair env.tss_env (target_type_of_wf_map_group s1) (target_type_of_wf_map_group s2) z in
-    wf_map_group_size env s1 z1 + wf_map_group_size env s2 z2
-    end
-  | WfMLiteral _ _ _ _ -> (fun _ -> 1)
-  | WfMZeroOrOne _ s' ->
-    begin fun (z: option (target_type_sem env.tss_env (target_type_of_wf_map_group s'))) -> match z with
-    | Some z' -> wf_map_group_size env s' z'
-    | None -> 0
-    end
-  | WfMZeroOrMore _ _ s_key s_value ->
-    List.Tot.length #(target_type_sem env.tss_env (target_type_of_wf_typ s_key) & target_type_sem env.tss_env (target_type_of_wf_typ s_value))
-
-let rec wf_array_group_size_incr
-  (#ne: name_env)
-  (env: target_spec_size_env ne)
-  (#ne': name_env)
-  (env': target_spec_size_env ne')
-  (#x: group NArrayGroup)
-  (wf: ast0_wf_array_group x {bounded_wf_array_group ne x wf})
-  (z: target_type_sem env.tss_env (target_type_of_wf_array_group wf))
-: Lemma
-  (requires
-    target_spec_size_env_included env env'
-  )
-  (ensures
-    target_spec_size_env_included env env' /\
-    wf_array_group_size env wf z == wf_array_group_size env' wf (coerce_eq () z)
-  )
-  (decreases wf)
-= match wf with
-  | WfAChoice _ _ s1 s2 -> 
-    begin match coerce_eq #_ #(target_type_sem env.tss_env (target_type_of_wf_array_group s1) `either` target_type_sem env.tss_env (target_type_of_wf_array_group s2)) () z with
-    | Inl z1 -> wf_array_group_size_incr env env' s1 z1
-    | Inr z2 -> wf_array_group_size_incr env env' s2 z2
-    end
-  | WfAConcat _ _ s1 s2 ->
-    let (z1, z2) = destruct_ttpair env.tss_env (target_type_of_wf_array_group s1) (target_type_of_wf_array_group s2) z in
-    wf_array_group_size_incr env env' s1 z1;
-    wf_array_group_size_incr env env' s2 z2
-  | WfAElem _ _ -> ()
-  | WfAZeroOrOne _ s' ->
-    begin match coerce_eq #_ #(option (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) () z with
-    | Some z' -> wf_array_group_size_incr env env' s' z'
-    | None -> ()
-    end
-  | WfAZeroOrOneOrMore g s' g' ->
-    let z0 = z in
-    let z' : list (target_type_sem env'.tss_env (target_type_of_wf_array_group s')) =
-      coerce_eq #_ #(list (target_type_sem env'.tss_env (target_type_of_wf_array_group s'))) () z
-    in
-    let z : list (target_type_sem env.tss_env (target_type_of_wf_array_group s')) =
-      coerce_eq #_ #(list (target_type_sem env.tss_env (target_type_of_wf_array_group s'))) () z
-    in
-    Classical.forall_intro (Classical.move_requires (wf_array_group_size_incr env env' s'));
-    list_sum_ext (wf_array_group_size env s') (wf_array_group_size env' s') z z';
-    assert_norm (wf_array_group_size env (WfAZeroOrOneOrMore g s' g') (coerce_eq () z0) == list_sum (wf_array_group_size env s') z);
-    assert_norm (wf_array_group_size env' (WfAZeroOrOneOrMore g s' g') (coerce_eq () z0) == list_sum (wf_array_group_size env' s') z')
-  | WfADef n -> ()
-
-let wf_array_group_size_incr'
-  (#ne: name_env)
-  (env: target_spec_size_env ne)
-  (#ne': name_env)
-  (env': target_spec_size_env ne')
-  (#x: group NArrayGroup)
-  (wf: ast0_wf_array_group x {bounded_wf_array_group ne x wf})
-  (z: target_type_sem env.tss_env (target_type_of_wf_array_group wf))
-: Lemma
-  (requires
-    target_spec_size_env_included env env'
-  )
-  (ensures
-    target_spec_size_env_included env env' /\
-    wf_array_group_size env wf z == wf_array_group_size env' wf (coerce_eq () z)
-  )
-  [SMTPat (target_spec_size_env_included env env'); SMTPat (wf_array_group_size env wf z)]
-= wf_array_group_size_incr env env' wf z
-
-let rec wf_map_group_size_incr
-  (#ne: name_env)
-  (env: target_spec_size_env ne)
-  (#ne': name_env)
-  (env': target_spec_size_env ne')
-  (#x: group NMapGroup)
-  (wf: ast0_wf_parse_map_group x {bounded_wf_parse_map_group ne x wf})
-  (z: target_type_sem env.tss_env (target_type_of_wf_map_group wf))
-: Lemma
-  (requires
-    target_spec_size_env_included env env'
-  )
-  (ensures
-    target_spec_size_env_included env env' /\
-    wf_map_group_size env wf z == wf_map_group_size env' wf (coerce_eq () z)
-  )
-  (decreases wf)
-  [SMTPat (target_spec_size_env_included env env'); SMTPat (wf_map_group_size env wf z)]
-= match wf with
-  | WfMChoice _ s1 _ s2 -> 
-    begin match coerce_eq #_ #(target_type_sem env.tss_env (target_type_of_wf_map_group s1) `either` target_type_sem env.tss_env (target_type_of_wf_map_group s2)) () z with
-    | Inl z1 -> wf_map_group_size_incr env env' s1 z1
-    | Inr z2 -> wf_map_group_size_incr env env' s2 z2
-    end
-  | WfMConcat _ s1 _ s2 ->
-    let (z1, z2) = destruct_ttpair env.tss_env (target_type_of_wf_map_group s1) (target_type_of_wf_map_group s2) z in
-    wf_map_group_size_incr env env' s1 z1;
-    wf_map_group_size_incr env env' s2 z2
-  | WfMLiteral _ _ _ _ -> ()
-  | WfMZeroOrOne _ s' ->
-    begin match coerce_eq #_ #(option (target_type_sem env.tss_env (target_type_of_wf_map_group s'))) () z with
-    | Some z' -> wf_map_group_size_incr env env' s' z'
-    | None -> ()
-    end
-  | WfMZeroOrMore _ _ s_key s_value -> ()
-
-(* Summary of serializability conditions *)
-
-noeq
-type wf_target_spec_env (b: name_env) = {
-  wft_env: target_spec_size_env b;
-  wft_serializable: (n: name b) -> (x: wft_env.tss_env n) -> Tot prop;
-}
-
-irreducible [@@"opaque_to_smt"]
-let empty_wf_target_spec_env: wf_target_spec_env empty_name_env = {
-  wft_env = empty_target_spec_size_env;
-  wft_serializable = (fun _ _ -> False);
-}
-
-let wf_target_spec_env_included (#bound1: name_env) (t1: wf_target_spec_env bound1) (#bound2: name_env) (t2: wf_target_spec_env bound2) : Tot prop =
-  target_spec_size_env_included t1.wft_env t2.wft_env /\
-  (forall (x: name bound1) . t1.wft_serializable x == t2.wft_serializable x) // equality needed because it will be used as a type index for parser specifications
-
-let list_forallP (#t: Type) (f: t -> prop) (l: list t) : Tot prop =
-  forall (x: t) . List.Tot.memP x l ==> f x
-
-let pairP (#t1 #t2: Type) (f1: t1 -> prop) (f2: t2 -> prop) (x: (t1 & t2)) : prop =
-  f1 (fst x) /\ f2 (snd x)
-
-noextract [@@noextract_to "krml"]
-let rec wf_array_group_serializable
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#x: group NArrayGroup)
-  (wf: ast0_wf_array_group x {bounded_wf_array_group ne x wf})
-: Tot (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group wf) -> prop)
-  (decreases wf)
-= match wf with
-  | WfAChoice _ _ s1 s2 -> 
-    begin fun (z: (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s1) `either` target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s2))) -> match z with
-    | Inl z1 -> wf_array_group_serializable env s1 z1
-    | Inr z2 -> wf_array_group_serializable env s2 z2
-    end
-  | WfAConcat _ _ s1 s2 ->
-    begin fun (z: target_type_sem env.wft_env.tss_env (ttpair (target_type_of_wf_array_group s1) (target_type_of_wf_array_group s2))) ->
-    let (z1, z2) = destruct_ttpair env.wft_env.tss_env (target_type_of_wf_array_group s1) (target_type_of_wf_array_group s2) z in
-    wf_array_group_serializable env s1 z1 /\
-    wf_array_group_serializable env s2 z2
-    end
-  | WfAElem _ s -> wf_typ_serializable env s
-  | WfAZeroOrOne _ s' ->
-    begin fun (z: option (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) -> match z with
-    | Some z' -> wf_array_group_serializable env s' z'
-    | None -> True
-    end
-  | WfAZeroOrOneOrMore _ s' g' ->
-    begin fun (z' : list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) ->
-    (GOneOrMore? g' ==> Cons? z') /\
-    list_forallP (wf_array_group_serializable env s') z'
-    end
-  | WfADef n ->
-    env.wft_serializable n
-
-and wf_map_group_serializable
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#x: group NMapGroup)
-  (wf: ast0_wf_parse_map_group x {bounded_wf_parse_map_group ne x wf})
-: GTot (target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group wf) -> prop)
-  (decreases wf)
-= match wf with
-  | WfMChoice _ s1 _ s2 -> 
-    begin fun (z: (target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group s1) `either` target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group s2))) ->  match z with
-    | Inl z1 -> wf_map_group_serializable env s1 z1
-    | Inr z2 -> wf_map_group_serializable env s2 z2
-    end
-  | WfMConcat _ s1 _ s2 ->
-    begin fun (z: target_type_sem env.wft_env.tss_env (ttpair (target_type_of_wf_map_group s1) (target_type_of_wf_map_group s2))) ->
-    let (z1, z2) = destruct_ttpair env.wft_env.tss_env (target_type_of_wf_map_group s1) (target_type_of_wf_map_group s2) z in
-    wf_map_group_serializable env s1 z1 /\ wf_map_group_serializable env s2 z2
-    end
-  | WfMLiteral _ _ _ s -> wf_typ_serializable env s
-  | WfMZeroOrOne _ s' ->
-    begin fun (z: option (target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group s'))) -> match z with
-    | Some z' -> wf_map_group_serializable env s' z'
-    | None -> True
-    end
-  | WfMZeroOrMore _ _ s_key s_value ->
-    begin fun (z' : table (target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s_key)) (target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s_value))) ->
-    List.Tot.no_repeats_p (List.Tot.map fst z') /\ // FIXME: I need to include that here because I cannot use it in a refinement in the type definition if I want it to be strictly positive
-    list_forallP (pairP #(target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s_key)) #(target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s_value)) (wf_typ_serializable env s_key) (wf_typ_serializable env s_value)) z'
-    end
-
-and wf_typ_serializable
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#x: typ)
-  (wf: ast0_wf_typ x {bounded_wf_typ ne x wf})
-: Tot (target_type_sem env.wft_env.tss_env (target_type_of_wf_typ wf) -> prop)
-  (decreases wf)
-= match wf with
-  | WfTRewrite _ _ s ->
-    wf_typ_serializable env s
-  | WfTArray _ s ->
-    begin fun z ->
-    wf_array_group_serializable env s z /\
-    wf_array_group_size env.wft_env s z < pow2 64
-    end
-  | WfTTagged _ _ s ->
-    wf_typ_serializable env s
-  | WfTMap _ _ _ _ g s ->
-    begin fun z ->
-    wf_map_group_serializable env s z /\
-    wf_map_group_size env.wft_env s z < pow2 64
-    end
-  | WfTChoice _ _ s1 s2 ->
-    begin fun (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s1) `either` target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s2)) -> match z with
-    | Inl z1 -> wf_typ_serializable env s1 z1
-    | Inr z2 -> wf_typ_serializable env s2 z2
-    end
-  | WfTElem _ -> (fun _ -> True)
-  | WfTDef n -> env.wft_serializable n
-
-let wf_ast_elem_serializable
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#s: name_env_elem)
-  (x: ast_env_elem0 s)
-  (y: wf_ast_env_elem0 s x { bounded_wf_ast_env_elem ne x y } )
-  (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_ast_elem x y))
-: Tot prop
-= match s with
-  | NType -> wf_typ_serializable env #x y z
-  | NArrayGroup -> wf_array_group_serializable env #x y z
-  | NMapGroup -> wf_map_group_serializable env #x y z
-
-let list_forallP_ext
-  (#t1 #t2: Type)
-  (p1: t1 -> prop)
-  (p2: t2 -> prop)
-  (l1: list t1)
-  (l2: list t2)
-: Lemma
-  (requires (
-    t1 == t2 /\
-    (forall (x: t1) . p1 x <==> p2 (coerce_eq () x)) /\
-    l1 == l2
-  ))
-  (ensures (
-    list_forallP p1 l1 <==> list_forallP p2 l2
-  ))
-= ()
-
-#push-options "--z3rlimit 32"
-
-#restart-solver
-
-let rec wf_array_group_serializable_incr
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#ne': name_env)
-  (env': wf_target_spec_env ne')
-  (#x: group NArrayGroup)
-  (wf: ast0_wf_array_group x {bounded_wf_array_group ne x wf})
-  (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group wf))
-: Lemma
-  (requires
-    wf_target_spec_env_included env env'
-  )
-  (ensures
-    wf_target_spec_env_included env env' /\
-    (wf_array_group_serializable env wf z <==> wf_array_group_serializable env' wf (coerce_eq () z))
-  )
-  (decreases wf)
-= match wf with
-  | WfAChoice _ _ s1 s2 -> 
-    begin match coerce_eq #_ #(target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s1) `either` target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s2)) () z with
-    | Inl z1 -> wf_array_group_serializable_incr env env' s1 z1
-    | Inr z2 -> wf_array_group_serializable_incr env env' s2 z2
-    end
-  | WfAConcat _ _ s1 s2 ->
-    let (z1, z2) = destruct_ttpair env.wft_env.tss_env (target_type_of_wf_array_group s1) (target_type_of_wf_array_group s2) z in
-    wf_array_group_serializable_incr env env' s1 z1;
-    wf_array_group_serializable_incr env env' s2 z2
-  | WfAElem _ s -> wf_typ_serializable_incr env env' s z
-  | WfAZeroOrOne _ s' ->
-    begin match coerce_eq #_ #(option (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) () z with
-    | Some z' -> wf_array_group_serializable_incr env env' s' z'
-    | None -> ()
-    end
-  | WfAZeroOrOneOrMore _ s' g' ->
-    let z0 = z in
-    let z : list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s')) =
-      coerce_eq #_ #(list (target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group s'))) () z0
-    in
-    let z' : list (target_type_sem env'.wft_env.tss_env (target_type_of_wf_array_group s')) =
-      coerce_eq #_ #(list (target_type_sem env'.wft_env.tss_env (target_type_of_wf_array_group s'))) () z0
-    in
-    Classical.forall_intro (Classical.move_requires (wf_array_group_serializable_incr env env' s'));
-    list_forallP_ext (wf_array_group_serializable env s') (wf_array_group_serializable env' s') z z'
-  | WfADef n -> ()
-
-and wf_map_group_serializable_incr
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#ne': name_env)
-  (env': wf_target_spec_env ne')
-  (#x: group NMapGroup)
-  (wf: ast0_wf_parse_map_group x {bounded_wf_parse_map_group ne x wf})
-  (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group wf))
-: Lemma
-  (requires
-    wf_target_spec_env_included env env'
-  )
-  (ensures
-    wf_map_group_serializable env wf z <==> wf_map_group_serializable env' wf (coerce_eq () z)
-  )
-  (decreases wf)
-= match wf with
-  | WfMChoice _ s1 _ s2 -> 
-    begin match coerce_eq #_ #(target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group s1) `either` target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group s2)) () z with
-    | Inl z1 -> wf_map_group_serializable_incr env env' s1 z1
-    | Inr z2 -> wf_map_group_serializable_incr env env' s2 z2
-    end
-  | WfMConcat _ s1 _ s2 ->
-    let (z1, z2) = destruct_ttpair env.wft_env.tss_env (target_type_of_wf_map_group s1) (target_type_of_wf_map_group s2) z in
-    wf_map_group_serializable_incr env env' s1 z1;
-    wf_map_group_serializable_incr env env' s2 z2
-  | WfMLiteral _ _ _ s -> wf_typ_serializable_incr env env' s z
-  | WfMZeroOrOne _ s' ->
-    begin match coerce_eq #_ #(option (target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group s'))) () z with
-    | Some z' -> wf_map_group_serializable_incr env env' s' z'
-    | None -> ()
-    end
-  | WfMZeroOrMore _ _ s_key s_value ->
-    let z0 = z in
-    let z = coerce_eq #_ #(table (target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s_key)) (target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s_value))) () z0 in
-    let z' = coerce_eq #_ #(table (target_type_sem env'.wft_env.tss_env (target_type_of_wf_typ s_key)) (target_type_sem env'.wft_env.tss_env (target_type_of_wf_typ s_value))) () z0 in
-    Classical.forall_intro (Classical.move_requires (wf_typ_serializable_incr env env' s_key));
-    Classical.forall_intro (Classical.move_requires (wf_typ_serializable_incr env env' s_value));
-    list_forallP_ext (pairP #(target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s_key)) #(target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s_value)) (wf_typ_serializable env s_key) (wf_typ_serializable env s_value))  (pairP #(target_type_sem env'.wft_env.tss_env (target_type_of_wf_typ s_key)) #(target_type_sem env'.wft_env.tss_env (target_type_of_wf_typ s_value)) (wf_typ_serializable env' s_key) (wf_typ_serializable env' s_value)) z z'
-
-and wf_typ_serializable_incr
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#ne': name_env)
-  (env': wf_target_spec_env ne')
-  (#x: typ)
-  (wf: ast0_wf_typ x {bounded_wf_typ ne x wf})
-  (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_typ wf))
-: Lemma
-  (requires
-    wf_target_spec_env_included env env'
-  )
-  (ensures
-    wf_target_spec_env_included env env' /\
-    (wf_typ_serializable env wf z <==> wf_typ_serializable env' wf (coerce_eq () z))
-  )
-  (decreases wf)
-= match wf with
-  | WfTRewrite _ _ s ->
-    wf_typ_serializable_incr env env' s z
-  | WfTArray _ s ->
-    wf_array_group_serializable_incr env env' s z;
-    wf_array_group_size_incr env.wft_env env'.wft_env s z // FIXME: WHY WHY WHY does the pattern not trigger?
-  | WfTTagged _ _ s ->
-    wf_typ_serializable_incr env env' s z
-  | WfTMap _ _ _ _ g s ->
-    wf_map_group_serializable_incr env env' s z;
-    wf_map_group_size_incr env.wft_env env'.wft_env s z
-  | WfTChoice _ _ s1 s2 ->
-    begin match coerce_eq #_ #(target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s1) `either` target_type_sem env.wft_env.tss_env (target_type_of_wf_typ s2)) () z with
-    | Inl z1 -> wf_typ_serializable_incr env env' s1 z1
-    | Inr z2 -> wf_typ_serializable_incr env env' s2 z2
-    end
-  | WfTElem _
-  | WfTDef _ -> ()
-
-let wf_array_group_serializable_incr'
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#ne': name_env)
-  (env': wf_target_spec_env ne')
-  (#x: group NArrayGroup)
-  (wf: ast0_wf_array_group x {bounded_wf_array_group ne x wf})
-  (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_array_group wf))
-: Lemma
-  (requires
-    wf_target_spec_env_included env env'
-  )
-  (ensures
-    wf_target_spec_env_included env env' /\
-    (wf_array_group_serializable env wf z <==> wf_array_group_serializable env' wf (coerce_eq () z))
-  )
-  [SMTPat (wf_target_spec_env_included env env'); SMTPat (wf_array_group_serializable env wf z)]
-= wf_array_group_serializable_incr env env' wf z
-
-let wf_map_group_serializable_incr'
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#ne': name_env)
-  (env': wf_target_spec_env ne')
-  (#x: group NMapGroup)
-  (wf: ast0_wf_parse_map_group x {bounded_wf_parse_map_group ne x wf})
-  (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_map_group wf))
-: Lemma
-  (requires
-    wf_target_spec_env_included env env'
-  )
-  (ensures
-    wf_map_group_serializable env wf z <==> wf_map_group_serializable env' wf (coerce_eq () z)
-  )
-  [SMTPat (wf_target_spec_env_included env env'); SMTPat (wf_map_group_serializable env wf z)]
-= wf_map_group_serializable_incr env env' wf z
-
-let wf_typ_serializable_incr'
-  (#ne: name_env)
-  (env: wf_target_spec_env ne)
-  (#ne': name_env)
-  (env': wf_target_spec_env ne')
-  (#x: typ)
-  (wf: ast0_wf_typ x {bounded_wf_typ ne x wf})
-  (z: target_type_sem env.wft_env.tss_env (target_type_of_wf_typ wf))
-: Lemma
-  (requires
-    wf_target_spec_env_included env env'
-  )
-  (ensures
-    wf_target_spec_env_included env env' /\
-    (wf_typ_serializable env wf z <==> wf_typ_serializable env' wf (coerce_eq () z))
-  )
-  [SMTPat (wf_target_spec_env_included env env'); SMTPat (wf_typ_serializable env wf z)]
-= wf_typ_serializable_incr env env' wf z
-
-let wf_typ_serializable_bij
-  (e: wf_ast_env)
-  (t: typ)
-  (t_wf: ast0_wf_typ t {
-    spec_wf_typ e.e_sem_env t t_wf
-  })
-  (wft: wf_target_spec_env e.e_sem_env.se_bound)
-  (t': Type0)
-  (bij: Spec.bijection (target_type_sem wft.wft_env.tss_env (target_type_of_wf_typ t_wf)) t')
-  (z: t')
-: Tot prop
-= wf_typ_serializable wft t_wf (bij.bij_to_from z)
-
-let wf_target_spec_env_extend_typ
-  (e: wf_ast_env)
-  (new_name: string)
-  (t: typ)
-  (t_wf: ast0_wf_typ t {
-    wf_ast_env_extend_typ_with_weak_pre e new_name t t_wf
-  })
-  (wft: wf_target_spec_env e.e_sem_env.se_bound)
-  (t': Type0)
-  (bij: Spec.bijection (target_type_sem wft.wft_env.tss_env (target_type_of_wf_typ t_wf)) t')
-: Tot (wft': wf_target_spec_env (wf_ast_env_extend_typ_with_weak e new_name t t_wf).e_sem_env.se_bound {
-    wf_target_spec_env_included wft wft' /\
-    wft'.wft_env.tss_env new_name == t'
-  })
-= {
-    wft_env = target_spec_size_env_extend_typ e new_name t t_wf wft.wft_env t' bij;
-    wft_serializable = (fun n -> if n = new_name then wf_typ_serializable_bij e t t_wf wft t' bij else wft.wft_serializable n);
-  }
-
 let bounded_target_type (env: name_env) =
   (t: target_type { target_type_bounded env t })
 
@@ -2634,12 +2051,13 @@ noeq
 type target_ast_env = {
   ta_ast: wf_ast_env;
 (*
-  ta_typ: (n: name ta_ast.e_sem_env.se_bound) -> bounded_target_type ta_ast.e_sem_env.se_bound; // TODO: we keep this here just for the sake of memoizing the produced target type, but this should move to the implementation environment
+  ta_typ: (n: name ta_ast.e_sem_env.se_bound) -> bounded_target_type ta_ast.e_sem_env.se_bound; // TODO: we keep this here just for the sake of memoizing the produced target type, but this should move to the im
+plementation environment
   ta_typ_correct: (forall (n: name ta_ast.e_sem_env.se_bound) .
     ta_typ n == target_type_of_wf_ast_elem (ta_ast.e_env n) (Some?.v (ta_ast.e_wf n))
   );
 *)
-  ta_tgt: wf_target_spec_env (ta_ast.e_sem_env.se_bound);
+  ta_tgt: target_spec_env (ta_ast.e_sem_env.se_bound);
 (*  
   ta_bij: (n: name ta_ast.e_sem_env.se_bound) -> Spec.bijection // in general, this bijection is the identity, except for recursive types
     (target_type_sem ta_tgt.wft_env.tss_env (target_type_of_wf_ast_elem (ta_ast.e_env n) (Some?.v (ta_ast.e_wf n))))
@@ -2657,14 +2075,14 @@ type target_ast_env = {
 
 let empty_target_ast_env = {
   ta_ast = empty_wf_ast_env;
-  ta_tgt = empty_wf_target_spec_env;
+  ta_tgt = empty_target_spec_env;
 }
 
 let target_ast_env_included
   (env env' : target_ast_env)
 : Tot prop
 = ast_env_included env.ta_ast env'.ta_ast /\
-  wf_target_spec_env_included env.ta_tgt env'.ta_tgt
+  target_spec_env_included env.ta_tgt env'.ta_tgt
 
 let target_ast_env_extend_typ
   (env: target_ast_env)
@@ -2674,35 +2092,34 @@ let target_ast_env_extend_typ
     wf_ast_env_extend_typ_with_weak_pre env.ta_ast new_name t t_wf
   })
   (t': Type0)
-  (bij: Spec.bijection (target_type_sem env.ta_tgt.wft_env.tss_env (target_type_of_wf_typ t_wf)) t')
+  (bij: Spec.bijection (target_type_sem env.ta_tgt (target_type_of_wf_typ t_wf)) t')
 : Tot (env': target_ast_env {
     target_ast_env_included env env' /\
     env'.ta_ast.e_sem_env.se_bound new_name == Some NType /\
-    env'.ta_tgt.wft_env.tss_env new_name == t'
+    env'.ta_tgt new_name == t'
   })
 = {
     ta_ast = wf_ast_env_extend_typ_with_weak env.ta_ast new_name t t_wf;
-    ta_tgt = wf_target_spec_env_extend_typ env.ta_ast new_name t t_wf env.ta_tgt t' bij;
+    ta_tgt = target_spec_env_extend env.ta_ast.e_sem_env.se_bound env.ta_tgt new_name NType t';
   }
 
 noeq
-type spec_env (tp_sem: sem_env) (tp_tgt: wf_target_spec_env (tp_sem.se_bound)) = {
-  tp_spec_typ: (n: typ_name tp_sem.se_bound) -> Spec.spec (tp_sem.se_env n) (tp_tgt.wft_env.tss_env n) (tp_tgt.wft_serializable n);
-  tp_spec_array_group: (n: array_group_name tp_sem.se_bound) -> Spec.ag_spec (tp_sem.se_env n) (tp_tgt.wft_env.tss_group_size n) (tp_tgt.wft_serializable n);
+type spec_env (tp_sem: sem_env) (tp_tgt: target_spec_env (tp_sem.se_bound)) = {
+  tp_spec_typ: (n: typ_name tp_sem.se_bound) -> Spec.spec (tp_sem.se_env n) (tp_tgt n);
+  tp_spec_array_group: (n: array_group_name tp_sem.se_bound) -> Spec.ag_spec (tp_sem.se_env n) (tp_tgt n);
 }
 
 [@@"opaque_to_smt"] irreducible
-let empty_spec_env (e: wf_target_spec_env empty_name_env) : spec_env empty_sem_env e = {
+let empty_spec_env (e: target_spec_env empty_name_env) : spec_env empty_sem_env e = {
   tp_spec_typ = (fun _ -> false_elim ());
   tp_spec_array_group = (fun _ -> false_elim ());
 }
 
 let spec_of_elem_typ
   (e: elem_typ)
-  (p: (target_elem_type_sem (target_type_of_elem_typ e) -> prop) { forall x . p x })
-: Tot (Spec.spec (elem_typ_sem e) (target_elem_type_sem (target_type_of_elem_typ e)) p)
+: Tot (Spec.spec (elem_typ_sem e) (target_elem_type_sem (target_type_of_elem_typ e)))
 = match e with
-  | ELiteral l -> Spec.spec_literal (eval_literal l) _
+  | ELiteral l -> Spec.spec_literal (eval_literal l)
   | _ -> admit ()
 
 let pair_sum
@@ -2715,46 +2132,45 @@ let pair_sum
 
 let rec spec_of_wf_typ
   (#tp_sem: sem_env)
-  (#tp_tgt: wf_target_spec_env (tp_sem.se_bound))
+  (#tp_tgt: target_spec_env (tp_sem.se_bound))
   (env: spec_env tp_sem tp_tgt)
   (#t: typ)
   (wf: ast0_wf_typ t { spec_wf_typ tp_sem t wf })
-: Tot (Spec.spec (typ_sem tp_sem t) (target_type_sem tp_tgt.wft_env.tss_env (target_type_of_wf_typ wf)) (wf_typ_serializable tp_tgt wf))
+: Tot (Spec.spec (typ_sem tp_sem t) (target_type_sem tp_tgt (target_type_of_wf_typ wf)))
   (decreases wf)
 = match wf with
   | WfTRewrite _ _ s ->
     Spec.spec_ext (spec_of_wf_typ env s) _
   | WfTArray g s ->
-    Spec.spec_array_group (spec_of_wf_array_group env s) _
+    Spec.spec_array_group (spec_of_wf_array_group env s)
   | WfTTagged tag t' s ->
     Spec.spec_tag tag (spec_of_wf_typ env s)
   | WfTMap g1 _ _ _ _ s2 ->
-    MapSpec.spec_map_group (map_group_sem tp_sem g1) (spec_of_wf_map_group env s2) _
+    MapSpec.spec_map_group (map_group_sem tp_sem g1) (spec_of_wf_map_group env s2)
   | WfTChoice _ _ s1 s2 ->
     Spec.spec_choice
       (spec_of_wf_typ env s1)
       (spec_of_wf_typ env s2)
-      _
   | WfTDef n -> env.tp_spec_typ n
-  | WfTElem s -> spec_of_elem_typ s _
+  | WfTElem s -> spec_of_elem_typ s
 
 and spec_of_wf_array_group
   (#tp_sem: sem_env)
-  (#tp_tgt: wf_target_spec_env (tp_sem.se_bound))
+  (#tp_tgt: target_spec_env (tp_sem.se_bound))
   (env: spec_env tp_sem tp_tgt)
   (#t: group NArrayGroup)
   (wf: ast0_wf_array_group t { spec_wf_array_group tp_sem t wf })
-: Tot (Spec.ag_spec (array_group_sem tp_sem t) (wf_array_group_size tp_tgt.wft_env wf) (wf_array_group_serializable tp_tgt wf))
+: Tot (Spec.ag_spec (array_group_sem tp_sem t) (target_type_sem tp_tgt (target_type_of_wf_array_group wf)))
   (decreases wf)
 = match wf with
   | WfAElem _ s ->
-    Spec.ag_spec_item (Spec.spec_coerce_target_prop (spec_of_wf_typ env s) _) _
+    Spec.ag_spec_item (spec_of_wf_typ env s)
   | WfAZeroOrOne _ s ->
-    Spec.ag_spec_zero_or_one (spec_of_wf_array_group env s) _ _
+    Spec.ag_spec_zero_or_one (spec_of_wf_array_group env s)
   | WfAZeroOrOneOrMore g s (GZeroOrMore g') ->
-    Spec.ag_spec_zero_or_more (spec_of_wf_array_group env s) _ _
+    Spec.ag_spec_zero_or_more (spec_of_wf_array_group env s)
   | WfAZeroOrOneOrMore g s _ ->
-    Spec.ag_spec_one_or_more (spec_of_wf_array_group env s) _ _
+    Spec.ag_spec_one_or_more (spec_of_wf_array_group env s)
   | WfAConcat _ _ s1 s2 ->
     let t1 = target_type_of_wf_array_group s1 in
     let t2 = target_type_of_wf_array_group s2 in
@@ -2762,32 +2178,27 @@ and spec_of_wf_array_group
       (Spec.ag_spec_concat
         (spec_of_wf_array_group env s1)
         (spec_of_wf_array_group env s2)
-        (pair_sum (wf_array_group_size tp_tgt.wft_env s1) (wf_array_group_size tp_tgt.wft_env s2))
-        (pairP (wf_array_group_serializable tp_tgt s1) (wf_array_group_serializable tp_tgt s2))
       )
-      _ _
-      (pair_bij (ttpair_kind t1 t2) (target_type_sem tp_tgt.wft_env.tss_env t1) (target_type_sem tp_tgt.wft_env.tss_env t2))
+      (pair_bij (ttpair_kind t1 t2) (target_type_sem tp_tgt t1) (target_type_sem tp_tgt t2))
   | WfAChoice _ _ s1 s2 ->
     Spec.ag_spec_choice
       (spec_of_wf_array_group env s1)
       (spec_of_wf_array_group env s2)
-      _ _
   | WfADef n -> env.tp_spec_array_group n
 
 and spec_of_wf_map_group
   (#tp_sem: sem_env)
-  (#tp_tgt: wf_target_spec_env (tp_sem.se_bound))
+  (#tp_tgt: target_spec_env (tp_sem.se_bound))
   (env: spec_env tp_sem tp_tgt)
   (#t: group NMapGroup)
   (wf: ast0_wf_parse_map_group t { spec_wf_parse_map_group tp_sem t wf })
-: Tot (MapSpec.mg_spec (map_group_sem tp_sem t) (Some?.v (spec_map_group_footprint tp_sem t)) (wf_map_group_size tp_tgt.wft_env wf) (wf_map_group_serializable tp_tgt wf))
+: Tot (MapSpec.mg_spec (map_group_sem tp_sem t) (Some?.v (spec_map_group_footprint tp_sem t)) ((target_type_sem tp_tgt (target_type_of_wf_map_group wf))))
   (decreases wf)
 = match wf with
   | WfMChoice _ s1 _ s2 ->
     MapSpec.mg_spec_choice
       (spec_of_wf_map_group env s1)
       (spec_of_wf_map_group env s2)
-      _ _
   | WfMConcat _ s1 _ s2 ->
     let t1 = target_type_of_wf_map_group s1 in
     let t2 = target_type_of_wf_map_group s2 in
@@ -2795,17 +2206,13 @@ and spec_of_wf_map_group
       (MapSpec.mg_spec_concat
         (spec_of_wf_map_group env s1)
         (spec_of_wf_map_group env s2)
-        (pair_sum (wf_map_group_size tp_tgt.wft_env s1) (wf_map_group_size tp_tgt.wft_env s2))
-        (pairP (wf_map_group_serializable tp_tgt s1) (wf_map_group_serializable tp_tgt s2))
       )
-      _ _
-      (pair_bij (ttpair_kind t1 t2) (target_type_sem tp_tgt.wft_env.tss_env t1) (target_type_sem tp_tgt.wft_env.tss_env t2))
+      (pair_bij (ttpair_kind t1 t2) (target_type_sem tp_tgt t1) (target_type_sem tp_tgt t2))
   | WfMLiteral cut key value s ->
     MapSpec.mg_spec_match_item_for
       cut
       (eval_literal key)
       (spec_of_wf_typ env s)
-      _
   | _ -> admit ()
 
 let spec_env_extend_typ
@@ -2815,15 +2222,16 @@ let spec_env_extend_typ
   (t_wf: ast0_wf_typ t {
     wf_ast_env_extend_typ_with_weak_pre e new_name t t_wf
   })
-  (#wft: wf_target_spec_env e.e_sem_env.se_bound)
+  (#wft: target_spec_env e.e_sem_env.se_bound)
   (senv: spec_env e.e_sem_env wft)
   (t': Type0)
-  (bij: Spec.bijection (target_type_sem wft.wft_env.tss_env (target_type_of_wf_typ t_wf)) t')
-: Tot (spec_env (wf_ast_env_extend_typ_with_weak e new_name t t_wf).e_sem_env (wf_target_spec_env_extend_typ e new_name t t_wf wft t' bij))
-= let wft' = wf_target_spec_env_extend_typ e new_name t t_wf wft t' bij in
+  (bij: Spec.bijection (target_type_sem wft (target_type_of_wf_typ t_wf)) t')
+: Tot (spec_env (wf_ast_env_extend_typ_with_weak e new_name t t_wf).e_sem_env (target_spec_env_extend e.e_sem_env.se_bound wft new_name NType t'))
+= let e' = (wf_ast_env_extend_typ_with_weak e new_name t t_wf) in
+  let wft' = target_spec_env_extend e.e_sem_env.se_bound wft new_name NType t' in
   {
-    tp_spec_typ = (fun n -> if n = new_name then Spec.spec_bij (spec_of_wf_typ senv t_wf) (wft'.wft_serializable n) bij else Spec.spec_coerce_target_prop (senv.tp_spec_typ n) (wft'.wft_serializable n));
-    tp_spec_array_group = (fun n -> Spec.ag_spec_coerce_target_prop (senv.tp_spec_array_group n) (wft'.wft_env.tss_group_size n) (wft'.wft_serializable n));
+    tp_spec_typ = (fun n -> if n = new_name then coerce_eq #_ #(Spec.spec (e'.e_sem_env.se_env n) (wft' n)) () (Spec.spec_bij (spec_of_wf_typ senv t_wf) bij) else (senv.tp_spec_typ n));
+    tp_spec_array_group = (fun n -> (senv.tp_spec_array_group n));
   }
 
 let solve_by_norm () : FStar.Tactics.Tac unit =
