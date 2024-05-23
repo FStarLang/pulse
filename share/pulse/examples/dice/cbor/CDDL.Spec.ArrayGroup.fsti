@@ -556,29 +556,25 @@ let array_group_parser_spec_arg
 let array_group_parser_spec_ret
   (source: array_group3 None)
   (#target: Type0)
-  (target_size: target -> GTot nat)
   (target_prop: target -> prop)
   (x: array_group_parser_spec_arg source)
 : Tot Type0
 = (y: target { 
-    target_size y == List.Tot.length x /\
     target_prop y
   })
 
 let array_group_parser_spec
   (source: array_group3 None)
   (#target: Type0)
-  (target_size: target -> GTot nat)
   (target_prop: target -> prop)
 : Type0
-= (x: array_group_parser_spec_arg source) -> GTot (array_group_parser_spec_ret source target_size target_prop x)
+= (x: array_group_parser_spec_arg source) -> GTot (array_group_parser_spec_ret source target_prop x)
 
 let array_group_serializer_spec
   (#source: array_group3 None)
   (#target: Type0)
-  (#target_size: target -> GTot nat)
   (#target_prop: target -> prop)
-  (p: array_group_parser_spec source target_size target_prop)
+  (p: array_group_parser_spec source target_prop)
 : Type0
 = (x: target { target_prop x }) -> GTot (y: array_group_parser_spec_arg source {
     p y == x
@@ -588,40 +584,35 @@ let array_group_serializer_spec
 noeq
 type ag_spec
   (source: array_group3 None)
-  (#target: Type0)
-  (target_size: target -> GTot nat)
-  (target_prop: target -> prop)
+  (target: Type0)
 = {
-  ag_parser: array_group_parser_spec source target_size target_prop;
+  ag_serializable: target -> prop;
+  ag_parser: array_group_parser_spec source ag_serializable;
   ag_serializer: array_group_serializer_spec ag_parser;
 }
 
 let ag_spec_coerce_target_prop
   (#source: array_group3 None)
   (#target: Type0)
-  (#target_size: target -> GTot nat)
-  (#target_prop: target -> prop)
-  (p: ag_spec source target_size target_prop)
-  (target_size': target -> GTot nat {
-    forall x . target_size' x == target_size x
-  })
+  (p: ag_spec source target)
   (target_prop': target -> prop {
-    forall x . target_prop' x <==> target_prop x
+    forall x . target_prop' x <==> p.ag_serializable x
   })
-: ag_spec source target_size' target_prop'
+: ag_spec source target
 = {
-  ag_parser = (p.ag_parser <: array_group_parser_spec source target_size' target_prop');
+  ag_serializable = target_prop';
+  ag_parser = (p.ag_parser <: array_group_parser_spec source target_prop');
   ag_serializer = p.ag_serializer;
 }
 
 let parser_spec_array_group
   (#source: array_group3 None)
   (#target: Type0)
-  (#target_size: target -> GTot nat)
   (#target_prop: target -> prop)
-  (p: array_group_parser_spec source target_size target_prop)
+  (#p: array_group_parser_spec source target_prop)
+  (s: array_group_serializer_spec p)
   (target_prop' : target -> prop {
-    forall x . target_prop' x <==> (target_prop x /\ target_size x < pow2 64) // serializability condition
+    forall x . target_prop' x <==> (target_prop x /\ List.Tot.length (s x) < pow2 64) // serializability condition
   })
 : Tot (parser_spec (t_array3 source) target target_prop')
 = fun x -> let Cbor.Array a = x in p a

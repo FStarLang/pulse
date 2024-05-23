@@ -91,28 +91,31 @@ let serializer_spec (#source:typ) (#target: Type0) (#target_prop: target -> prop
 
 [@@erasable]
 noeq
-type spec (source:typ) (target: Type0) (target_prop: target -> prop) = {
-  parser: parser_spec source target target_prop;
+type spec (source:typ) (target: Type0) = {
+  serializable: target -> prop;
+  parser: parser_spec source target serializable;
   serializer: serializer_spec parser;
 }
 
 let spec_ext
-  (#source: typ) (#target: Type0) (#target_prop: target -> prop) (s: spec source target target_prop) (source' : typ) : Pure (spec source' target target_prop)
+  (#source: typ) (#target: Type0) (s: spec source target) (source' : typ) : Pure (spec source' target)
     (requires typ_equiv source source')
     (ensures fun _ -> True)
 = {
+  serializable = (fun x -> s.serializable x);
   parser = (fun x -> s.parser x);
   serializer = (fun x -> s.serializer x);
 }
 
 let spec_coerce_target_prop
-  (#source:typ) (#target: Type0) (#target_prop: target -> prop)
-  (p: spec source target target_prop)
+  (#source:typ) (#target: Type0)
+  (p: spec source target)
   (target_prop' : (target -> prop) {
-    forall x . target_prop' x <==> target_prop x
+    forall x . target_prop' x <==> p.serializable x
   })
-: Tot (spec source target target_prop')
+: Tot (spec source target)
 = {
+  serializable = target_prop';
   parser = (p.parser <: parser_spec source target target_prop');
   serializer = p.serializer;
 }
@@ -127,11 +130,14 @@ let serialize_spec_bij (#source:typ) (#target1 #target2: Type0) (#target1_prop: 
 }) : serializer_spec (parse_spec_bij p target2_prop bij) =
   (fun x -> s (bij.bij_to_from x))
 
-let spec_bij (#source:typ) (#target1 #target2: Type0) (#target1_prop: target1 -> prop) (p: spec source target1 target1_prop) (target2_prop: target2 -> prop) (bij: bijection target1 target2 
-{
-  forall x . target2_prop x <==> target1_prop (bij.bij_to_from x)
-}) : spec source target2 target2_prop = {
-  parser = parse_spec_bij p.parser target2_prop bij;
+let spec_bij_serializable
+  (#source:typ) (#target1 #target2: Type0) (p: spec source target1) (bij: bijection target1 target2) (x: target2) : Tot prop
+= p.serializable (bij.bij_to_from x)
+
+let spec_bij (#source:typ) (#target1 #target2: Type0) (p: spec source target1) (bij: bijection target1 target2)
+: spec source target2 = {
+  serializable = spec_bij_serializable p bij;
+  parser = parse_spec_bij p.parser _ bij;
   serializer = serialize_spec_bij p.serializer bij;
 }
 
@@ -140,9 +146,12 @@ let parser_spec_literal (x: CBOR.Spec.raw_data_item) (p: unit -> prop { p () }) 
 
 let serializer_spec_literal (x: CBOR.Spec.raw_data_item) (p: unit -> prop { p () }) : Tot (serializer_spec (parser_spec_literal x p)) = (fun _ -> x)
 
-let spec_literal (x: CBOR.Spec.raw_data_item) (p: unit -> prop { p () }) : Tot  (spec (t_literal x) unit p) = {
-  parser = parser_spec_literal x p;
-  serializer = serializer_spec_literal x p;
+let spec_literal_serializable (_: unit) : Tot prop = True
+
+let spec_literal (x: CBOR.Spec.raw_data_item) : Tot  (spec (t_literal x) unit) = {
+  serializable = spec_literal_serializable;
+  parser = parser_spec_literal x _;
+  serializer = serializer_spec_literal x _;
 }
 
 let parser_spec_choice
@@ -188,23 +197,29 @@ let serializer_spec_choice
   | Inl y -> s1 y
   | Inr y -> s2 y
 
+let spec_choice_serializable
+  (#source1: typ)
+  (#target1: Type0)
+  (p1: spec source1 target1)
+  (#source2: typ)
+  (#target2: Type0)
+  (p2: spec source2 target2)
+  (x: target1 `either` target2)
+: Tot prop  
+= match x with
+    | Inl x1 -> p1.serializable x1
+    | Inr x2 -> p2.serializable x2
+
 let spec_choice
   (#source1: typ)
   (#target1: Type0)
-  (#target1_prop: _ -> prop)
-  (p1: spec source1 target1 target1_prop)
+  (p1: spec source1 target1)
   (#source2: typ)
   (#target2: Type0)
-  (#target2_prop: _ -> prop)
-  (p2: spec source2 target2 target2_prop { source1 `typ_disjoint` source2 })
-  (target_prop: (target1 `either` target2) -> prop {
-    forall x . target_prop x <==> begin match x with
-    | Inl x1 -> target1_prop x1
-    | Inr x2 -> target2_prop x2
-    end
-  })
-: Tot (spec (source1 `t_choice` source2) (target1 `either` target2) target_prop)
+  (p2: spec source2 target2 { source1 `typ_disjoint` source2 })
+: Tot (spec (source1 `t_choice` source2) (target1 `either` target2))
 = {
-  parser = parser_spec_choice p1.parser p2.parser target_prop;
-  serializer = serializer_spec_choice p1.serializer p2.serializer target_prop;
+  serializable = spec_choice_serializable p1 p2;
+  parser = parser_spec_choice p1.parser p2.parser _;
+  serializer = serializer_spec_choice p1.serializer p2.serializer _;
 }
