@@ -67,18 +67,21 @@ let rec intro_uvars_for_logical_implicits (g:env) (uvs:env { disjoint g uvs }) (
   match ropt with
   | Some (b, Some Implicit, c_rest) ->
     let x = fresh (push_env g uvs) in
-    let uvs' = push_binding uvs x b.binder_ppname b.binder_ty in
-    let c_rest = open_comp_with c_rest (tm_var {nm_index = x; nm_ppname = b.binder_ppname}) in
+    let ppname = ppname_for_uvar b.binder_ppname in
+    let uvs' = push_binding uvs x ppname b.binder_ty in
+    let var = {nm_index = x; nm_ppname = ppname} in
+    let t_var = tm_var var in
+    let c_rest = open_comp_with c_rest t_var in
     begin
       match c_rest with
        | C_ST _
        | C_STAtomic _ _ _
        | C_STGhost _ _ ->
-         (| uvs', push_env g uvs', {term=Tm_STApp {head=t;arg_qual=Some Implicit;arg=null_var x};
+         (| uvs', push_env g uvs', {term=Tm_STApp {head=t;arg_qual=Some Implicit;arg=t_var};
                                     range=Pulse.RuntimeUtils.range_of_term t;
                                     effect_tag=as_effect_hint (ctag_of_comp_st c_rest) } |)
        | C_Tot ty ->
-         intro_uvars_for_logical_implicits g uvs' (tm_pureapp t (Some Implicit) (null_var x)) ty
+         intro_uvars_for_logical_implicits g uvs' (tm_pureapp t (Some Implicit) t_var) ty
     end
   | _ ->
     fail g None
