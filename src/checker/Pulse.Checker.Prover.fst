@@ -39,8 +39,12 @@ module Match       = Pulse.Checker.Prover.Match
 module IntroExists = Pulse.Checker.Prover.IntroExists
 module IntroPure   = Pulse.Checker.Prover.IntroPure
 module Explode     = Pulse.Checker.Prover.Explode
+module ShareGather = Pulse.Checker.Prover.ShareGather
+module AutoLem = Pulse.Checker.Prover.AutoLem
 
 let coerce_eq (#a #b:Type) (x:a) (_:squash (a == b)) : y:b{y == x} = x
+
+open Pulse.Show
 
 (* Checks if `p` is equivalent to emp, using the core checker. *)
 let check_equiv_emp' (g:env) (p:vprop) : T.Tac (option (vprop_equiv g p tm_emp)) =
@@ -253,6 +257,60 @@ let prover_pass_collect_exists (#preamble:_) (pst0:prover_state preamble)
   let (| exs, rest, d |) = collect_exists (push_env pst0.pg pst0.uvs) pst0.unsolved in
   unsolved_equiv_pst pst0 (exs@rest) d
 
+let all_eager_steps : list (string & eager_prover_step) = [
+  ("elim_exists", (fun #p -> ElimExists.elim_exists_pst #p));
+  (* Eager gather steps. Note: since gather can introduce a pure
+  equality into the context, we place this before the elim_pure step
+  so it automatically gets eliminated. *)
+  ("eager_gather", (fun #p -> ShareGather.eager_gather #p));
+  ("elim_pure", (fun #p -> ElimPure.elim_pure_pst #p));
+  // ("autolem", (fun #p -> AutoLem.eager_autolem #p));
+]
+
+// let all_directed_steps : list (string & guided_prover_step) = [
+//   ("share", (fun #p -> ShareGather.share #p));
+//   ("gather", (fun #p -> ShareGather.gather #p));
+//   // ("match", (fun #p -> Match.match_q #p));
+//   ("autolem", (fun #p -> AutoLem.guided_autolem #p));
+// ]
+
+let rec apply_eager_steps
+  (steps : list (string & eager_prover_step))
+  (#preamble:_)
+  (pst0:prover_state preamble)
+  : T.Tac (pst':prover_state preamble { pst' `pst_extends` pst0 /\
+                                      pst'.unsolved == pst0.unsolved })
+=
+  match steps with
+  | [] -> pst0
+  | (name, step)::steps' ->
+    let pst = step pst0 in
+    debug_prover pst.pg (fun _ ->
+      Printf.sprintf "prover: remaining_ctxt after eager step %s: %s\n"
+        name (show pst.remaining_ctxt));
+    apply_eager_steps steps' pst
+
+let rec apply_directed_steps
+  (#preamble:_)
+  (pst0:prover_state preamble)
+  (q:vprop) (unsolved':list vprop)
+  (_:squash (pst0.unsolved == q::unsolved'))
+  (prover:prover_t)
+  (steps : list (string & guided_prover_step))
+  : T.Tac (option (pst':prover_state preamble { pst' `pst_extends` pst0 }))
+  =
+  match steps with
+  | [] -> None
+  | (name, step)::steps' ->
+    match step pst0 q unsolved' () prover with
+    | Some pst ->
+      debug_prover pst.pg (fun _ ->
+        Printf.sprintf "prover: remaining_ctxt after directed step %s SUCCEEDED: %s\n"
+          name (show pst.remaining_ctxt));
+      Some pst
+    | None ->
+      apply_directed_steps pst0 q unsolved' () prover steps'
+
 (* One prover iteration is applying these passes until one succeeds.
 If so, we return a "Stepped" with the new pst (and the prover starts
 from the beginning again). If none succeeds, we return "NoProgress". *)
@@ -266,6 +324,7 @@ let prover_iteration
   res_advance <| prover_iteration_loop pst [
     // P "elim_pure_pst"     ElimPure.elim_pure_pst;
     P "elim_exists"       ElimExists.elim_exists_pst;
+    P "apply_eager_steps" (apply_eager_steps all_eager_steps);
     P "collect_exists"    prover_pass_collect_exists;
     P "explode"           Explode.explode;
     P "match_syntactic"   Match.match_syntactic;
@@ -377,7 +436,7 @@ let prove
 
   debug_prover g (fun _ ->
     Printf.sprintf "\nEnter top-level prove with ctxt: %s\ngoals: %s\n"
-      (P.term_to_string ctxt) (P.term_to_string goals));
+      (show ctxt) (show goals));
 
   let ctxt_l = vprop_as_list ctxt in
 
@@ -519,8 +578,7 @@ let try_frame_pre_uvs
     | Inr (x, x_t) ->
       fail g1 (Some t.range)
         (Printf.sprintf "prover error: for term %s, implicit solution %s has ghost effect"
-           (P.st_term_to_string t)
-           (P.term_to_string x_t))
+           (show t) (show x_t))
     | Inl d -> d in
 
   (* shouldn't need this once term becomes a view; currently we sometimes end up with a computation

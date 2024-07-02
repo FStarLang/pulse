@@ -1159,3 +1159,7 @@ val nb_ghost_gather
 val as_atomic (#a:Type u#0) (pre:vprop) (post:a -> vprop)
               (pf:stt a pre post)
 : stt_atomic a emp_inames pre post
+
+(* NOT WIRED INTO THE CHECKER RIGHT NOW! *)
+irreducible
+let guided_autolem = ()

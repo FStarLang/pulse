@@ -148,3 +148,17 @@ type prover_t =
   pst1:prover_state preamble ->
   T.Tac (pst2:prover_state preamble { pst2 `pst_extends` pst1 /\
                                       is_terminal pst2 })
+
+(* Types for both eager and guided prover steps. See for example the ShareGather module. *)
+
+type eager_prover_step =
+  (#preamble:preamble) -> (pst:prover_state preamble) ->
+  T.Tac (pst':prover_state preamble { pst' `pst_extends` pst /\
+                                      pst'.unsolved == pst.unsolved })
+
+type guided_prover_step =
+  (#preamble:preamble) -> (pst:prover_state preamble) ->
+  (q:vprop) -> (unsolved':list vprop) ->
+  (_:squash (pst.unsolved == q::unsolved')) ->
+  (prover:prover_t) ->
+  T.Tac (option (pst':prover_state preamble { pst' `pst_extends` pst }))
