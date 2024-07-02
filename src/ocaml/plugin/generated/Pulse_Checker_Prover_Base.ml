@@ -997,3 +997,16 @@ type prover_t =
   preamble ->
     unit prover_state ->
       (unit prover_state, unit) FStar_Tactics_Effect.tac_repr
+type eager_prover_step =
+  preamble ->
+    unit prover_state ->
+      (unit prover_state, unit) FStar_Tactics_Effect.tac_repr
+type guided_prover_step =
+  preamble ->
+    unit prover_state ->
+      Pulse_Syntax_Base.vprop ->
+        Pulse_Syntax_Base.vprop Prims.list ->
+          unit ->
+            prover_t ->
+              (unit prover_state FStar_Pervasives_Native.option, unit)
+                FStar_Tactics_Effect.tac_repr
