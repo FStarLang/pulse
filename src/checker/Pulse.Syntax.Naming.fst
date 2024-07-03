@@ -217,6 +217,11 @@ let rec close_open_inverse_st'  (t:st_term)
       close_open_inverse' typ x i;
       close_open_inverse_opt' post x (i + 1)
 
+    | Tm_Block { pre; post; stmt } ->
+      close_open_inverse' pre x i;
+      close_open_inverse' post x i;
+      close_open_inverse_st' stmt x i
+
     | Tm_Unreachable -> ()
     
     | Tm_ProofHintWithBinders { binders; hint_type; t} ->

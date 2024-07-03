@@ -183,7 +183,10 @@ and stmt'__LetBinding__payload =
   id: FStar_Ident.ident ;
   typ: FStar_Parser_AST.term FStar_Pervasives_Native.option ;
   init1: let_init FStar_Pervasives_Native.option }
-and stmt'__Block__payload = {
+and stmt'__Block__payload =
+  {
+  precondition1: vprop ;
+  postcondition1: vprop ;
   stmt: stmt }
 and stmt'__If__payload =
   {
@@ -306,9 +309,24 @@ let (__proj__Mkstmt'__LetBinding__payload__item__init :
   stmt'__LetBinding__payload -> let_init FStar_Pervasives_Native.option) =
   fun projectee ->
     match projectee with | { qualifier; id; typ; init1 = init;_} -> init
+let (__proj__Mkstmt'__Block__payload__item__precondition :
+  stmt'__Block__payload -> vprop) =
+  fun projectee ->
+    match projectee with
+    | { precondition1 = precondition; postcondition1 = postcondition;
+        stmt = stmt1;_} -> precondition
+let (__proj__Mkstmt'__Block__payload__item__postcondition :
+  stmt'__Block__payload -> vprop) =
+  fun projectee ->
+    match projectee with
+    | { precondition1 = precondition; postcondition1 = postcondition;
+        stmt = stmt1;_} -> postcondition
 let (__proj__Mkstmt'__Block__payload__item__stmt :
   stmt'__Block__payload -> stmt) =
-  fun projectee -> match projectee with | { stmt = stmt1;_} -> stmt1
+  fun projectee ->
+    match projectee with
+    | { precondition1 = precondition; postcondition1 = postcondition;
+        stmt = stmt1;_} -> stmt1
 let (__proj__Mkstmt'__If__payload__item__head :
   stmt'__If__payload -> FStar_Parser_AST.term) =
   fun projectee ->
@@ -576,7 +594,9 @@ let (tag_of_stmt : stmt -> Prims.string) =
     | LetBinding
         { qualifier = uu___; id = uu___1; typ = uu___2; init1 = uu___3;_} ->
         "LetBinding"
-    | Block { stmt = uu___;_} -> "Block"
+    | Block
+        { precondition1 = uu___; postcondition1 = uu___1; stmt = uu___2;_} ->
+        "Block"
     | If
         { head1 = uu___; join_vprop = uu___1; then_ = uu___2;
           else_opt = uu___3;_}
@@ -644,7 +664,16 @@ let (mk_let_binding :
   fun qualifier ->
     fun id ->
       fun typ -> fun init -> LetBinding { qualifier; id; typ; init1 = init }
-let (mk_block : stmt -> stmt') = fun stmt1 -> Block { stmt = stmt1 }
+let (mk_block : vprop -> vprop -> stmt -> stmt') =
+  fun precondition ->
+    fun postcondition ->
+      fun stmt1 ->
+        Block
+          {
+            precondition1 = precondition;
+            postcondition1 = postcondition;
+            stmt = stmt1
+          }
 let (mk_if :
   FStar_Parser_AST.term ->
     ensures_vprop FStar_Pervasives_Native.option ->

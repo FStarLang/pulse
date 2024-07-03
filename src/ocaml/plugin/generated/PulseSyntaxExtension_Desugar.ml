@@ -1279,8 +1279,14 @@ let rec (desugar_stmt :
                     (desugar_sequence env s1 s2
                        s.PulseSyntaxExtension_Sugar.range1))
            | PulseSyntaxExtension_Sugar.Block
-               { PulseSyntaxExtension_Sugar.stmt = stmt;_} ->
-               Obj.magic (Obj.repr (desugar_stmt env stmt))
+               { PulseSyntaxExtension_Sugar.precondition1 = precondition;
+                 PulseSyntaxExtension_Sugar.postcondition1 = postcondition;
+                 PulseSyntaxExtension_Sugar.stmt = stmt;_}
+               ->
+               Obj.magic
+                 (Obj.repr
+                    (desugar_block env precondition postcondition stmt
+                       s.PulseSyntaxExtension_Sugar.range1))
            | PulseSyntaxExtension_Sugar.If
                { PulseSyntaxExtension_Sugar.head1 = head;
                  PulseSyntaxExtension_Sugar.join_vprop = join_vprop;
@@ -2498,6 +2504,57 @@ and (desugar_sequence :
                                            (PulseSyntaxExtension_Err.return
                                               uu___2)) uu___2))) uu___1)))
             uu___3 uu___2 uu___1 uu___
+and (desugar_block :
+  PulseSyntaxExtension_Env.env_t ->
+    PulseSyntaxExtension_Sugar.vprop ->
+      PulseSyntaxExtension_Sugar.vprop ->
+        PulseSyntaxExtension_Sugar.stmt ->
+          PulseSyntaxExtension_Sugar.rng ->
+            PulseSyntaxExtension_SyntaxWrapper.st_term
+              PulseSyntaxExtension_Err.err)
+  =
+  fun uu___4 ->
+    fun uu___3 ->
+      fun uu___2 ->
+        fun uu___1 ->
+          fun uu___ ->
+            (fun env ->
+               fun pre ->
+                 fun post ->
+                   fun s ->
+                     fun r ->
+                       let uu___ = desugar_vprop env pre in
+                       Obj.magic
+                         (FStar_Class_Monad.op_let_Bang
+                            PulseSyntaxExtension_Err.err_monad () ()
+                            (Obj.magic uu___)
+                            (fun uu___1 ->
+                               (fun p ->
+                                  let p = Obj.magic p in
+                                  let uu___1 = desugar_vprop env post in
+                                  Obj.magic
+                                    (FStar_Class_Monad.op_let_Bang
+                                       PulseSyntaxExtension_Err.err_monad ()
+                                       () (Obj.magic uu___1)
+                                       (fun uu___2 ->
+                                          (fun q ->
+                                             let q = Obj.magic q in
+                                             let uu___2 = desugar_stmt env s in
+                                             Obj.magic
+                                               (FStar_Class_Monad.op_let_Bang
+                                                  PulseSyntaxExtension_Err.err_monad
+                                                  () () (Obj.magic uu___2)
+                                                  (fun uu___3 ->
+                                                     (fun s1 ->
+                                                        let s1 = Obj.magic s1 in
+                                                        let uu___3 =
+                                                          PulseSyntaxExtension_SyntaxWrapper.tm_block
+                                                            p q s1 r in
+                                                        Obj.magic
+                                                          (PulseSyntaxExtension_Err.return
+                                                             uu___3)) uu___3)))
+                                            uu___2))) uu___1))) uu___4 uu___3
+              uu___2 uu___1 uu___
 and (desugar_proof_hint_with_binders :
   PulseSyntaxExtension_Env.env_t ->
     PulseSyntaxExtension_Sugar.stmt ->

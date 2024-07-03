@@ -255,7 +255,13 @@ let rec eq_st_term (t1 t2:st_term)
       eq_univ u1 u2 &&
       eq_tm t1 t2 &&
       eq_tm_opt post1 post2
-      
+    
+    | Tm_Block { pre=pre1; post=post1; stmt=stmt1 },
+      Tm_Block { pre=pre2; post=post2; stmt=stmt2 } ->
+        eq_tm pre1 pre2 &&
+        eq_tm post1 post2 &&
+        eq_st_term stmt1 stmt2
+
     | Tm_Unreachable, Tm_Unreachable -> true
     
     | Tm_ProofHintWithBinders { hint_type=ht1; binders=bs1; t=t1 },

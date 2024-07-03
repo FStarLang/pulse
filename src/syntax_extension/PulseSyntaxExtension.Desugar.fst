@@ -445,8 +445,8 @@ let rec desugar_stmt (env:env_t) (s:Sugar.stmt)
     | Sequence { s1; s2 } -> 
       desugar_sequence env s1 s2 s.range
       
-    | Block { stmt } ->
-      desugar_stmt env stmt
+    | Block { precondition; postcondition; stmt } ->
+      desugar_block env precondition postcondition stmt s.range
 
     | If { head; join_vprop; then_; else_opt } -> 
       let! head = desugar_term env head in
@@ -654,6 +654,13 @@ and desugar_sequence (env:env_t) (s1 s2:Sugar.stmt) r
     let! s2 = desugar_stmt env s2 in
     let annot = SW.mk_binder (Ident.id_of_text "_") (SW.tm_unknown r) in
     return (mk_bind annot s1 s2 r)
+
+and desugar_block (env:env_t) (pre post:Sugar.vprop) (s:Sugar.stmt) r
+  : err SW.st_term
+  = let! p = desugar_vprop env pre in
+    let! q = desugar_vprop env post in
+    let! s = desugar_stmt env s in
+    return (SW.tm_block p q s r)
 
 and desugar_proof_hint_with_binders (env:env_t) (s1:Sugar.stmt) (k:option Sugar.stmt) r
   : err SW.st_term

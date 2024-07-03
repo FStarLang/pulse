@@ -106,7 +106,9 @@ type stmt' =
       init:option let_init
     }
       
-  | Block { 
+  | Block {
+      precondition:vprop;
+      postcondition:vprop;
       stmt : stmt
     }
     
@@ -225,7 +227,7 @@ let mk_expr e = Expr { e }
 let mk_assignment id value = Assignment { lhs=id; value }
 let mk_array_assignment arr index value = ArrayAssignment { arr; index; value }
 let mk_let_binding qualifier id typ init = LetBinding { qualifier; id; typ; init }
-let mk_block stmt = Block { stmt }
+let mk_block precondition postcondition stmt = Block { precondition; postcondition; stmt }
 let mk_if head join_vprop then_ else_opt = If { head; join_vprop; then_; else_opt }
 let mk_match head returns_annot branches = Match { head; returns_annot; branches }
 let mk_while guard id invariant body = While { guard; id; invariant; body }
