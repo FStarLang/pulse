@@ -282,6 +282,11 @@ type st_term' =
       typ:term;
       post:option term;
     }
+  | Tm_Block {
+      pre:vprop;
+      post:vprop;
+      stmt:st_term;
+    }
   | Tm_Unreachable
   | Tm_ProofHintWithBinders {
       hint_type:proof_hint_type;

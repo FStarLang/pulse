@@ -924,7 +924,10 @@ let rec (transform_stmt_with_reads :
                                    (PulseSyntaxExtension_Err.return
                                       (p1, needs, m2))) uu___1)))
            | PulseSyntaxExtension_Sugar.Block
-               { PulseSyntaxExtension_Sugar.stmt = stmt;_} ->
+               { PulseSyntaxExtension_Sugar.precondition1 = precondition;
+                 PulseSyntaxExtension_Sugar.postcondition1 = postcondition;
+                 PulseSyntaxExtension_Sugar.stmt = stmt;_}
+               ->
                Obj.magic
                  (Obj.repr
                     (let uu___ = transform_stmt m stmt in
@@ -939,6 +942,10 @@ let rec (transform_stmt_with_reads :
                                  PulseSyntaxExtension_Sugar.s =
                                    (PulseSyntaxExtension_Sugar.Block
                                       {
+                                        PulseSyntaxExtension_Sugar.precondition1
+                                          = precondition;
+                                        PulseSyntaxExtension_Sugar.postcondition1
+                                          = postcondition;
                                         PulseSyntaxExtension_Sugar.stmt =
                                           stmt1
                                       });

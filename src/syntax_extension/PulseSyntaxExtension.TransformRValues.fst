@@ -268,9 +268,9 @@ let rec transform_stmt_with_reads (m:menv) (p:Sugar.stmt)
       return (p, needs, m)
       )
 
-    | Block { stmt } ->
+    | Block { precondition; postcondition; stmt } ->
       let! stmt = transform_stmt m stmt in
-      let p = { p with s=Block { stmt } } in
+      let p = { p with s=Block { precondition; postcondition; stmt } } in
       return (p, [], m)
 
     | If { head; join_vprop; then_; else_opt } ->

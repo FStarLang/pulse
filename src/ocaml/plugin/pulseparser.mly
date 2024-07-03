@@ -201,8 +201,10 @@ pulseStmtNoSeq:
     }
   | p=ifStmt { p }
   | p=matchStmt { p }
-  | LBRACE s=pulseStmt RBRACE
-    { PulseSyntaxExtension_Sugar.mk_block s }
+  | BLOCK REQUIRES p=pulseVprop
+          ENSURES q=pulseVprop
+          LBRACE s=pulseStmt RBRACE
+    { PulseSyntaxExtension_Sugar.mk_block p q s }
 
 matchStmt:
   | MATCH tm=appTermNoRecordExp c=option(ensuresVprop) LBRACE brs=list(pulseMatchBranch) RBRACE

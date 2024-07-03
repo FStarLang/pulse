@@ -181,7 +181,10 @@ let tm_admit r : st_term =
   PSB.(with_range (tm_admit STT u_zero (tm_unknown r) None) r)
 let tm_unreachable r : st_term =
   PSB.(with_range (tm_unreachable) r)
-  
+
+let tm_block pre post stmt r : st_term =
+  PSB.(with_range (tm_block pre post stmt) r)
+
 let close_term t v = Pulse_Syntax_Naming.close_term t v
 let close_st_term t v = Pulse_Syntax_Naming.close_st_term t v
 let close_st_term_n t v = Pulse_Syntax_Naming.close_st_term_n t v

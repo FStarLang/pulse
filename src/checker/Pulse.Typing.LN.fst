@@ -274,6 +274,11 @@ let rec open_st_term_ln' (e:st_term)
       open_term_ln' length x i;
       open_st_term_ln' body x (i + 1)
 
+    | Tm_Block { pre; post; stmt } ->
+      open_term_ln' pre x i;
+      open_term_ln' post x i;
+      open_st_term_ln' stmt x i
+
     | Tm_Admit { typ; post } ->
       open_term_ln' typ x i;
       open_term_ln_opt' post x (i + 1)

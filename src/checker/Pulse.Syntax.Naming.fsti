@@ -150,6 +150,11 @@ let rec freevars_st (t:st_term)
       Set.union (freevars typ)
                 (freevars_term_opt post)
 
+    | Tm_Block { pre; post; stmt } ->
+      Set.union (freevars pre)
+                (Set.union (freevars post)
+                           (freevars_st stmt))
+
     | Tm_Unreachable ->
       Set.empty
 
@@ -337,6 +342,11 @@ let rec ln_st' (t:st_term) (i:int)
     | Tm_Admit { typ; post } ->
       ln' typ i &&
       ln_opt' ln' post (i + 1)
+
+    | Tm_Block { pre; post; stmt } ->
+      ln' pre i &&
+      ln' post i &&
+      ln_st' stmt i
 
     | Tm_Unreachable ->
       true
@@ -595,6 +605,11 @@ let rec subst_st_term (t:st_term) (ss:subst)
                  u; 
                  typ=subst_term typ ss;
                  post=subst_term_opt post (shift_subst ss) }
+
+    | Tm_Block { pre; post; stmt } ->
+      Tm_Block { pre=subst_term pre ss;
+                 post=subst_term post ss;
+                 stmt=subst_st_term stmt ss }
 
     | Tm_Unreachable -> Tm_Unreachable
     

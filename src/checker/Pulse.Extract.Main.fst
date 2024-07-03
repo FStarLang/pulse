@@ -421,6 +421,10 @@ let rec simplify_st_term (g:env) (e:st_term) : T.Tac st_term =
   | Tm_WithInv {body} ->
     simplify_st_term g body
 
+  | Tm_Block { pre; post; stmt } ->
+    let stmt = simplify_st_term g stmt in
+    { e with term = Tm_Block { pre; post; stmt } }
+
   | Tm_Unreachable -> e
 
 and simplify_branch (g:env) (b:branch) : T.Tac branch =
@@ -508,6 +512,10 @@ let rec erase_ghost_subterms (g:env) (p:st_term) : T.Tac st_term =
     | Tm_WithLocalArray { binder; initializer; length; body } ->
       let body = open_erase_close g binder body in
       ret (Tm_WithLocalArray { binder; initializer; length; body })
+
+    | Tm_Block { pre; post; stmt } ->
+      let stmt = erase_ghost_subterms g stmt in
+      ret (Tm_Block { pre; post; stmt })
 
     | Tm_Unreachable -> p
 
@@ -666,6 +674,12 @@ let rec extract (g:env) (p:st_term)
       | Tm_WithInv { body } ->
         extract g body
     
+      | Tm_Block { pre; post; stmt } ->
+        let stmt, _ = extract g stmt in
+        let stmt = mle_fun [("_", mlty_unit, [])] stmt in
+        let b = mle_app (mle_name (["Pulse"; "Lib"; "Core"], "block")) [stmt] in
+        b, e_tag_impure
+
       | Tm_Unreachable ->
         mle_app (mle_name (["Pulse"; "Lib"; "Core"], "unreachable")) [mle_unit], e_tag_impure
 
