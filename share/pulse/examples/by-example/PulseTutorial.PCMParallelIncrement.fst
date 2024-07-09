@@ -1,8 +1,5 @@
 module PulseTutorial.PCMParallelIncrement
 open Pulse.Lib.Pervasives
-module M = FStar.Algebra.CommMonoid
-module MS = Pulse.Lib.PCM.MonoidShares
-module U = FStar.Universe
 module GPR = Pulse.Lib.GhostPCMReference
 module CI = Pulse.Lib.CancellableInvariant
 
@@ -72,19 +69,76 @@ ensures pts_to r ('i + 1)
    and that the value of `r` is `initial + n`.
 *)
 
+// A version of `pure a ** b` where `b` may depend on `a` for type checking,
+// similar to `a /\ b`.
+let dep_pure (a: prop) (b: squash a -> slprop1) : slprop1
+= exists* h. b h
+
+```pulse
+ghost
+fn intro_dep_pure (a: prop {a}) (#b: squash a -> slprop1)
+requires
+  b ()
+ensures
+  dep_pure a b
+{
+  fold dep_pure a b;
+}
+```
+
+```pulse
+ghost
+fn dep_pure_prop (a: prop) (#b: squash a -> slprop1)
+requires
+  dep_pure a b
+ensures
+  pure a ** dep_pure a b
+{
+  unfold dep_pure a b;
+  with h. assert b h;
+  let h = reveal h;
+  fold dep_pure a b;
+}
+```
+
+```pulse
+ghost
+fn elim_dep_pure (a: prop {a}) (#b: squash a -> slprop1)
+requires
+  dep_pure a b
+ensures
+  b ()
+{
+  unfold dep_pure a b;
+  with h. assert b h;
+  rewrite each reveal h as ();
+}
+```
+
 // We build the ghost state from a PCM corresponding to the 
 // monoid { nat, +, 0 }
 // `pcm_of n` represents a "tank" whose capacity is `n`
-let pcm_of (n:nat) = MS.pcm_of MS.nat_plus_cm n
+let pcm_of (n:nat) : PCM.pcm (i:nat { i <= n })
+= {
+    p = {
+      composable = (fun (i: nat { i <= n }) j -> i + j <= n);
+      op = (fun i j -> i + j);
+      one = 0
+    };
+    comm = (fun x y -> ());
+    assoc = (fun x y z -> ());
+    assoc_r = (fun x y z -> ());
+    is_unit = (fun x -> ()); 
+    refine = (fun _ -> True);
+  }
 
 // A tank is a ghost reference from the above PCM
 let tank (n:nat) = GPR.gref (pcm_of n)
 
 // A predicate asserting ownership of `i` units of the tank
 let owns_tank_units #n (g:tank n) (i:nat)
-: slprop3
-= GPR.pts_to #_ #(pcm_of n) g i
-
+: slprop1
+= dep_pure (i <= n) (fun _ -> GPR.pts_to #_ #(pcm_of n) g i)
 
 // You cannot own more than the tank capacity
 ```pulse
@@ -96,7 +150,33 @@ ensures
   owns_tank_units g i ** pure (i <= n)
 {
   unfold owns_tank_units;
-  let v = GPR.read_simple g; 
+  dep_pure_prop (i <= n);
+  fold owns_tank_units;
+}
+```
+
+```pulse
+ghost
+fn unfold_owns_tank_units (#n:nat) (g:tank n) (#i:erased nat { i <= n })
+requires
+  owns_tank_units g i
+ensures
+  GPR.pts_to #_ #(pcm_of n) g i
+{
+  unfold owns_tank_units;
+  elim_dep_pure (i <= n);
+}
+```
+
+```pulse
+ghost
+fn fold_owns_tank_units (#n:nat) (g:tank n) (#i:erased nat { i <= n })
+requires
+  GPR.pts_to #_ #(pcm_of n) g i
+ensures
+  owns_tank_units g i
+{
+  intro_dep_pure (i <= n) #(fun _ -> GPR.pts_to #_ #(pcm_of n) g i);
   fold owns_tank_units;
 }
 ```
@@ -115,11 +195,10 @@ ensures
 {
   extract_tank_bound g #i;
   extract_tank_bound g #j;
-  unfold (owns_tank_units g i);
-  unfold (owns_tank_units g j);
+  unfold_owns_tank_units g #i;
+  unfold_owns_tank_units g #j;
   GPR.gather g _ _;
-  fold owns_tank_units;
-  extract_tank_bound g;
+  fold_owns_tank_units g #(i + j);
 }
 ```
 
@@ -134,12 +213,13 @@ ensures
   owns_tank_units g v
 {
   open FStar.PCM;
-  unfold owns_tank_units;
+  extract_tank_bound g;
+  unfold_owns_tank_units g;
   rewrite (GPR.pts_to g (u + v))
        as (GPR.pts_to g (op (pcm_of n) u v));
   GPR.share g u v;  //leaving the arguments as _ _ causes a crash
-  fold (owns_tank_units g u);
-  fold (owns_tank_units g v)
+  fold_owns_tank_units g #u;
+  fold_owns_tank_units g #v;
 }
 ```
 
@@ -153,12 +233,13 @@ ensures
 //   owns_tank_units g 0
 // {
 //   open FStar.PCM;
-//   unfold owns_tank_units;
+//   extract_tank_bound g;
+//   unfold_owns_tank_units g;
 //   rewrite (GPR.pts_to g v)
 //        as (GPR.pts_to g (op (pcm_of n) v 0));
 //   GPR.share g v 0; //leaving the arguments (v - 1) and 1 as _ _ causes a crash
-//   fold (owns_tank_units g v);
-//   fold owns_tank_units
+//   fold_owns_tank_units g #v;
+//   fold_owns_tank_units g;
 // }
 // ```
 
@@ -182,7 +263,7 @@ let contributions
     (initial:nat)
     (gs:ghost_state n)
     (r:ref nat)
-: slprop3
+: slprop1
 = exists* (v g t:nat).
     pts_to r v **    
     owns_tank_units gs.given g **
@@ -238,11 +319,11 @@ ensures contributions capacity initial gs r **
         can_give gs capacity 
 {
   let given = GPR.alloc #_ #(pcm_of capacity) capacity;
-  fold (owns_tank_units given capacity);
+  fold_owns_tank_units given #capacity;
   share_tank_units given #capacity #0;
 
   let to_give = GPR.alloc #_ #(pcm_of capacity) capacity;
-  fold (owns_tank_units to_give capacity);
+  fold_owns_tank_units to_give #capacity;
   
   let gs : ghost_state capacity = { given; to_give };
   rewrite each given as gs.given;
