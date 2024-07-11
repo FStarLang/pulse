@@ -13,3 +13,4 @@ which is neither part of the paper nor part of this submission.
   - `share/pulse/examples/by-example/PulseTutorial.PCMParallelIncrement.fst` contains the parallel increment from Sec. 4.1
   - `lib/pulse/lib/Pulse.Lib.ConditionVarWithCodes.fst` contains the barrier from Sec. 4.2
   - `share/pulse/examples/dice/dpe` contains the DPE implementation from Sec. 4.3
+    - `pulse2rust/dpe/src` containes the Rust code extracted from this DPE implementation
