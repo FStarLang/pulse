@@ -45,10 +45,10 @@ open Pulse.Lib.HashTable
 open Pulse.Lib.MutexToken
 
 // We assume a combinator to run pulse computations for initialization of top-level state, it gets primitive support in extraction
-assume val run_stt (#a:Type) (#post:a -> slprop) (f:stt a emp post) : a
+assume val run_stt (#a:Type) (#post:a -> slprop) (f:stt a emp post) : a  // intentional, running Pulse computation for top-level initialization
 
 // We assume this code will be executed on a machine where u32 fits the word size
-assume SZ_fits_u32 : SZ.fits_u32
+assume SZ_fits_u32 : SZ.fits_u32  //intentional, u32 fits machine word size
 
 let sid_hash (s:sid_t) : SZ.t = SZ.uint16_to_sizet s
 
