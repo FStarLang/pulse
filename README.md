@@ -52,24 +52,24 @@ the paper to the code.
 
 * `PulseCore.HeapExtension`: The main construction of heap extension
 
-* PulseCore.MemoryAlt: The instantiation of HeapExtension to
+* `PulseCore.MemoryAlt`: The instantiation of HeapExtension to
   `extend (extend (extend (base_heap u#a)))`, and defining many of the types
   used in the rest of the development, slprop_4, slprop_3, slprop_2, etc.
   Some of the complexity here is related to proving that the types derived from 
   the extended heap are correctly marked as erasable for F*.
 
-* PulseCore.Semantics: A generic Act-Ret-Par definition for action-tree forests
+* `PulseCore.Semantics`: A generic Act-Ret-Par definition for action-tree forests
   and its interpreter. It's defined for an even more abstract separation logic
   than slsig.
 
-* PulseCore.InstantiatedSemantics: Instantiates PulseCore.Semantics with the
+* `PulseCore.InstantiatedSemantics`: Instantiates PulseCore.Semantics with the
   extended heap derived in MemoryAlt, setting the `base_heap u#a` to
   `base_heap u#0`.
 
-* PulseCore.Action: The `except:set iname { except \cap opens == \emptyset}`
+* `PulseCore.Action`: The `except:set iname { except \cap opens == \emptyset}`
   parameter is introduced here, allowing an atomic computation's type to speak
   about the invariants it opens, rather than the invariants that the context
   must not open.
 
-* PulseCore.Atomic: A final level of abstraction, packaging actions and action
+* `PulseCore.Atomic`: A final level of abstraction, packaging actions and action
   trees into the stt_atomic, stt_ghost, and stt types.
