@@ -8,9 +8,10 @@ The code is anonymized, names have been redacted and some comments removed entir
 The PulseCore formalization is written in pure F* and can be checked using `make -C lib/pulse/core`.
 This requires an F* version built from a git version from July 10th 2024.
 
-Compiling the other parts of the supplementary material requires the Pulse plugin,
+Compiling the other parts of the supplementary material would require the Pulse plugin,
 which is neither part of the paper nor part of this submission.
 
+  - `share/pulse/examples/PulseCorePaper.S2.Lock.fst` contains the spinlock example from Sec 2
   - `share/pulse/examples/by-example/PulseTutorial.PCMParallelIncrement.fst` contains the parallel increment from Sec. 4.1
   - `lib/pulse/lib/Pulse.Lib.ConditionVarWithCodes.fst` contains the barrier from Sec. 4.2
   - `share/pulse/examples/dice/dpe` contains the DPE implementation from Sec. 4.3
