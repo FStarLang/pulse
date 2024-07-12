@@ -18,7 +18,7 @@ which is neither part of the paper nor part of this submission.
   - `share/pulse/examples/dice/dpe` contains the DPE implementation from Sec. 4.3
     - `pulse2rust/dpe/src` containes the Rust code extracted from this DPE implementation
 
-# A Tour of the Formalizatoin of PulseCore
+# A Tour of the Formalization of PulseCore
 
 lib/pulse/core contains the formalization of PulseCore presented in Section 3 of
 the paper.
