@@ -1,6 +1,7 @@
 # Supplementary material for the paper "PulseCore: A Dependently Typed Stratified Separation Logic"
 
 This directory contains the F* code described in the paper.
+The code is anonymized, names have been redacted and some comments removed entirely.
 
   - `lib/pulse/core` contains the PulseCore formalization described in Sec. 3
 
