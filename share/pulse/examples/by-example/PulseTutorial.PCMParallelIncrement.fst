@@ -17,7 +17,7 @@ fn atomic_incr (r:ref nat)
 requires pts_to r 'i
 ensures pts_to r ('i + 1)
 {
-  admit()
+  admit() //intentionally assuming an atomic increment on nat, as in paper
 }
 ```
 

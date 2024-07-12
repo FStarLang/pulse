@@ -460,7 +460,7 @@ let nb_ghost_write = A.nb_ghost_write
 let nb_ghost_share = A.nb_ghost_share
 let nb_ghost_gather = A.nb_ghost_gather
 
-let as_atomic #a pre post (e:stt a pre post) = admit () // intentional since it is an assumption
+let as_atomic #a pre post (e:stt a pre post) = admit () // an intentional escape hatch for clients to declare new trused atomic operations
 
 let unfold_check_opens = ()
 
