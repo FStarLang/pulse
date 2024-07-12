@@ -22,7 +22,7 @@ module Box = Pulse.Lib.Box
 // let sprop = s:slprop { storable s }
 
 module B = Pulse.Lib.Box
-assume
+assume //assume a cas on u32
 val cas_box_alt (r:B.box U32.t) (u v:U32.t) (#i:erased U32.t)
   : stt_atomic bool #Observable emp_inames 
     (B.pts_to r i)
