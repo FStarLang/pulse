@@ -20,7 +20,7 @@ which is neither part of the paper nor part of this submission.
 
 # A Tour of the Formalization of PulseCore
 
-lib/pulse/core contains the formalization of PulseCore presented in Section 3 of
+`lib/pulse/core` contains the formalization of PulseCore presented in Section 3 of
 the paper.
 
 As mentioned in the paper, the presentation in the paper is more abstract and
@@ -28,7 +28,7 @@ uses a more mathematical notation than the code. It also omits a few
 technicalities that the code deals with. This README aims to relate concepts in
 the paper to the code.
 
-* PulseCore.HeapSig.fsti: 
+* `PulseCore.HeapSig.fsti`:
    - Defines the signature `heap_sig`, called `slsig` in the paper
 
    - heap_sig is a flattening of `slsig`: where `slsig` uses several sub-classes,
@@ -43,14 +43,14 @@ the paper to the code.
      == \emptyset}` argument. We add this parameter in PulseCore.Action. The
      paper presents fuses these two parts of the development together.
 
-* PulseCore.Heap: Defines the core heap
+* `PulseCore.Heap`: Defines the core heap
 
-* PulseCore.Heap2: Defines a product of core heap and erased core heap
+* `PulseCore.Heap2`: Defines a product of core heap and erased core heap
 
-* PulseCore.BaseHeapSig: Packaged Heap2 with allocation counters and
+* `PulseCore.BaseHeapSig`: Packaged Heap2 with allocation counters and
   instantiates `heap_sig`, i.e., the base case.
 
-* PulseCore.HeapExtension: The main construction of heap extension
+* `PulseCore.HeapExtension`: The main construction of heap extension
 
 * PulseCore.MemoryAlt: The instantiation of HeapExtension to
   `extend (extend (extend (base_heap u#a)))`, and defining many of the types
