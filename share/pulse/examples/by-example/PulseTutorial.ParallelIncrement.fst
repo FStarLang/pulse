@@ -287,13 +287,13 @@ ensures pts_to x ('i + 2)
 // Doing this with int instead of U32, just to keep it a bit simpler
 // assuming atomic_read and cas on int
 //atomic_primitives$
-assume
+assume //atomic read on an int
 val atomic_read (r:ref int) (#p:_) (#i:erased int)
   : stt_atomic int emp_inames 
     (pts_to r #p i)
     (fun v -> pts_to r #p i ** pure (reveal i == v))
 
-assume
+assume //atomic cas on an int
 val cas (r:ref int) (u v:int) (#i:erased int)
   : stt_atomic bool emp_inames 
     (pts_to r i)

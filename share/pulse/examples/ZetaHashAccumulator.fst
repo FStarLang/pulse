@@ -76,8 +76,7 @@ let initial_hash
   : hash_value_t
   = Seq.create 32 0uy, 0
 
-// We just assume a spec for Blake, rather than connecting with the actual HACL code
-assume
+assume // We just assume a spec for Blake, rather than connecting with the actual HACL code
 val blake_spec (d:Seq.seq U8.t { Seq.length d <= blake2_max_input_length})
   : out:Seq.seq U8.t { Seq.length out == 32 }
 
@@ -127,8 +126,7 @@ let aggregate_hashes (h0 h1: hash_value_t)
 (* END Pure Spec *)
 (***************************************************************)
 
-(* Model of HACL's blake2b *)
-assume
+assume //Model of HACL's blake2b
 val blake2b:
      nn:SZ.t{1 ≤ SZ.v nn ∧ SZ.v nn ≤ 64}
   -> output: A.array U8.t { A.length output == SZ.v nn}
