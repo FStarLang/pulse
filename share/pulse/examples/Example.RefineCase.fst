@@ -112,11 +112,3 @@ fn refine_ghost (x:ref int) (v:erased t_rep)
    hide r
 }
 ```
-   
-
-// assume
-// val refine_ghost (x:ref int) (v:erased t_rep)
-//   : stt_ghost (erased int) emp_inames
-//     (requires t_perm (A x) v)
-//     (ensures (fun i -> pts_to x i ** pure (reveal v == AR i)))
-    
