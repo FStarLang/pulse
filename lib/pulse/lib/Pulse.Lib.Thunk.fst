@@ -2,13 +2,23 @@ module Pulse.Lib.Thunk
 open Pulse.Lib.Pervasives
 open Pulse.Lib.Box
 
-assume val slimp : slprop -> slprop -> prop // pointwise implication
+//
+// Assume interface for slprop implication (i.e., implication at every heap).
+//
+
+assume val slimp : slprop -> slprop -> prop
 assume val slimp_refl (p:slprop) : squash (slimp p p)
 assume val slimp_trans (#p #q #r:slprop) (hpq : squash (slimp p q)) (hqr: squash (slimp q r)) : squash (slimp p r)
 assume val slimp_pure (#p #q: prop) (h: squash (p ==> q)) : squash (slimp (pure p) (pure q))
 assume val slimp_star (#p #q #p' #q': slprop) (hp: squash (slimp p p')) (hq: squash (slimp q q')) : squash (slimp (p ** q) (p' ** q'))
 assume val slimp_exists #t (#p #q: t -> slprop) (h : (x:t -> squash (slimp (p x) (q x)))) : squash (slimp (exists* x. p x) (exists* x. q x))
 assume val slimp_elim #p #q (h: squash (slimp p q)) : stt_ghost unit [] p (fun _ -> q)
+
+
+//
+// Construct a type `dynamic : Type0` which can store any value (of types in *any* universe).
+// Elimination requires the `Dv` effect.  Obviously neither `dynamic` nor `to_dynamic` are injective.
+//
 
 noeq type value_type_bundle = { t: Type0; x: t }
 
@@ -25,6 +35,11 @@ let of_dynamic (t: Type u#a) (y: dynamic { dynamic_has_ty t y }) : Dv t =
   let b = elim_subtype_of (y:dynamic {dynamic_has_ty t y}) (raw_dynamic t) y () in
   let b : unit -> Dv t = b.x in
   b ()
+
+
+//
+// Define the `thunk` type and associated API.
+//
 
 let slimp1 (#a:Type u#aa) (p q : a -> slprop) : prop = 
   forall (x:a).
