@@ -32,9 +32,10 @@ let dynamic_has_ty (t: Type u#a) (y: dynamic) = exists (x: t). y == to_dynamic x
 let elim_subtype_of s (t: Type { subtype_of s t }) (x: s): t = x
 
 let of_dynamic (t: Type u#a) (y: dynamic { dynamic_has_ty t y }) : Dv t =
-  let b = elim_subtype_of (y:dynamic {dynamic_has_ty t y}) (raw_dynamic t) y () in
-  let b : unit -> Dv t = b.x in
-  b ()
+  let y : raw_dynamic t = elim_subtype_of _ _ y in
+  let b = y () in
+  let c : unit -> Dv t = b.x in
+  c ()
 
 
 //
