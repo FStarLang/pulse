@@ -4,11 +4,6 @@ open Pulse.Lib.Pervasives
 open Pulse.Lib.Trade
 open Pulse.Lib.Box
 
-assume val dynamic : Type0
-assume val to_dynamic (#t: Type u#a) (x: t) : dynamic
-let dynamic_has_ty (t: Type u#a) (y: dynamic) = exists (x: t). y == to_dynamic x
-assume val of_dynamic (t: Type u#a) (y: dynamic { dynamic_has_ty t y }) : t
-
 assume val slimp : slprop -> slprop -> prop // pointwise implication
 assume val slimp_refl (p:slprop) : squash (slimp p p)
 assume val slimp_trans (#p #q #r:slprop) (hpq : squash (slimp p q)) (hqr: squash (slimp q r)) : squash (slimp p r)
@@ -16,6 +11,21 @@ assume val slimp_pure (#p #q: prop) (h: squash (p ==> q)) : squash (slimp (pure 
 assume val slimp_star (#p #q #p' #q': slprop) (hp: squash (slimp p p')) (hq: squash (slimp q q')) : squash (slimp (p ** q) (p' ** q'))
 assume val slimp_exists #t (#p #q: t -> slprop) (h : (x:t -> squash (slimp (p x) (q x)))) : squash (slimp (exists* x. p x) (exists* x. q x))
 assume val slimp_elim #p #q (h: squash (slimp p q)) : stt_ghost unit [] p (fun _ -> q)
+
+noeq type value_type_bundle = { t: Type u#a; x: t }
+
+let raw_dynamic (t: Type u#a) : Type0 = unit -> Dv (b:value_type_bundle u#a {b.t == t})
+let to_raw_dynamic (#t: Type u#a) (x: t) : raw_dynamic t = fun _ -> { t = t; x = x }
+
+let dynamic : Type0 = unit -> Dv (value_type_bundle u#a)
+let to_dynamic (#t: Type u#a) (x: t) : dynamic = to_raw_dynamic x
+let dynamic_has_ty (t: Type u#a) (y: dynamic) = exists (x: t). y == to_dynamic x
+
+let elim_subtype_of s (t: Type { subtype_of s t }) (x: s): t = x
+
+let of_dynamic (t: Type u#a) (y: dynamic { dynamic_has_ty t y }) : Dv t =
+  let b = elim_subtype_of (y:dynamic {dynamic_has_ty t y}) (raw_dynamic t) y () in
+  b.x
 
 let slimp1 (#a:Type u#aa) (p q : a -> slprop) : prop = 
   forall (x:a).
@@ -27,9 +37,9 @@ let is_mono (#a:Type u#aa) (f: (a -> slprop) -> (a -> slprop)) : prop =
 
 noeq type thunk_data (t: Type0) : Type0 =
   | Forced : t -> thunk_data t
-  | Closure : dynamic -> thunk_data t
+  | Closure : dynamic u#0 -> thunk_data t
 
-let thunk (t: Type) = box (thunk_data t)
+let thunk (t: Type0) = box (thunk_data t)
 
 let closure_prop #t (pre: slprop) (p : t->slprop) (g: dynamic) : prop =
   exists post. slimp1 post p /\ dynamic_has_ty (unit -> stt t pre (fun x -> post x)) g
@@ -126,7 +136,7 @@ let indef_desc_prop #t (#p : t -> prop) (h: squash (exists x. p x)) : squash (p 
   ()
 
 let call_dynamic t pre post (g: dynamic { dynamic_has_ty (unit -> stt t pre (fun x -> post x)) g }) () : stt t pre (fun x -> post x) =
-  of_dynamic (unit -> stt t pre (fun x -> post x)) g ()
+  hide_div (fun _ -> of_dynamic (unit -> stt t pre (fun x -> post x)) g ())
 
 ```pulse
 fn force_thunk #t (#p: t -> slprop) c
