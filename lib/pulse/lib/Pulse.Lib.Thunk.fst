@@ -101,8 +101,7 @@ let thunk_to_mono #a #t (c: thunk t) (p: ((a->slprop) -> a-> t-> slprop)) (h: (x
   introduce forall f g. _ with
   introduce _ ==> _ with _.
   introduce forall y. _ with
-  slimp_thunk_to' _ (fun x ->
-    Classical.Sugar.forall_elim g (Classical.Sugar.forall_elim f (h x)))
+  slimp_thunk_to' _ (fun x -> elim_forall (elim_forall (h x) f) g)
 
 ```pulse
 fn alloc_thunk #t (#p: t -> slprop) (#res: slprop) (f: unit -> stt t res (fun x -> p x))
