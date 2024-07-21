@@ -4,6 +4,7 @@ open Pulse.Lib.Pervasives
 open PulseCore.Preorder
 
 module G = FStar.Ghost
+module U32 = FStar.UInt32
 
 module V = Pulse.Lib.Vec
 module FP = Pulse.Lib.PCM.FractionalPreorder
@@ -75,6 +76,13 @@ let g_transcript_current_session_grows (t0 t1:g_transcript) : prop =
   Seq.length t0 == Seq.length t1 /\
   g_transcript_all_but_current_session t0 == g_transcript_all_but_current_session t1 /\
   is_prefix_of (g_transcript_current_session t0) (g_transcript_current_session t1)  
+
+let g_transcript_current_session_grows_by (t0 t1:g_transcript) (s:Seq.seq u8) : prop =
+  admit ()
+
+let g_transcript_current_session_grows_lemma (t0 t1:g_transcript) (s:Seq.seq u8)
+  : Lemma (g_transcript_current_session_grows_by t0 t1 s ==>
+           g_transcript_current_session_grows t0 t1) = admit ()
 
 //
 // States of the state machine
@@ -211,6 +219,90 @@ let init_client_perm (s:state) : slprop =
   exists* (t:trace).
     inv s trace_ref t ** pure (G_Initialized? (current_state t))
 
-assume val init ()
-  : stt state (requires emp)
-              (ensures fun s -> init_client_perm s)
+assume val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len })
+  : stt state (requires exists* p b. V.pts_to signing_key #p b)
+              (ensures fun s -> exists* p b. V.pts_to signing_key #p b ** init_client_perm s)
+
+noeq
+type resp_repr = {
+  some_field : u32;
+  // TODO
+}
+
+//
+// Related to parser
+//
+assume val valid_resp (resp:V.vec u8) (repr:resp_repr) : slprop
+
+type result =
+  | Success
+  | Parse_error
+  | Signature_verification_error
+
+let valid_state (s:g_state) =
+  G_Initialized? s \/ G_Recv_no_sign_resp? s
+
+let g_transcript_of_gst (s:g_state { valid_state s })
+  : g_transcript =
+  match s with
+  | G_Initialized r
+  | G_Recv_no_sign_resp r -> r.transcript
+
+let current_transcript (t:trace { valid_state (current_state t) }) : g_transcript =
+  g_transcript_of_gst (current_state t)
+
+//
+// TODO: add measurement blocks
+//
+assume val no_sign_resp
+  (req:V.vec u8)
+  (resp:V.vec u8)
+  (st:state)
+  (#tr0:trace { valid_state (current_state tr0) })
+  : stt result (requires (exists* p_req b_req p_resp b_resp.
+                          V.pts_to req #p_req b_req **
+                          V.pts_to resp #p_resp b_resp) **
+                         inv st trace_ref tr0)
+               (ensures fun res ->
+                        (exists* p_req b_req p_resp b_resp.
+                         V.pts_to req #p_req b_req **
+                         V.pts_to resp #p_resp b_resp **
+                         (match res with
+                          | Parse_error -> emp
+                          | Signature_verification_error -> pure False
+                          | Success ->
+                            exists* r tr1. valid_resp resp r **
+                                           inv st trace_ref tr1 **
+                                           pure (G_Recv_no_sign_resp? (current_state tr1)) **
+                                           (let t0 = current_transcript tr0 in
+                                            let t1 = current_transcript tr1 in
+                                            pure (g_transcript_current_session_grows_by t0 t1 (Seq.append b_req b_resp))))))
+
+assume val valid_signature (signature msg key:Seq.seq u8) : prop
+
+assume val sign_resp
+  (req:V.vec u8)
+  (resp:V.vec u8)
+  (st:state)
+  (#tr0:trace { valid_state (current_state tr0) })
+  : stt result (requires (exists* p_req b_req p_resp b_resp.
+                          V.pts_to req #p_req b_req **
+                          V.pts_to resp #p_resp b_resp) **
+                         inv st trace_ref tr0)
+               (ensures fun res ->
+                        (exists* p_req b_req p_resp b_resp.
+                         V.pts_to req #p_req b_req **
+                         V.pts_to resp #p_resp b_resp **
+                         (match res with
+                          | Parse_error -> emp
+                          | Signature_verification_error -> emp
+                          | Success ->
+                            exists* r tr1. valid_resp resp r **
+                                           inv st trace_ref tr1 **
+                                           pure (G_Recv_no_sign_resp? (current_state tr1)) **
+                                           (let t0 = current_transcript tr0 in
+                                            let t1 = current_transcript tr1 in
+                                            let t1_all_but_current_session = g_transcript_all_but_current_session t1 in
+                                            pure (g_transcript_current_session_grows_by t0 t1_all_but_current_session (Seq.append b_req b_resp) /\
+                                                  is_initialized_transcript t1)))))
+                                                  // TODO: add something like this: valid_signature r.sig (g_transcript_current_session t1_all_but_current_session) st.signing_pub_key)))))
