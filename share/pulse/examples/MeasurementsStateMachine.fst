@@ -140,7 +140,7 @@ let rec well_formed_trace (l:list g_session_state) : prop =
   | s1::s0::tl -> next s0 s1 /\ well_formed_trace (s0::tl)
   | _ -> False
   
-  noextract
+noextract
 type trace_elt : Type u#1 = l:list g_session_state { well_formed_trace l }
 
 noextract

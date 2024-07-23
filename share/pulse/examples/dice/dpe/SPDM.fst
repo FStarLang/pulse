@@ -23,6 +23,8 @@ type u32 = FStar.UInt32.t
 //
 // Concrete state
 // Only maintains the current session transcript
+// This is the memory state associated with a state of the state machine. A state of the state machine takes
+// the current memory state and returns a state of the state machine.
 //
 noeq
 type st = {
@@ -37,7 +39,16 @@ type st = {
 //
 type g_transcript = Seq.seq (Seq.seq u8)
 
-//
+//--------------------------------------------------------------------------------------
+// ...  |       |      |      |       |       |       |        |       |       |       |
+//----- ----|------|-------|------|-------|-------|--------|--------|-------|-------|---
+//          V      V       V      V       V       V        V        V       V       V
+//       -------
+//       |-----|
+//       |-----|
+//       |-----|
+//       -------
+
 // Ghost repr
 //
 noeq
@@ -71,6 +82,7 @@ let is_initialized_transcript (t:g_transcript) : prop =
 //
 // t0 and t1 have same sessions, the current session grows from t0 to t1
 //
+
 let g_transcript_current_session_grows (t0 t1:g_transcript) : prop =
   g_transcript_non_empty t0 /\
   Seq.length t0 == Seq.length t1 /\
@@ -78,11 +90,12 @@ let g_transcript_current_session_grows (t0 t1:g_transcript) : prop =
   is_prefix_of (g_transcript_current_session t0) (g_transcript_current_session t1)  
 
 let g_transcript_current_session_grows_by (t0 t1:g_transcript) (s:Seq.seq u8) : prop =
-  admit ()
+   g_transcript_current_session_grows t0 t1 /\
+   g_transcript_current_session t1 == Seq.append (g_transcript_current_session t0) s
 
 let g_transcript_current_session_grows_lemma (t0 t1:g_transcript) (s:Seq.seq u8)
   : Lemma (g_transcript_current_session_grows_by t0 t1 s ==>
-           g_transcript_current_session_grows t0 t1) = admit ()
+           g_transcript_current_session_grows t0 t1) = ()
 
 //
 // States of the state machine
@@ -208,6 +221,8 @@ let session_state_related (s:state) (gs:g_state) : v:slprop { is_slprop2 v } =
 
 //
 // The main invariant
+// The session_state_related connects the concrete state with the current ghost state of the trace.
+// r is the trace pointer with permission
 //
 let inv (s:state) (r:gref) (t:trace) : v:slprop { is_slprop2 v } =
   ghost_pcm_pts_to r (Some 1.0R, t) **
@@ -253,6 +268,7 @@ let current_transcript (t:trace { valid_state (current_state t) }) : g_transcrip
 
 //
 // TODO: add measurement blocks
+//p_req is the permission to req, b_req is the seq equivalent of req, similarly for resp.
 //
 assume val no_sign_resp
   (req:V.vec u8)
@@ -262,7 +278,7 @@ assume val no_sign_resp
   : stt result (requires (exists* p_req b_req p_resp b_resp.
                           V.pts_to req #p_req b_req **
                           V.pts_to resp #p_resp b_resp) **
-                         inv st trace_ref tr0)
+                          inv st trace_ref tr0)
                (ensures fun res ->
                         (exists* p_req b_req p_resp b_resp.
                          V.pts_to req #p_req b_req **
@@ -299,7 +315,7 @@ assume val sign_resp
                           | Success ->
                             exists* r tr1. valid_resp resp r **
                                            inv st trace_ref tr1 **
-                                           pure (G_Recv_no_sign_resp? (current_state tr1)) **
+                                           pure (G_Initialized? (current_state tr1)) **
                                            (let t0 = current_transcript tr0 in
                                             let t1 = current_transcript tr1 in
                                             let t1_all_but_current_session = g_transcript_all_but_current_session t1 in
