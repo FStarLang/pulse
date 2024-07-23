@@ -4,6 +4,8 @@ open Pulse.Lib.Pervasives
 open PulseCore.Preorder
 
 module G = FStar.Ghost
+
+module U16 = FStar.UInt16
 module U32 = FStar.UInt32
 
 module V = Pulse.Lib.Vec
@@ -38,7 +40,7 @@ type st = {
   session_transcript : V.vec u8;
 }
 
-type g_transcript = (Seq.seq u8)
+type g_transcript = s:Seq.seq u8 { Seq.length s > 0 }
 
 // Ghost repr
 //
@@ -68,7 +70,7 @@ type state =
 noeq
 type g_state : Type u#1 =
   | G_UnInitialized : g_state
-  | G_Initialized : repr:repr{is_initialized_transcript repr.transcript} -> g_state
+  | G_Initialized : signing_pub_key_repr:Seq.seq u8 -> g_state
   | G_Recv_no_sign_resp : repr:repr ->  g_state
 
   | G_Recv_sign_resp : repr:repr -> g_state
@@ -83,34 +85,25 @@ let is_prefix_of (#a:Type) (s0 s1:Seq.seq a) : prop =
 let next (s0 s1:g_state) : prop =
   match s0, s1 with
   //Uninit ---> initial (upon init call)
-  |G_UnInitialized, G_Initialized r -> true
+  | G_UnInitialized, G_Initialized _ -> True
   //initial ---> no_sign (upon no_sign call)
-  | G_Initialized r0 , G_Recv_no_sign_resp r1 ->
-        g_transcript_non_empty r1.transcript
-
+  | G_Initialized k , G_Recv_no_sign_resp r
   // initial ---> sign (upon sign call)
-  | G_Initialized r0 , G_Recv_sign_resp r1->
-        g_transcript_non_empty r1.transcript
+  | G_Initialized k, G_Recv_sign_resp r ->
+    k == r.signing_pub_key_repr
 
   // no_sign --> no_sign (upon no_sign call)
-  | G_Recv_no_sign_resp r0 ,  G_Recv_no_sign_resp r1 ->
-        g_transcript_non_empty r1.transcript /\
-        g_transcript_non_empty r0.transcript /\
-        is_prefix_of r0.transcript r1.transcript
-
+  | G_Recv_no_sign_resp r0,  G_Recv_no_sign_resp r1
   //no_sign ---> sign (upon sign call)
   | G_Recv_no_sign_resp r0, G_Recv_sign_resp r1  ->
-        g_transcript_non_empty r1.transcript /\
-        g_transcript_non_empty r0.transcript /\
-        is_prefix_of r0.transcript r1.transcript
+    r0.signing_pub_key_repr == r1.signing_pub_key_repr /\
+    is_prefix_of r0.transcript r1.transcript
         
   //sign ---> initial (no call is needed)
-  | G_Recv_sign_resp r0, G_Initialized r1 ->
-        g_transcript_non_empty r0.transcript 
-
+  | G_Recv_sign_resp r, G_Initialized k
   //no_sign --> initial (upon reset call)
-  |G_Recv_no_sign_resp r0, G_Initialized r1 ->
-        g_transcript_non_empty r0.transcript
+  | G_Recv_no_sign_resp r, G_Initialized k ->
+    r.signing_pub_key_repr == k
 
   | _ -> False
 
@@ -170,29 +163,31 @@ let next_trace (t:trace) (s:g_state { valid_transition t s }) : trace =
 noextract
 type gref = ghost_pcm_ref trace_pcm
 
-let session_state_related (s:state) (gs:g_state) : v:slprop { is_slprop2 v } =
+let session_state_related (s:state) (gs:g_state) : slprop =
   match s, gs with
-  | Initialized st, G_Initialized repr
+  | Initialized st, G_Initialized k ->
+    V.pts_to st.signing_pub_key k **
+    V.pts_to st.session_transcript Seq.empty
+
   | Recv_no_sign_resp st, G_Recv_no_sign_resp repr ->
     V.pts_to st.signing_pub_key repr.signing_pub_key_repr **
     V.pts_to st.session_transcript repr.transcript
 
   | _ -> pure False
 
-  //
+//
 // The main invariant
 // The session_state_related connects the concrete state with the current ghost state of the trace.
 // r is the trace pointer with permission
 //
-let inv (s:state) (r:gref) (t:trace) : v:slprop { is_slprop2 v } =
+let inv (s:state) (r:gref) (t:trace) : v:slprop =
   ghost_pcm_pts_to r (Some 1.0R, t) **
   session_state_related s (current_state t)
 
 assume val trace_ref : gref
 
 let init_client_perm (s:state) : slprop =
-  exists* (t:trace).
-    inv s trace_ref t ** pure (G_Initialized? (current_state t))
+  exists* (t:trace). inv s trace_ref t ** pure (G_Initialized? (current_state t))
 
 assume val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len })
   : stt state (requires exists* p b. V.pts_to signing_key #p b)
@@ -224,92 +219,89 @@ type spdm_measurement_block_t  = {
   index : u8;
   measurement_specification : u8;
   measurement_size : u16;
-  measurement : V.vec u8
+  measurement : v:V.vec u8 { V.length v == U16.v measurement_size }
 }
+
 //
 //result structure
 //
 noeq
 type spdm_measurement_result_t  = {
-  measurement_block_vector : V.vec  spdm_measurement_block_t;
   measurement_block_count : u8;
-  status : result
+  measurement_block_vector : v:V.vec spdm_measurement_block_t {
+    V.length v == u8_v measurement_block_count
+  };
+  status : result  //TODO: Add refinement for the vector and length being 0 if result is not Success
 }
 
 //
 //Signature of get_measurement_blocks_without_signature
 //
-let valid_state (s:g_state) :prop =
-  G_Initialized? s \/ G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s
+let has_transcript (s:g_state) :prop =
+  G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s
 
-let g_transcript_of_gst (s:g_state { valid_state s })
+let g_transcript_of_gst (s:g_state { has_transcript s })
   : g_transcript =
   match s with
-  | G_Initialized r
   | G_Recv_no_sign_resp r
   | G_Recv_sign_resp r -> r.transcript
 
-let g_key_of_gst (s:g_state { valid_state s })
+let has_key (s:g_state) :prop =
+  G_Initialized? s \/ G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s
+
+let g_key_of_gst (s:g_state { has_key s })
   : Seq.seq u8 =
   match s with
-  | G_Initialized r
+  | G_Initialized k -> k
   | G_Recv_no_sign_resp r
   | G_Recv_sign_resp r -> r.signing_pub_key_repr
 
-let current_transcript (t:trace { valid_state (current_state t) }) : g_transcript =
+let current_transcript (t:trace { has_transcript (current_state t) }) : g_transcript =
   g_transcript_of_gst (current_state t)
 
-let current_key (t:trace { valid_state (current_state t) }) : Seq.seq u8 =
+let current_key (t:trace { has_transcript (current_state t) }) : Seq.seq u8 =
   g_key_of_gst (current_state t)
 
 let g_transcript_current_session_grows (t0 t1:g_transcript) : prop =
   is_prefix_of t0 t1 
 
 let g_transcript_current_session_grows_by (t0 t1:g_transcript) (s:Seq.seq u8) : prop =
-   g_transcript_current_session_grows t0 t1 /\
    t1 == Seq.append t0 s
 
-let g_transcript_current_session_grows_lemma (t0 t1:g_transcript) (s:Seq.seq u8)
-  : Lemma (g_transcript_current_session_grows_by t0 t1 s ==>
-           g_transcript_current_session_grows t0 t1) = ()
+// let g_transcript_current_session_grows_lemma (t0 t1:g_transcript) (s:Seq.seq u8)
+//   : Lemma (g_transcript_current_session_grows_by t0 t1 s ==>
+//            g_transcript_current_session_grows t0 t1) = ()
 
 
 assume val no_sign_resp
-  (req:V.vec u8)
-  (resp:V.vec u8)
   (req_size: u8)
   (resp_size: u8)
+  (req:V.vec u8 { V.length req == req_size })
+  (resp:V.vec u8 { V.length resp == resp_size })
   (st:state)
-  (#tr0:trace {valid_state (current_state tr0) })
+  (#tr0:trace {has_transcript (current_state tr0) })  // TODO: it is either Initialized or Recv_no_sign_resp
   : stt spdm_measurement_result_t 
     (requires (exists* p_req b_req p_resp b_resp.
                           V.pts_to req #p_req b_req **
-                          V.pts_to resp #p_resp b_resp **
-                          pure (Seq.length b_req == u8_v req_size) **
-                          pure (Seq.length b_resp == u8_v resp_size)) **
-                          inv st trace_ref tr0 **
-                          pure (G_Recv_no_sign_resp? (current_state tr0) \/
-                                G_Initialized? (current_state tr0))
-                          )
+                          V.pts_to resp #p_resp b_resp) **
+               inv st trace_ref tr0)
     (ensures fun res -> 
                (exists* p_req b_req p_resp b_resp.
                          V.pts_to req #p_req b_req **
                          V.pts_to resp #p_resp b_resp **
                          pure (Seq.length b_req == u8_v req_size) **
                          pure (Seq.length b_resp == u8_v resp_size) **
-                         (let measurement_blocks = res.measurement_block_vector in
-                          let measurement_block_count = res.measurement_block_count in
+                         (let measurement_block_count = res.measurement_block_count in
                           let result = res.status in
                           (match result with
-                          | Parse_error -> pure (u8_v measurement_block_count == 0) //zero out the measurement blocks
+                          | Parse_error -> pure (u8_v measurement_block_count == 0) //zero out the measurement blocks, TODO: this will go away
                           | Signature_verification_error -> pure False
                           | Success -> 
                                (exists* r tr1. valid_resp resp r **
                                         inv st trace_ref tr1 **
                                         (let s = current_state tr1 in
                                         pure (G_Recv_no_sign_resp? s) **
-                                        pure (valid_transition tr0 s) **
-                                        pure (valid_transition tr0 s /\ tr1 == next_trace tr0 s)
+                                        pure (valid_transition tr0 s /\ tr1 == next_trace tr0 s)  // TODO: Why multiple pure slprops
                                         ) **
                                         (let t0 = current_transcript tr0 in
                                          let t1 = current_transcript tr1 in
@@ -324,7 +316,7 @@ assume val sign_resp
   (req_size: u8)
   (resp_size: u8)
   (st:state)
-  (#tr0:trace {valid_state (current_state tr0) })
+  (#tr0:trace {has_transcript (current_state tr0) })
   : stt spdm_measurement_result_t 
     (requires (exists* p_req b_req p_resp b_resp.
                           V.pts_to req #p_req b_req **
@@ -383,7 +375,7 @@ assume val sign_resp
 //
 assume val reset
   (st:state)
-  (#tr0:trace {valid_state (current_state tr0) })
+  (#tr0:trace {has_transcript (current_state tr0) })
   : stt unit
     (requires (inv st trace_ref tr0 **
                           pure (G_Recv_no_sign_resp? (current_state tr0))
