@@ -148,6 +148,17 @@ let current_state (t:trace) : g_state =
     | s::_ -> s
 
 noextract
+let previous_current_state (t:trace) : g_state =
+  match t with
+  | [] -> G_UnInitialized
+  | hd::_ ->
+    match hd with
+    | [] -> G_UnInitialized
+    | [s] -> G_UnInitialized
+    | s::r::_ -> r
+
+
+noextract
 let valid_transition (t:trace) (s:g_state) : prop =
   next (current_state t) s
 
@@ -158,7 +169,19 @@ let next_trace (t:trace) (s:g_state { valid_transition t s }) : trace =
   | hd::tl ->
     match hd with
     | [] -> [s]::t
-    | l -> (s::l)::t
+    | l -> (s::l)::t //t == l::tl
+
+//previous_trace should remove the current_state from trace. Current state is the head of the head of the trace.
+//head of the trace is list g_state. So head of the head of the trace is g_state
+noextract
+let previous_trace (t:trace): trace =
+  match t with
+  | [] -> []
+  | hd::tl ->
+    match hd with
+    | [] -> tl
+    | l -> admit()
+
 
 noextract
 type gref = ghost_pcm_ref trace_pcm
@@ -276,8 +299,8 @@ let g_transcript_current_session_grows_by (t0 t1:g_transcript) (s:Seq.seq u8) : 
 assume val no_sign_resp
   (req_size: u8)
   (resp_size: u8)
-  (req:V.vec u8 { V.length req == req_size })
-  (resp:V.vec u8 { V.length resp == resp_size })
+  (req:V.vec u8 { V.length req == u8_v req_size })
+  (resp:V.vec u8 { V.length resp == u8_v resp_size })
   (st:state)
   (#tr0:trace {has_transcript (current_state tr0) })  // TODO: it is either Initialized or Recv_no_sign_resp
   : stt spdm_measurement_result_t 
@@ -310,15 +333,14 @@ assume val no_sign_resp
 
 assume val valid_signature (signature msg key:Seq.seq u8): prop
 
-assume val sign_resp
-  (req:V.vec u8)
-  (resp:V.vec u8)
-  (req_size: u8)
-  (resp_size: u8)
-  (st:state)
-  (#tr0:trace {has_transcript (current_state tr0) })
-  : stt spdm_measurement_result_t 
-    (requires (exists* p_req b_req p_resp b_resp.
+let sign_resp_pre (st:state) 
+                  (req_size: u8)
+                  (resp_size: u8)
+                  (req:V.vec u8 { V.length req == u8_v req_size })
+                  (resp:V.vec u8 { V.length resp == u8_v resp_size })
+                  (#tr0:trace {has_transcript (current_state tr0) }): slprop =
+                  
+(exists* p_req b_req p_resp b_resp.
                           V.pts_to req #p_req b_req **
                           V.pts_to resp #p_resp b_resp **
                           pure (Seq.length b_req == u8_v req_size) **
@@ -326,13 +348,67 @@ assume val sign_resp
                           inv st trace_ref tr0 **
                           pure (G_Recv_no_sign_resp? (current_state tr0) \/
                                 G_Initialized? (current_state tr0))
-                          )
+
+let sign_resp_post_pts_to (req_size: u8)
+                          (resp_size: u8)
+                          (req:V.vec u8 { V.length req == u8_v req_size })
+                          (resp:V.vec u8 { V.length resp == u8_v resp_size })
+                          (p_req : perm)
+                          (p_resp : perm)
+                          (b_req : Seq.seq u8)
+                          (b_resp : Seq.seq u8): slprop =
+  V.pts_to req #p_req b_req **
+  V.pts_to resp #p_resp b_resp **
+  pure (Seq.length b_req == u8_v req_size) **
+  pure (Seq.length b_resp == u8_v resp_size)
+
+noextract
+let next_next_trace (t:trace) (s1:g_state { valid_transition t s1 }) (s2:g_state { valid_transition ((next_trace t s1)) s2 }) : trace =
+ next_trace (next_trace t s1) s2
+
+let sign_resp_post_result_success (st:state) 
+                                  (resp:V.vec u8 )
+                                  (#tr0:trace {has_transcript (current_state tr0) })
+                                  (p_req : perm)
+                                  (p_resp : perm)
+                                  (b_req : Seq.seq u8)
+                                  (b_resp : Seq.seq u8): slprop =
+  (exists* r tr1 sign. valid_resp resp r**
+                                        inv st trace_ref tr1 **
+                                        //tr1 current_state is G_Initailized
+                                        pure (G_Initialized? (current_state tr1)) **
+                                        
+                                       //(previous_current_state tr1) transcript gets the req resp appended
+                                        pure (G_Recv_sign_resp?(previous_current_state tr1) /\
+                                        (let curr_state_post_trace = current_state tr1 in
+                                         let previous_to_curr_state_post_trace = previous_current_state tr1 in
+                                         let t0 = current_transcript tr0 in
+                                         let t' = g_transcript_of_gst previous_to_curr_state_post_trace in
+                                         let key = g_key_of_gst previous_to_curr_state_post_trace in
+                                         let msg = t' in
+                                         valid_signature sign msg key /\
+                                         g_transcript_current_session_grows_by t0 t' (Seq.append b_req b_resp) /\
+                                         tr1 == next_next_trace tr0 (previous_to_curr_state_post_trace) (curr_state_post_trace))) **
+                                        
+                                       
+                                        (let t1 = current_transcript tr1 in
+                                         pure (t1 == Seq.empty)
+                                         )
+                                )
+
+assume val sign_resp
+  (req_size: u8)
+  (resp_size: u8)
+  (req:V.vec u8 { V.length req == u8_v req_size })
+  (resp:V.vec u8 { V.length resp == u8_v resp_size })
+  (st:state)
+  (#tr0:trace {has_transcript (current_state tr0) })
+  : stt spdm_measurement_result_t 
+    (requires  sign_resp_pre st req_size resp_size req resp #tr0)
     (ensures fun res -> 
                (exists* p_req b_req p_resp b_resp.
-                         V.pts_to req #p_req b_req **
-                         V.pts_to resp #p_resp b_resp **
-                         pure (Seq.length b_req == u8_v req_size) **
-                         pure (Seq.length b_resp == u8_v resp_size) **
+                         sign_resp_post_pts_to req_size resp_size req resp p_req p_resp b_req b_resp **
+
                          (let measurement_blocks = res.measurement_block_vector in
                           let measurement_block_count = res.measurement_block_count in
                           let result = res.status in
@@ -341,34 +417,9 @@ assume val sign_resp
                           | Parse_error -> pure (u8_v measurement_block_count == 0) //zero out the measurement blocks
                           | Signature_verification_error -> pure (u8_v measurement_block_count == 0)
                           | Success -> 
-                               (exists* r tr1 sign inter_gstate inter_trace. valid_resp resp r **
-                                        inv st trace_ref tr1 **
-                                        //tr1 current_state is G_Initailized
-                                        pure (G_Initialized? (current_state tr1)) **
-                                        //intermedite trace inter_trace exists and inter g_state exists
-                                        pure (G_Recv_sign_resp?inter_gstate) **
-                                        //Relation between inter_trace and inter_gstate
-                                        pure (current_state inter_trace == inter_gstate) **
+                                sign_resp_post_result_success st resp #tr0 p_req p_resp b_req b_resp ))))
 
-                                        //inter_trace transcript gets the req resp appended
-                                        (let s = current_state tr1 in
-                                         let s1 = current_state inter_trace in
-                                         let t0 = current_transcript tr0 in
-                                         let t' = current_transcript inter_trace in
-                                         let key = current_key inter_trace in
-                                         let msg = t' in
 
-                                         //From inter_trace l2 is found out
-                                         pure (valid_signature sign msg key) **
-                                         pure (g_transcript_current_session_grows_by t0 t' (Seq.append b_req b_resp)) **
-                                         pure (valid_transition tr0 s1 /\ 
-                                                valid_transition inter_trace s)) **
-                                        
-                                        //inter_trace ---> tr1
-                                        (let t1 = current_transcript tr1 in
-                                         pure (t1 == Seq.empty)
-                                         )
-                                )))))
 
 //
 //Reset function
