@@ -245,6 +245,12 @@ type spdm_measurement_block_t  = {
   measurement : v:V.vec u8 { V.length v == U16.v measurement_size }
 }
 
+let res_err_no_measurement (count:u8) (status:result) =
+  match status with
+  |Success -> true
+  | Parse_error -> u8_v count = 0
+  | Signature_verification_error -> u8_v count = 0
+                      
 //
 //result structure
 //
@@ -254,8 +260,7 @@ type spdm_measurement_result_t  = {
   measurement_block_vector : v:V.vec spdm_measurement_block_t {
     V.length v == u8_v measurement_block_count
   };
-  status : result  //TODO: Add refinement for the vector and length being 0 if result is not Success
-}
+  status : r:result{res_err_no_measurement measurement_block_count r}
 
 //
 //Signature of get_measurement_blocks_without_signature
@@ -317,14 +322,14 @@ assume val no_sign_resp
                          (let measurement_block_count = res.measurement_block_count in
                           let result = res.status in
                           (match result with
-                          | Parse_error -> pure (u8_v measurement_block_count == 0) //zero out the measurement blocks, TODO: this will go away
+                          | Parse_error -> pure True
                           | Signature_verification_error -> pure False
                           | Success -> 
                                (exists* r tr1. valid_resp resp r **
                                         inv st trace_ref tr1 **
                                         (let s = current_state tr1 in
-                                        pure (G_Recv_no_sign_resp? s) **
-                                        pure (valid_transition tr0 s /\ tr1 == next_trace tr0 s)  // TODO: Why multiple pure slprops
+                                        pure (G_Recv_no_sign_resp? s /\
+                                             valid_transition tr0 s /\ tr1 == next_trace tr0 s)
                                         ) **
                                         (let t0 = current_transcript tr0 in
                                          let t1 = current_transcript tr1 in
