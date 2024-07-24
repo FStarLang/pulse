@@ -260,7 +260,8 @@ type spdm_measurement_result_t  = {
   measurement_block_vector : v:V.vec spdm_measurement_block_t {
     V.length v == u8_v measurement_block_count
   };
-  status : r:result{res_err_no_measurement measurement_block_count r}
+  status : r:result{res_err_no_measurement measurement_block_count r}//TODO: Add refinement for the vector and length being 0 if result is not Success
+}
 
 //
 //Signature of get_measurement_blocks_without_signature
@@ -329,7 +330,7 @@ assume val no_sign_resp
                                         inv st trace_ref tr1 **
                                         (let s = current_state tr1 in
                                         pure (G_Recv_no_sign_resp? s /\
-                                             valid_transition tr0 s /\ tr1 == next_trace tr0 s)
+                                             valid_transition tr0 s /\ tr1 == next_trace tr0 s)  // TODO: Why multiple pure slprops
                                         ) **
                                         (let t0 = current_transcript tr0 in
                                          let t1 = current_transcript tr1 in
