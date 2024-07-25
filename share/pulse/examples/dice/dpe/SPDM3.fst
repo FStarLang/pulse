@@ -23,8 +23,13 @@ type u8_v = FStar.UInt8.v
 type u16_v = FStar.UInt16.v
 type u32_v = FStar.UInt32.v
 
+open FStar.Mul
+
 [@@CMacro]
 let spdm_measurement_record_size = 3
+
+[@@CMacro]
+let max_spdm_measurement_record_size = 1024
 
 [@@CMacro]
 let spdm_req_context_size = 8
@@ -234,7 +239,7 @@ assume val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U3
 }*)
 
 let read_measurement_record_length_seq (l:Seq.seq u8{Seq.length l == 3})
-      : u32 =
+      : (u32) =
   let index0 = Seq.index l 0 in
   let index1 = Seq.index l 1 in
   let index2 = Seq.index l 2 in
@@ -250,6 +255,14 @@ let read_measurement_record_length_seq (l:Seq.seq u8{Seq.length l == 3})
   let length = U32.logor (U32.logor index_0_uint32 l1) l2 in
   length
 
+(*struct repr {
+  f : u32;
+ g : u32
+}
+total size = 64
+vec u8 ==> each cell 8, to cover the full structure, the vector length should be 8. Therefore total struct size = 64 = 8 * 8
+v : V.vec u8 { length v == 8 }*)
+
 (*repr : repr, v:V.vec u8 { length v == 8 }, i : nat, j : nat, squash (j - i == 4) 
         |- exists (s:Seq.seq u8). V.pts_to v s ** pure (as_u32 (Seq.slice s i j) == repr.f)*)
 
@@ -260,7 +273,8 @@ type resp_repr = {
   param1 : u8;
   param2 : u8;
   number_of_blocks : u8;
-  measurement_record_length: m:Seq.seq u8{Seq.length m == 3};
+  measurement_record_length: m:Seq.seq u8{Seq.length m == 3 /\
+                                          u32_v (read_measurement_record_length_seq m) <= max_spdm_measurement_record_size};
   measurement_record : v:Seq.seq u8 {Seq.length v == u32_v (read_measurement_record_length_seq measurement_record_length)};
   nonce: u8;
   opaque_data_length : u16;
@@ -269,10 +283,74 @@ type resp_repr = {
   signature : s:Seq.seq u8 {Seq.length s == signature_size }
 }
 
+let uint8_of_le (b: E.bytes {Seq.length b = 1 }) = // b is Seq.seq u8. length b == 1 ==> b contains only one u8.
+  let n = E.le_to_n b in
+  E.lemma_le_to_n_is_bounded b;
+  UInt8.uint_to_t n
 
-let b_resp_resp_repr_relation (s:Seq.seq u8) (r:resp_repr) : prop =
+let uint16_of_le (b: E.bytes {Seq.length b = 2 }) = // b is Seq.seq u8. length b == 1 ==> b contains only one u8.
+  let n = E.le_to_n b in
+  E.lemma_le_to_n_is_bounded b;
+  UInt16.uint_to_t n
+
+//For an equivalent seq u8 repr of the struct, the length of the seq should be x, where size repr = 8 * x. 
+//That is, x = size_repr/8, this implies size_repr should be a multiple of 8
+let size_resp_repr (r:resp_repr) 
+    : (n:nat{n% 8 == 0})=
+  let actual_size = 8 * (1 + 1 + 1 + 1 + 1 + 3 + u32_v(read_measurement_record_length_seq r.measurement_record_length) +
+                          1 + 2 + u16_v r.opaque_data_length + spdm_req_context_size + signature_size) in
+  assume (actual_size % 8 == 0);
+  actual_size
+
+let byte_repr_from_seq (s:Seq.seq u8) (i:nat{i < Seq.length s}) (j:nat{j <= Seq.length s /\ (j - i) == 1})
+         : u8 =
+  let b = Seq.slice s i j in
+  assert (Seq.length b == 1);
+  let d = uint8_of_le b in
+  d
+
+let b_resp_resp_repr_relation (r:resp_repr) (s:Seq.seq u8{Seq.length s == (size_resp_repr r/8)}) : prop =
+  //Seq.slice s 0 7 == r.spdm_version
+   //let f1 = byte_repr_from_seq s 0 1 in
+   let f1 = Seq.index s 0 in
+   let f2 = Seq.index s 1 in
+   let f3 = Seq.index s 2 in
+   let f4 = Seq.index s 3 in
+   let f5 = Seq.index s 4 in
+   let f6 =  Seq.slice s 5 8 in
+   let p = (1 + 1 + 1 + 1 + 1 + 3 + u32_v(read_measurement_record_length_seq r.measurement_record_length) +
+                          1 + 2 + u16_v r.opaque_data_length + spdm_req_context_size + signature_size) in
+   assert (Seq.length s == p);
+   let j = 8 + u32_v (read_measurement_record_length_seq r.measurement_record_length) in
+
+   assert (j < Seq.length s);
+   
+   let f7 = Seq.slice s 8 j in
+   let f8 = Seq.index s j in
+   let f9' = Seq.slice s (j + 1) (j + 3) in
+   let f9 = uint16_of_le f9' in
+
+   let k = j + 3 + u16_v r.opaque_data_length in
+   assert ((j + 3) <= k);
+   assert (k < Seq.length s);
+   let f10 = Seq.slice s (j + 3) k in
+   let k1 = k + spdm_req_context_size in
+   let f11 = Seq.slice s k k1 in
+   let k2 = k1 + signature_size in
+   let f12 = Seq.slice s k1 k2 in
   
-  admit()
+  (f1 == r.spdm_version) /\
+  (f2 == r.request_response_code) /\
+  (f3 == r.param1) /\
+  (f4 == r.param2) /\
+  (f5 == r.number_of_blocks) /\
+  (f6 == r.measurement_record_length) /\
+  (f7 == r.measurement_record) /\
+  (f8 == r.nonce) /\
+  (f9 == r.opaque_data_length) /\
+  (f10 == r.opaque_data) /\
+  (f11 == r.requester_context) /\
+  (f12 == r.signature)
 
 //
 // Related to parser
@@ -339,7 +417,6 @@ assume val parser
   (resp:V.vec u8 { V.length resp == u8_v resp_size })
   (key_size: u8)
   (block_count_vec : V.vec u8)
-  (*(measurement_blocks : V.vec spdm_measurement_block_t)*)
   : stt spdm_measurement_result_t 
     (requires exists* p_resp b_resp p_count b_count.
                       V.pts_to resp #p_resp b_resp **
@@ -364,7 +441,7 @@ assume val parser
                           | Signature_verification_error -> pure False
                           | Success -> valid_resp resp rp_resp
                                       //Bring in post-conditions that relate the measurement_blocks contents with that stored in resp
-                                      //Bring in post-conditions that relates block_count_vector contet is equal to the num_blocks stored in resp
+                                      //Bring in post-conditions that relates block_count_vector content is equal to the num_blocks stored in resp
                           )))
                           
 
