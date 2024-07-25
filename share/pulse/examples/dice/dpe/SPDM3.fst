@@ -327,9 +327,6 @@ type spdm_measurement_result_t  = {
                                                                  (measurement_blocks:V.vec spdm_measurement_block_t)*)
 //
 
-//return is status about whether parsing is successful or not
-// define measurement_blocks inside get_measurements function and pass it's starting address to parser
-// parser will allocate memory based on the num_blocks stored in the response.
 //parser's post condition should ensure that, num_blocks == content of blocks_so_far and
 //the contents of measurement_blocks = the measurement_blocks stored in the measurement_data upto the measurement_record_size.
 //Missing puzzles - how to bring out the num_blocks functionally from the resp_seq?
@@ -342,26 +339,37 @@ assume val parser
   (resp:V.vec u8 { V.length resp == u8_v resp_size })
   (key_size: u8)
   (block_count_vec : V.vec u8)
-  (measurement_blocks : V.vec spdm_measurement_block_t)
-  : stt bool
-    (requires exists* p_resp b_resp p_count b_count p_m_blocks b_m_blocks.
+  (*(measurement_blocks : V.vec spdm_measurement_block_t)*)
+  : stt spdm_measurement_result_t 
+    (requires exists* p_resp b_resp p_count b_count.
                       V.pts_to resp #p_resp b_resp **
                       V.pts_to block_count_vec #p_count b_count **
-                      V.pts_to measurement_blocks #p_m_blocks b_m_blocks **
                       pure (Seq.length b_count == 1 /\
-                            Seq.index b_count 0 == 0uy))
+                           Seq.index b_count 0 == 0uy))
 
     
-    (ensures fun res ->  exists* p_resp b_resp p_count b_count p_m_blocks b_m_blocks rp_resp.
+    (ensures fun res -> exists* p_resp b_resp p_count b_count p_m_blocks b_m_blocks rp_resp.
                          //resp vector remains the same as the initial response vector. How will I state that?
-                         V.pts_to resp #p_resp b_resp **
-                         V.pts_to block_count_vec #p_count b_count **
-                         V.pts_to measurement_blocks #p_m_blocks b_m_blocks **
-                         //This is true only if res == true, how to state that?
-                         valid_resp resp rp_resp
-                         //Bring in post-conditions that relate the measurement_blocks contents with that stored in resp
-                         //Bring in post-conditions that relates block_count_vector contet is equal to the num_blocks stored in resp
-                       )
+                          V.pts_to resp #p_resp b_resp **
+                          V.pts_to block_count_vec #p_count b_count **
+                          (let measurement_block_count = res.measurement_block_count in
+                          let measurement_block_vector = res.measurement_block_vector in
+                          let result = res.status in
+                          pure (Seq.length b_count == 1 /\
+                                measurement_block_count == Seq.index b_count 0) **
+                          V.pts_to measurement_block_vector #p_m_blocks b_m_blocks **
+                          
+                          (match result with //result will be either Parse_error or success
+                          | Parse_error -> pure True // Parse_error is associated with 0 block count
+                          | Signature_verification_error -> pure False
+                          | Success -> valid_resp resp rp_resp
+                                      //Bring in post-conditions that relate the measurement_blocks contents with that stored in resp
+                                      //Bring in post-conditions that relates block_count_vector contet is equal to the num_blocks stored in resp
+                          )))
+                          
+
+
+
 
 
 //
