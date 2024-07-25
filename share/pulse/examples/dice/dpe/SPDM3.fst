@@ -276,7 +276,7 @@ type resp_repr = {
   measurement_record_length: m:Seq.seq u8{Seq.length m == 3 /\
                                           u32_v (read_measurement_record_length_seq m) <= max_spdm_measurement_record_size};
   measurement_record : v:Seq.seq u8 {Seq.length v == u32_v (read_measurement_record_length_seq measurement_record_length)};
-  nonce: u8;
+  nonce: n:Seq.seq u8 {Seq.length n == 32};
   opaque_data_length : u16;
   opaque_data : o:Seq.seq u8 { Seq.length o == u16_v opaque_data_length};
   requester_context : r:Seq.seq u8 { Seq.length r == spdm_req_context_size };
@@ -298,7 +298,7 @@ let uint16_of_le (b: E.bytes {Seq.length b = 2 }) = // b is Seq.seq u8. length b
 let size_resp_repr (r:resp_repr) 
     : (n:nat{n% 8 == 0})=
   let actual_size = 8 * (1 + 1 + 1 + 1 + 1 + 3 + u32_v(read_measurement_record_length_seq r.measurement_record_length) +
-                          1 + 2 + u16_v r.opaque_data_length + spdm_req_context_size + signature_size) in
+                          32 + 2 + u16_v r.opaque_data_length + spdm_req_context_size + signature_size) in
   assume (actual_size % 8 == 0);
   actual_size
 
@@ -319,24 +319,40 @@ let b_resp_resp_repr_relation (r:resp_repr) (s:Seq.seq u8{Seq.length s == (size_
    let f5 = Seq.index s 4 in
    let f6 =  Seq.slice s 5 8 in
    let p = (1 + 1 + 1 + 1 + 1 + 3 + u32_v(read_measurement_record_length_seq r.measurement_record_length) +
-                          1 + 2 + u16_v r.opaque_data_length + spdm_req_context_size + signature_size) in
+                          32 + 2 + u16_v r.opaque_data_length + spdm_req_context_size + signature_size) in
    assert (Seq.length s == p);
    let j = 8 + u32_v (read_measurement_record_length_seq r.measurement_record_length) in
 
    assert (j < Seq.length s);
    
    let f7 = Seq.slice s 8 j in
-   let f8 = Seq.index s j in
-   let f9' = Seq.slice s (j + 1) (j + 3) in
+   let f8 = Seq.slice s j (j + 32) in
+   let f9' = Seq.slice s (j + 32) (j + 32 + 2) in
    let f9 = uint16_of_le f9' in
 
-   let k = j + 3 + u16_v r.opaque_data_length in
-   assert ((j + 3) <= k);
+   let k = j + 32 + 2 + u16_v r.opaque_data_length in
+   assert ((j + 32 + 2) <= k);
    assert (k < Seq.length s);
-   let f10 = Seq.slice s (j + 3) k in
+   let f10 = Seq.slice s (j + 32 + 2) k in
    let k1 = k + spdm_req_context_size in
    let f11 = Seq.slice s k k1 in
    let k2 = k1 + signature_size in
+
+   (*From doc, k1 = 50 + measurement_record_length (L) + opaque_data_length (O)*)
+   (*From code, k1 = k + (spdm_req_context_size = 8)
+                   = j + 32 + 2 + O + 8
+                   = 8 + L + 32 + 2 + O + 8
+                   = 50 + L + O*)
+   (*From doc, k = 42 + L + O
+     From code, k = j + 32 + 2 + O 
+                  = 8 + L + 32 + 2 + O
+                  = 42 + L + O*)
+
+    (*From doc, opaque_data starts at 42 + L
+      From code, j + 32 + 2 
+                = 8 + L + 32 + 2
+                = 42 + L*)
+                
    let f12 = Seq.slice s k1 k2 in
   
   (f1 == r.spdm_version) /\
@@ -351,6 +367,7 @@ let b_resp_resp_repr_relation (r:resp_repr) (s:Seq.seq u8{Seq.length s == (size_
   (f10 == r.opaque_data) /\
   (f11 == r.requester_context) /\
   (f12 == r.signature)
+  
 
 //
 // Related to parser
