@@ -7,10 +7,12 @@ module G = FStar.Ghost
 
 module U16 = FStar.UInt16
 module U32 = FStar.UInt32
+module U8 = FStar.UInt8
 
 module V = Pulse.Lib.Vec
 module FP = Pulse.Lib.PCM.FractionalPreorder
 module L = FStar.List.Tot
+module E = FStar.Endianness
 
 
 type u8 = FStar.UInt8.t
@@ -21,8 +23,18 @@ type u8_v = FStar.UInt8.v
 type u16_v = FStar.UInt16.v
 type u32_v = FStar.UInt32.v
 
+[@@CMacro]
+let spdm_measurement_record_size = 3
+
+[@@CMacro]
+let spdm_req_context_size = 8
+
+//TODO this should not be hard coded. Based on the base asymmetric algorithm, the signature size should be selected.
+[@@CMacro]
+let signature_size = 256
+
 //
-// Setup:
+// Setu
 // We will call a (possible empty) sequence of no_sign_resp messages, followed by a
 //   sign_resp_message as a session
 //
@@ -216,17 +228,57 @@ assume val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U3
   : stt state (requires exists* p b. V.pts_to signing_key #p b)
               (ensures fun s -> exists* p b. V.pts_to signing_key #p b ** init_client_perm s)
 
+(*uint32_t libspdm_read_uint24(const uint8_t *buffer)
+{
+    return (uint32_t)(buffer[0] | buffer[1] << 8 | buffer[2] << 16);
+}*)
+
+let read_measurement_record_length_seq (l:Seq.seq u8{Seq.length l == 3})
+      : u32 =
+  let index0 = Seq.index l 0 in
+  let index1 = Seq.index l 1 in
+  let index2 = Seq.index l 2 in
+  let index_0_nat = u8_v index0 in
+  let index_1_nat = u8_v index1 in
+  let index_2_nat = u8_v index2 in
+  let index_0_uint32 = U32.uint_to_t index_0_nat in
+  let index_1_uint32 = U32.uint_to_t index_1_nat in
+  let index_2_uint32 = U32.uint_to_t index_2_nat in
+  
+  let l2 = U32.shift_left index_2_uint32 16ul in
+  let l1 = U32.shift_left index_2_uint32 8ul in
+  let length = U32.logor (U32.logor index_0_uint32 l1) l2 in
+  length
+
+(*repr : repr, v:V.vec u8 { length v == 8 }, i : nat, j : nat, squash (j - i == 4) 
+        |- exists (s:Seq.seq u8). V.pts_to v s ** pure (as_u32 (Seq.slice s i j) == repr.f)*)
 
 noeq
 type resp_repr = {
-  some_field : u32;
-  // TODO
+  spdm_version : u8;
+  request_response_code : u8;
+  param1 : u8;
+  param2 : u8;
+  number_of_blocks : u8;
+  measurement_record_length: m:Seq.seq u8{Seq.length m == 3};
+  measurement_record : v:Seq.seq u8 {Seq.length v == u32_v (read_measurement_record_length_seq measurement_record_length)};
+  nonce: u8;
+  opaque_data_length : u16;
+  opaque_data : o:Seq.seq u8 { Seq.length o == u16_v opaque_data_length};
+  requester_context : r:Seq.seq u8 { Seq.length r == spdm_req_context_size };
+  signature : s:Seq.seq u8 {Seq.length s == signature_size }
 }
+
+
+let b_resp_resp_repr_relation (s:Seq.seq u8) (r:resp_repr) : prop =
+  
+  admit()
 
 //
 // Related to parser
 //
-assume val valid_resp (resp:V.vec u8) (repr:resp_repr) : slprop
+let valid_resp (resp:V.vec u8) (repr:resp_repr) : slprop =
+ admit()
 
 type result =
   | Success
@@ -242,6 +294,7 @@ type spdm_measurement_block_t  = {
   index : u8;
   measurement_specification : u8;
   measurement_size : u16;
+  
   measurement : v:V.vec u8 { V.length v == U16.v measurement_size }
 }
 
@@ -260,8 +313,56 @@ type spdm_measurement_result_t  = {
   measurement_block_vector : v:V.vec spdm_measurement_block_t {
     V.length v == u8_v measurement_block_count
   };
-  status : r:result{res_err_no_measurement measurement_block_count r}//TODO: Add refinement for the vector and length being 0 if result is not Success
+  status : r:result{res_err_no_measurement measurement_block_count r}
 }
+
+//
+//Signature for parser
+//
+(*BOOLEAN SpdmMeasurementsResponseCheckSpdmMeasurementsResponseT(uint8_t req_param2, 
+                                                                 uint8_t* blocks_so_far, 
+                                                                 uint8_t key_size, 
+                                                                 uint8_t *resp, 
+                                                                 uint32_t resp_size,
+                                                                 (measurement_blocks:V.vec spdm_measurement_block_t)*)
+//
+
+//return is status about whether parsing is successful or not
+// define measurement_blocks inside get_measurements function and pass it's starting address to parser
+// parser will allocate memory based on the num_blocks stored in the response.
+//parser's post condition should ensure that, num_blocks == content of blocks_so_far and
+//the contents of measurement_blocks = the measurement_blocks stored in the measurement_data upto the measurement_record_size.
+//Missing puzzles - how to bring out the num_blocks functionally from the resp_seq?
+//                - how to bring out measurement_blocks?
+//idea is to connect resp_vector -----> resp_seq ----> resp_structure
+
+assume val parser 
+  (req_param2 : u8)
+  (resp_size: u8)
+  (resp:V.vec u8 { V.length resp == u8_v resp_size })
+  (key_size: u8)
+  (block_count_vec : V.vec u8)
+  (measurement_blocks : V.vec spdm_measurement_block_t)
+  : stt bool
+    (requires exists* p_resp b_resp p_count b_count p_m_blocks b_m_blocks.
+                      V.pts_to resp #p_resp b_resp **
+                      V.pts_to block_count_vec #p_count b_count **
+                      V.pts_to measurement_blocks #p_m_blocks b_m_blocks **
+                      pure (Seq.length b_count == 1 /\
+                            Seq.index b_count 0 == 0uy))
+
+    
+    (ensures fun res ->  exists* p_resp b_resp p_count b_count p_m_blocks b_m_blocks rp_resp.
+                         //resp vector remains the same as the initial response vector. How will I state that?
+                         V.pts_to resp #p_resp b_resp **
+                         V.pts_to block_count_vec #p_count b_count **
+                         V.pts_to measurement_blocks #p_m_blocks b_m_blocks **
+                         //This is true only if res == true, how to state that?
+                         valid_resp resp rp_resp
+                         //Bring in post-conditions that relate the measurement_blocks contents with that stored in resp
+                         //Bring in post-conditions that relates block_count_vector contet is equal to the num_blocks stored in resp
+                       )
+
 
 //
 //Signature of get_measurement_blocks_without_signature
@@ -301,6 +402,9 @@ let g_transcript_current_session_grows_by (t0 t1:g_transcript) (s:Seq.seq u8) : 
 //   : Lemma (g_transcript_current_session_grows_by t0 t1 s ==>
 //            g_transcript_current_session_grows t0 t1) = ()
 
+(*repr : repr, v:V.vec u8 { length v == 8 }, i : nat, j : nat, squash (j - i == 4) 
+        |- exists (s:Seq.seq u8). V.pts_to v s ** pure (as_u32 (Seq.slice s i j) == repr.f)*)
+
 
 assume val no_sign_resp
   (req_size: u8)
@@ -314,7 +418,7 @@ assume val no_sign_resp
                           V.pts_to req #p_req b_req **
                           V.pts_to resp #p_resp b_resp) **
                inv st trace_ref tr0)
-    (ensures fun res -> 
+    (ensures fun res -> //resp is the response vector; b_resp is seq of the response vector;
                (exists* p_req b_req p_resp b_resp.
                          V.pts_to req #p_req b_req **
                          V.pts_to resp #p_resp b_resp **
@@ -330,7 +434,7 @@ assume val no_sign_resp
                                         inv st trace_ref tr1 **
                                         (let s = current_state tr1 in
                                         pure (G_Recv_no_sign_resp? s /\
-                                             valid_transition tr0 s /\ tr1 == next_trace tr0 s)  // TODO: Why multiple pure slprops
+                                             valid_transition tr0 s /\ tr1 == next_trace tr0 s)
                                         ) **
                                         (let t0 = current_transcript tr0 in
                                          let t1 = current_transcript tr1 in
