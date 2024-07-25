@@ -352,7 +352,7 @@ let b_resp_resp_repr_relation (r:resp_repr) (s:Seq.seq u8{Seq.length s == (size_
       From code, j + 32 + 2 
                 = 8 + L + 32 + 2
                 = 42 + L*)
-                
+
    let f12 = Seq.slice s k1 k2 in
   
   (f1 == r.spdm_version) /\
@@ -373,7 +373,9 @@ let b_resp_resp_repr_relation (r:resp_repr) (s:Seq.seq u8{Seq.length s == (size_
 // Related to parser
 //
 let valid_resp (resp:V.vec u8) (repr:resp_repr) : slprop =
- admit()
+ exists* p_resp b_resp.
+   V.pts_to resp #p_resp b_resp **
+   pure (b_resp_resp_repr_relation repr b_resp) 
 
 type result =
   | Success
@@ -414,20 +416,15 @@ type spdm_measurement_result_t  = {
 //
 //Signature for parser
 //
-(*BOOLEAN SpdmMeasurementsResponseCheckSpdmMeasurementsResponseT(uint8_t req_param2, 
-                                                                 uint8_t* blocks_so_far, 
-                                                                 uint8_t key_size, 
-                                                                 uint8_t *resp, 
-                                                                 uint32_t resp_size,
-                                                                 (measurement_blocks:V.vec spdm_measurement_block_t)*)
-//
-
 //parser's post condition should ensure that, num_blocks == content of blocks_so_far and
 //the contents of measurement_blocks = the measurement_blocks stored in the measurement_data upto the measurement_record_size.
 //Missing puzzles - how to bring out the num_blocks functionally from the resp_seq?
 //                - how to bring out measurement_blocks?
 //idea is to connect resp_vector -----> resp_seq ----> resp_structure
 
+//
+//Another missing puzzle - resp_repr stores measurement blocks all together as measurement_data
+//
 assume val parser 
   (req_param2 : u8)
   (resp_size: u8)
@@ -456,7 +453,8 @@ assume val parser
                           (match result with //result will be either Parse_error or success
                           | Parse_error -> pure True // Parse_error is associated with 0 block count
                           | Signature_verification_error -> pure False
-                          | Success -> valid_resp resp rp_resp
+                          | Success -> valid_resp resp rp_resp **
+                                       pure (measurement_block_count == rp_resp.number_of_blocks)
                                       //Bring in post-conditions that relate the measurement_blocks contents with that stored in resp
                                       //Bring in post-conditions that relates block_count_vector content is equal to the num_blocks stored in resp
                           )))
