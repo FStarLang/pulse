@@ -61,12 +61,16 @@ type g_transcript = Seq.seq u8
 //
 noeq
 type repr = {
+  key_size : u32;
   signing_pub_key_repr : Seq.seq u8;
   transcript : g_transcript;
 }
 
 let g_transcript_non_empty (t:g_transcript) : prop =
   Seq.length t > 0
+
+let g_transcript_empty (t:g_transcript) : prop =
+  Seq.length t == 0
 
 let is_initialized_transcript (t:g_transcript) : prop =
   Seq.equal t Seq.empty
@@ -85,9 +89,9 @@ type state =
 noeq
 type g_state : Type u#1 =
   | G_UnInitialized : g_state
-  | G_Initialized : signing_pub_key_repr:Seq.seq u8 -> g_state
-  | G_Recv_no_sign_resp : repr:repr ->  g_state
-  | G_Recv_sign_resp : repr:repr -> g_state
+  | G_Initialized :  repr:repr{g_transcript_empty repr.transcript} -> g_state
+  | G_Recv_no_sign_resp : repr:repr{g_transcript_non_empty repr.transcript} ->  g_state
+  | G_Recv_sign_resp : repr:repr{g_transcript_empty repr.transcript} -> g_state
 
 let is_prefix_of (#a:Type) (s0 s1:Seq.seq a) : prop =
   Seq.length s0 < Seq.length s1 /\
@@ -100,27 +104,29 @@ let next (s0 s1:g_state) : prop =
   match s0, s1 with
   //Uninit ---> initial (upon init call)
   | G_UnInitialized, G_Initialized _ -> True
+
   //initial ---> no_sign (upon no_sign call)
-  //
-  // TODO: This is not saying that transcript length in r is > 0, should it?
-  //
   | G_Initialized k , G_Recv_no_sign_resp r
   // initial ---> sign (upon sign call)
   | G_Initialized k, G_Recv_sign_resp r ->
-    k == r.signing_pub_key_repr
+    k.signing_pub_key_repr == r.signing_pub_key_repr /\
+    k.key_size == r.key_size
+
 
   // no_sign --> no_sign (upon no_sign call)
   | G_Recv_no_sign_resp r0,  G_Recv_no_sign_resp r1
   //no_sign ---> sign (upon sign call)
   | G_Recv_no_sign_resp r0, G_Recv_sign_resp r1  ->
     r0.signing_pub_key_repr == r1.signing_pub_key_repr /\
-    is_prefix_of r0.transcript r1.transcript
+    r0.key_size = r1.key_size /\
+    is_prefix_of r0.transcript r1.transcript 
         
   //sign ---> initial (no call is needed)
   | G_Recv_sign_resp r, G_Initialized k
   //no_sign --> initial (upon reset call)
   | G_Recv_no_sign_resp r, G_Initialized k ->
-    r.signing_pub_key_repr == k
+    r.signing_pub_key_repr == k.signing_pub_key_repr /\
+    r.key_size == k.key_size
 
   | _ -> False
 
@@ -203,13 +209,15 @@ type gref = ghost_pcm_ref trace_pcm
 
 let session_state_related (s:state) (gs:g_state) : slprop =
   match s, gs with
-  | Initialized st, G_Initialized k ->
-    V.pts_to st.signing_pub_key k **
-    V.pts_to st.session_transcript Seq.empty
+  | Initialized st, G_Initialized repr ->
+    V.pts_to st.signing_pub_key repr.signing_pub_key_repr **
+    V.pts_to st.session_transcript Seq.empty **
+    pure (st.key_size == repr.key_size)
 
   | Recv_no_sign_resp st, G_Recv_no_sign_resp repr ->
     V.pts_to st.signing_pub_key repr.signing_pub_key_repr **
-    V.pts_to st.session_transcript repr.transcript
+    V.pts_to st.session_transcript repr.transcript **
+    pure (st.key_size == repr.key_size)
 
   | _ -> pure False
 
@@ -218,14 +226,54 @@ let session_state_related (s:state) (gs:g_state) : slprop =
 // The session_state_related connects the concrete state with the current ghost state of the trace.
 // r is the trace pointer with permission
 //
-let inv (s:state) (r:gref) (t:trace) : v:slprop =
+let inv (s:state) (r:gref) (t:trace) : slprop =
   ghost_pcm_pts_to r (Some 1.0R, t) **
   session_state_related s (current_state t)
 
 assume val trace_ref : gref
 
-let init_client_perm (s:state) : slprop =
-  exists* (t:trace). inv s trace_ref t ** pure (G_Initialized? (current_state t))
+(*let has_transcript (s:g_state) :prop =
+  G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s \/ G_Initialized?s*)
+
+let has_full_state_info (s:g_state) :prop =
+  G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s \/ G_Initialized?s
+
+let g_transcript_of_gst (s:g_state {has_full_state_info s})
+  : g_transcript =
+  match s with
+  | G_Initialized r
+  | G_Recv_no_sign_resp r
+  | G_Recv_sign_resp r -> r.transcript
+
+let g_key_of_gst (s:g_state {has_full_state_info s})
+  : Seq.seq u8 =
+  match s with
+  | G_Initialized r
+  | G_Recv_no_sign_resp r
+  | G_Recv_sign_resp r -> r.signing_pub_key_repr
+
+let g_key_len_of_gst (s:g_state {has_full_state_info s})
+  : u32 =
+  match s with
+  | G_Initialized r
+  | G_Recv_no_sign_resp r
+  | G_Recv_sign_resp r -> r.key_size
+
+let current_transcript (t:trace {has_full_state_info (current_state t) }) : g_transcript =
+  g_transcript_of_gst (current_state t)
+
+let current_key (t:trace { has_full_state_info (current_state t) }) : Seq.seq u8 =
+  g_key_of_gst (current_state t)
+
+let current_key_size (t:trace { has_full_state_info (current_state t) }) : u32 =
+  g_key_len_of_gst (current_state t)
+
+let init_client_perm (s:state) (b:Seq.seq u8) (key_len:u32): slprop =
+  exists* (t:trace). inv s trace_ref t ** 
+                                   pure (G_Initialized? (current_state t) /\
+                                        g_key_of_gst (current_state t) == b /\
+                                        g_key_len_of_gst (current_state t) == key_len
+                                        )
 
 //
 // TODO: the spec doesn't relate input key_len and signing_key to the output state
@@ -233,12 +281,55 @@ let init_client_perm (s:state) : slprop =
 //
 assume val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len })
   : stt state (requires exists* p b. V.pts_to signing_key #p b)
-              (ensures fun s -> exists* p b. V.pts_to signing_key #p b ** init_client_perm s)
+              (ensures fun s -> exists* p b. V.pts_to signing_key #p b ** 
+                                        init_client_perm s b key_len
+                                       )
 
-(*uint32_t libspdm_read_uint24(const uint8_t *buffer)
-{
-    return (uint32_t)(buffer[0] | buffer[1] << 8 | buffer[2] << 16);
-}*)
+//
+// TODO: add DMTF and other structure in it
+//
+
+let measurement_size_select (measurement_specification:u8) (measurement_size:u16) (dmtf_spec_measurement_value_size:u16)
+        : u16 =
+  let last_bit_m = U8.logand measurement_specification 1uy in
+  if (u8_v last_bit_m = 1) then
+    dmtf_spec_measurement_value_size
+  else
+    measurement_size
+
+noeq
+type spdm_measurement_block_t  = {
+  index : u8 ;
+  measurement_specification : u8;
+  measurement_size : u16;
+  dmtf_spec_measurement_value_type : u8;
+  dmtf_spec_measurement_value_size : u16;
+  measurement : v:V.vec u8{V.length v == 
+                                u16_v(measurement_size_select measurement_specification 
+                                                                      measurement_size 
+                                                                      dmtf_spec_measurement_value_size) }
+}
+
+let index_req_param2_relation (i:u8) (r:u8) : prop =
+  if (u8_v r = 0x1 || u8_v r = 0xFE) then
+   (i == r)
+  else
+   True
+
+type measurement_block_repr (req_param2:u8) (measurementSpecificationSel: u8) = {
+  index : i:u8 {index_req_param2_relation i req_param2};
+  measurement_specification : m:u8{m == measurementSpecificationSel} ;
+  measurement_size : u16;
+  dmtf_spec_measurement_value_type : u8;
+  dmtf_spec_measurement_value_size : u16;
+  measurement : s:Seq.seq u8{Seq.length s == 
+                                u16_v(measurement_size_select measurement_specification 
+                                                                      measurement_size 
+                                                                      dmtf_spec_measurement_value_size) }
+}
+let measurement_block_repr_related (req_param2:u8) (measurementspecification: u8) 
+                                   (s:spdm_measurement_block_t) (r:measurement_block_repr req_param2 measurementspecification) : slprop =
+ V.pts_to s.measurement r.measurement
 
 let read_measurement_record_length_seq (l:Seq.seq u8{Seq.length l == 3})
       : (u32) =  // TODO: this is a spec only function, why don't return just nat here
@@ -257,128 +348,51 @@ let read_measurement_record_length_seq (l:Seq.seq u8{Seq.length l == 3})
   let length = U32.logor (U32.logor index_0_uint32 l1) l2 in
   length
 
-(*struct repr {
-  f : u32;
- g : u32
-}
-total size = 64
-vec u8 ==> each cell 8, to cover the full structure, the vector length should be 8. Therefore total struct size = 64 = 8 * 8
-v : V.vec u8 { length v == 8 }*)
+let num_blocks_param2_relation (n:u8) (r:u8): u8 =
+  if r = 0uy then 0uy else n
 
-(*repr : repr, v:V.vec u8 { length v == 8 }, i : nat, j : nat, squash (j - i == 4) 
-        |- exists (s:Seq.seq u8). V.pts_to v s ** pure (as_u32 (Seq.slice s i j) == repr.f)*)
+let measurement_record_length_param2_relation (l:u32) (r:u8): u32 =
+  if r = 0uy then 0ul else l
 
-assume val measurement_block_repr : Type0
+let signature_length_param1_relation (l:nat) (r:u8): nat =
+  if r = 0uy then 0 else l
 
 noeq
-type resp_repr = {
+type resp_repr (req_param1:u8) (req_param2:u8) (measurementspecification: u8) (req_context: Seq.seq u8{Seq.length req_context == 8})= {
   spdm_version : u8;
-  request_response_code : u8;
+  request_response_code : r:u8{u8_v r == 0x60};
   param1 : u8;
-  param2 : u8;
-  number_of_blocks : u8;  // TODO: the spec says this is related to param2
-  measurement_record_length: m:Seq.seq u8{Seq.length m == 3};  // TODO: the spec says this is related to param2
-  measurement_record : v:Seq.seq measurement_block_repr {Seq.length v == u32_v (read_measurement_record_length_seq measurement_record_length)};
+  param2 : u8;//TODO param2 relation to be added
+  number_of_blocks : n:u8{n == num_blocks_param2_relation n req_param2}; 
+  measurement_record_length: m:Seq.seq u8{Seq.length m == 3 /\
+                                          read_measurement_record_length_seq m == 
+                                             measurement_record_length_param2_relation (read_measurement_record_length_seq m) req_param2}; 
+  measurement_record : v:Seq.seq (measurement_block_repr req_param2  measurementspecification)
+                       {Seq.length v == u32_v (read_measurement_record_length_seq measurement_record_length)};
   nonce: n:Seq.seq u8 {Seq.length n == 32};
-  opaque_data_length : u16;  // TODO: missing spec
+  opaque_data_length : o:u16{u16_v o <= 1024}; 
   opaque_data : o:Seq.seq u8 { Seq.length o == u16_v opaque_data_length};
-  requester_context : r:Seq.seq u8 { Seq.length r == spdm_req_context_size };
-  signature : s:Seq.seq u8 {Seq.length s == signature_size }  // TODO: relation to param1
+  requester_context : r:Seq.seq u8 { Seq.length r == spdm_req_context_size /\ r == req_context};
+  signature : s:Seq.seq u8 {Seq.length s == signature_size /\
+                            Seq.length s == signature_length_param1_relation (Seq.length s) req_param1}  // TODO: relation to param1
 }
 
-let uint8_of_le (b: E.bytes {Seq.length b = 1 }) = // b is Seq.seq u8. length b == 1 ==> b contains only one u8.
-  let n = E.le_to_n b in
-  E.lemma_le_to_n_is_bounded b;
-  UInt8.uint_to_t n
-
-let uint16_of_le (b: E.bytes {Seq.length b = 2 }) = // b is Seq.seq u8. length b == 1 ==> b contains only one u8.
-  let n = E.le_to_n b in
-  E.lemma_le_to_n_is_bounded b;
-  UInt16.uint_to_t n
-
-//For an equivalent seq u8 repr of the struct, the length of the seq should be x, where size repr = 8 * x. 
-//That is, x = size_repr/8, this implies size_repr should be a multiple of 8
-let size_resp_repr (r:resp_repr) 
-    : (n:nat{n% 8 == 0})=
-  let actual_size = 8 * (1 + 1 + 1 + 1 + 1 + 3 + u32_v(read_measurement_record_length_seq r.measurement_record_length) +
-                          32 + 2 + u16_v r.opaque_data_length + spdm_req_context_size + signature_size) in
-  assume (actual_size % 8 == 0);
-  actual_size
-
-let byte_repr_from_seq (s:Seq.seq u8) (i:nat{i < Seq.length s}) (j:nat{j <= Seq.length s /\ (j - i) == 1})
-         : u8 =
-  let b = Seq.slice s i j in
-  assert (Seq.length b == 1);
-  let d = uint8_of_le b in
-  d
-
-let b_resp_resp_repr_relation (r:resp_repr) (s:Seq.seq u8{Seq.length s == (size_resp_repr r/8)}) : prop = admit ()
-  // //Seq.slice s 0 7 == r.spdm_version
-  //  //let f1 = byte_repr_from_seq s 0 1 in
-  //  let f1 = Seq.index s 0 in
-  //  let f2 = Seq.index s 1 in
-  //  let f3 = Seq.index s 2 in
-  //  let f4 = Seq.index s 3 in
-  //  let f5 = Seq.index s 4 in
-  //  let f6 =  Seq.slice s 5 8 in
-  //  let p = (1 + 1 + 1 + 1 + 1 + 3 + u32_v(read_measurement_record_length_seq r.measurement_record_length) +
-  //                         32 + 2 + u16_v r.opaque_data_length + spdm_req_context_size + signature_size) in
-  //  assert (Seq.length s == p);
-  //  let j = 8 + u32_v (read_measurement_record_length_seq r.measurement_record_length) in
-
-  //  assert (j < Seq.length s);
-   
-  //  let f7 = Seq.slice s 8 j in
-  //  let f8 = Seq.slice s j (j + 32) in
-  //  let f9' = Seq.slice s (j + 32) (j + 32 + 2) in
-  //  let f9 = uint16_of_le f9' in
-
-  //  let k = j + 32 + 2 + u16_v r.opaque_data_length in
-  //  assert ((j + 32 + 2) <= k);
-  //  assert (k < Seq.length s);
-  //  let f10 = Seq.slice s (j + 32 + 2) k in
-  //  let k1 = k + spdm_req_context_size in
-  //  let f11 = Seq.slice s k k1 in
-  //  let k2 = k1 + signature_size in
-
-  //  (*From doc, k1 = 50 + measurement_record_length (L) + opaque_data_length (O)*)
-  //  (*From code, k1 = k + (spdm_req_context_size = 8)
-  //                  = j + 32 + 2 + O + 8
-  //                  = 8 + L + 32 + 2 + O + 8
-  //                  = 50 + L + O*)
-  //  (*From doc, k = 42 + L + O
-  //    From code, k = j + 32 + 2 + O 
-  //                 = 8 + L + 32 + 2 + O
-  //                 = 42 + L + O*)
-
-  //   (*From doc, opaque_data starts at 42 + L
-  //     From code, j + 32 + 2 
-  //               = 8 + L + 32 + 2
-  //               = 42 + L*)
-
-  //  let f12 = Seq.slice s k1 k2 in
-  
-  // (f1 == r.spdm_version) /\
-  // (f2 == r.request_response_code) /\
-  // (f3 == r.param1) /\
-  // (f4 == r.param2) /\
-  // (f5 == r.number_of_blocks) /\
-  // (f6 == r.measurement_record_length) /\
-  // (f7 == r.measurement_record) /\
-  // (f8 == r.nonce) /\
-  // (f9 == r.opaque_data_length) /\
-  // (f10 == r.opaque_data) /\
-  // (f11 == r.requester_context) /\
-  // (f12 == r.signature)
+assume val b_resp_resp_repr_relation (req_param1: u8)
+                                     (req_param2:u8) (measurementspecification: u8) 
+                                     (req_context: Seq.seq u8{Seq.length req_context == 8})
+                                     (r:resp_repr req_param1 req_param2 measurementspecification req_context) (s:Seq.seq u8) : prop
   
 
 //
 // Related to parser
 //
-let valid_resp (resp:V.vec u8) (repr:resp_repr) : slprop =
+let valid_resp (req_param1: u8)
+               (req_param2:u8) (measurementspecification: u8) 
+               (req_context: Seq.seq u8{Seq.length req_context == 8})
+               (resp:V.vec u8) (repr:resp_repr req_param1 req_param2 measurementspecification req_context)  : slprop =
  exists* p_resp b_resp.
    V.pts_to resp #p_resp b_resp **
-   pure (b_resp_resp_repr_relation repr b_resp) 
+   pure (b_resp_resp_repr_relation req_param1 req_param2 measurementspecification req_context repr b_resp) 
 
 type result =
   | Success
@@ -388,18 +402,6 @@ type result =
 //
 //Measurement block structure
 //
-
-//
-// TODO: add DMTF and other structure in it
-//
-noeq
-type spdm_measurement_block_t  = {
-  index : u8;
-  measurement_specification : u8;
-  measurement_size : u16;
-  
-  measurement : v:V.vec u8 { V.length v == U16.v measurement_size }
-}
 
 let res_err_no_measurement (count:u8) (status:result) =
   match status with
@@ -419,30 +421,41 @@ type spdm_measurement_result_t  = {
   status : r:result{res_err_no_measurement measurement_block_count r}
 }
 
-let valid_measurement_block_repr (blk:spdm_measurement_block_t) (repr:measurement_block_repr) : slprop =
-  admit ()
+let valid_measurement_block_repr (req_param2:u8) (m_spec: u8)
+                                 (blk:spdm_measurement_block_t) (repr:measurement_block_repr req_param2 m_spec) : slprop =
+  measurement_block_repr_related req_param2 m_spec blk repr **
+  pure (blk.index ==  repr.index /\
+        blk. measurement_specification == repr.measurement_specification /\
+        blk.dmtf_spec_measurement_value_type == repr.dmtf_spec_measurement_value_type /\
+        blk.dmtf_spec_measurement_value_size == repr.dmtf_spec_measurement_value_size)
 
-let valid_measurement_blocks (blks:V.vec spdm_measurement_block_t) (repr:Seq.seq measurement_block_repr) : slprop =
-  admit ()
+module SZ = FStar.SizeT
+
+let valid_measurement_blocks (req_param2:u8) (m_spec: u8)
+                             (blks:V.vec spdm_measurement_block_t) 
+                             (repr:Seq.seq (measurement_block_repr req_param2 m_spec)) 
+                    : slprop =
+  pure(V.length blks == Seq.length repr) //TODO bring in valid_measurement_block_repr here
+
+
 
 //
 //Signature for parser
 //
-//parser's post condition should ensure that, num_blocks == content of blocks_so_far and
-//the contents of measurement_blocks = the measurement_blocks stored in the measurement_data upto the measurement_record_size.
-//Missing puzzles - how to bring out the num_blocks functionally from the resp_seq?
-//                - how to bring out measurement_blocks?
-//idea is to connect resp_vector -----> resp_seq ----> resp_structure
 
-//
-//Another missing puzzle - resp_repr stores measurement blocks all together as measurement_data
-//
 
-assume val valid_resp_bytes (b:Seq.seq u8) (r:resp_repr) : slprop
+assume val valid_resp_bytes (req_param1: u8)
+                            (req_param2:u8) (measurementspecification: u8) 
+                            (req_context: Seq.seq u8{Seq.length req_context == 8})
+                            (b:Seq.seq u8) 
+                            (r:resp_repr req_param1 req_param2 measurementspecification req_context) : slprop
 
 assume val parser 
+  (req_param1: u8)
   (req_param2 : u8)
   (resp_size: u8)
+  (m_spec: u8) 
+  (req_context: Seq.seq u8{Seq.length req_context == 8})
   (resp:V.vec u8 { V.length resp == u8_v resp_size })
   (signature_size: u8)
   : stt spdm_measurement_result_t 
@@ -453,38 +466,13 @@ assume val parser
                             | Parse_error -> pure True
                             | Signature_verification_error -> pure False
                             | Success ->
-                              exists* resp_repr. valid_resp_bytes b_resp resp_repr **
-                              valid_measurement_blocks res.measurement_block_vector resp_repr.measurement_record))
+                              exists* resp_repr. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr **
+                              valid_measurement_blocks req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record))
 
 
 //
 //Signature of get_measurement_blocks_without_signature
 //
-let has_transcript (s:g_state) :prop =
-  G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s
-
-let g_transcript_of_gst (s:g_state { has_transcript s })
-  : g_transcript =
-  match s with
-  | G_Recv_no_sign_resp r
-  | G_Recv_sign_resp r -> r.transcript
-
-let has_key (s:g_state) :prop =
-  G_Initialized? s \/ G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s
-
-let g_key_of_gst (s:g_state { has_key s })
-  : Seq.seq u8 =
-  match s with
-  | G_Initialized k -> k
-  | G_Recv_no_sign_resp r
-  | G_Recv_sign_resp r -> r.signing_pub_key_repr
-
-let current_transcript (t:trace { has_transcript (current_state t) }) : g_transcript =
-  g_transcript_of_gst (current_state t)
-
-let current_key (t:trace { has_transcript (current_state t) }) : Seq.seq u8 =
-  g_key_of_gst (current_state t)
-
 let g_transcript_current_session_grows (t0 t1:g_transcript) : prop =
   is_prefix_of t0 t1 
 
