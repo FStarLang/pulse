@@ -437,6 +437,7 @@ let valid_measurement_blocks (req_param2:u8) (m_spec: u8)
                     : slprop =
   pure(V.length blks == Seq.length repr) //TODO bring is valid_measurement_block_repr
 
+//This is assumed. A function that converts from slprop to prop
 assume val sl_prop_to_prop (p:slprop) : prop
 
 let valid_measurement_blocks3 (req_param2:u8) (m_spec: u8)
