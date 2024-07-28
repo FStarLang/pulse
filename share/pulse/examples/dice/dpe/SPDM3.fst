@@ -33,7 +33,7 @@ let spdm_req_context_size = 8
 let signature_size = 256
 
 //
-// TODO: A configurable parameter that initializes the state machine without signature and transcript
+// TODO: A configurable parameter that initializes the state machine without signature and transcript and key.
 //
 
 //
@@ -435,8 +435,33 @@ let valid_measurement_blocks (req_param2:u8) (m_spec: u8)
                              (blks:V.vec spdm_measurement_block_t) 
                              (repr:Seq.seq (measurement_block_repr req_param2 m_spec)) 
                     : slprop =
-  pure(V.length blks == Seq.length repr) 
+  pure(V.length blks == Seq.length repr) //TODO bring is valid_measurement_block_repr
 
+assume val sl_prop_to_prop (p:slprop) : prop
+
+let valid_measurement_blocks3 (req_param2:u8) (m_spec: u8)
+                              (blks:Seq.seq spdm_measurement_block_t) 
+                              (repr:Seq.seq (measurement_block_repr req_param2 m_spec)) : prop =
+  Seq.length blks == Seq.length repr /\
+  (forall i. i  < Seq.length blks ==>
+                  (let p = Seq.index blks i in
+                   let q = Seq.index repr i in
+                   p.index == q.index /\
+                   p.measurement_specification == q.measurement_specification /\
+                   p.dmtf_spec_measurement_value_type == q.dmtf_spec_measurement_value_type /\
+                   p.dmtf_spec_measurement_value_size == q.dmtf_spec_measurement_value_size /\
+                   (sl_prop_to_prop (V.pts_to p.measurement q.measurement))))
+
+
+let valid_measurement_blocks1 (req_param2:u8) (m_spec: u8)
+                              (blks:V.vec spdm_measurement_block_t) 
+                              (repr:Seq.seq (measurement_block_repr req_param2 m_spec)) 
+                    : slprop =
+  pure(V.length blks == Seq.length repr) **
+  (exists* s. V.pts_to blks s **
+              pure(valid_measurement_blocks3 req_param2 m_spec s repr))
+
+  
 //
 //Signature for parser
 //
