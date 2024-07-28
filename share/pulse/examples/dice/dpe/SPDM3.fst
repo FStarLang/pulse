@@ -276,8 +276,8 @@ let init_client_perm (s:state) (b:Seq.seq u8) (key_len:u32): slprop =
                                         )
 
 //
-// TODO: the spec doesn't relate input key_len and signing_key to the output state
 // TODO: think about how you want to state this relation. Because state will be abstract to the client
+// If the state info details are abstracted behind init_client_perm, will that be sufficient?
 //
 assume val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len })
   : stt state (requires exists* p b. V.pts_to signing_key #p b)
@@ -614,11 +614,9 @@ assume val sign_resp
                           let result = res.status in
                           
                           (match result with
-                            //
-                            // TODO: remove these 0 postconditions
-                            //
-                          | Parse_error -> pure (u8_v measurement_block_count == 0) //zero out the measurement blocks
-                          | Signature_verification_error -> pure (u8_v measurement_block_count == 0)
+                            
+                          | Parse_error -> pure True
+                          | Signature_verification_error -> pure True
                           | Success -> 
                                 //parser post-condition 
                               (exists* resp_repr. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr **
