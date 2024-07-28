@@ -440,6 +440,7 @@ let valid_measurement_blocks (req_param2:u8) (m_spec: u8)
 //This is assumed. A function that converts from slprop to prop
 assume val sl_prop_to_prop (p:slprop) : prop
 
+module C = Pulse.Lib.Core 
 let valid_measurement_blocks3 (req_param2:u8) (m_spec: u8)
                               (blks:Seq.seq spdm_measurement_block_t) 
                               (repr:Seq.seq (measurement_block_repr req_param2 m_spec)) : prop =
@@ -451,7 +452,7 @@ let valid_measurement_blocks3 (req_param2:u8) (m_spec: u8)
                    p.measurement_specification == q.measurement_specification /\
                    p.dmtf_spec_measurement_value_type == q.dmtf_spec_measurement_value_type /\
                    p.dmtf_spec_measurement_value_size == q.dmtf_spec_measurement_value_size /\
-                   (sl_prop_to_prop (V.pts_to p.measurement q.measurement))))
+                   (slprop_equiv (V.pts_to p.measurement q.measurement) C.emp)))
 
 
 let valid_measurement_blocks1 (req_param2:u8) (m_spec: u8)
