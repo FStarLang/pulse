@@ -492,7 +492,7 @@ assume val parser
                             | Signature_verification_error -> pure False
                             | Success ->
                               exists* resp_repr. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr **
-                              valid_measurement_blocks req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record))
+                              valid_measurement_blocks1 req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record))
 
 
 //
@@ -538,7 +538,7 @@ assume val no_sign_resp
                           | Success ->
                               //parser post-condition 
                               (exists* resp_repr. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr **
-                                       valid_measurement_blocks req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record) **
+                                       valid_measurement_blocks1 req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record) **
                               
                               //state change related post-condition 
                               (exists* r tr1. valid_resp req_param1 req_param2 m_spec req_context resp r **
@@ -647,7 +647,7 @@ assume val sign_resp
                           | Success -> 
                                 //parser post-condition 
                               (exists* resp_repr. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr **
-                                       valid_measurement_blocks req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record) **
+                                       valid_measurement_blocks1 req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record) **
                               
                               //sign_state related post-condition
                               sign_resp_post_result_success req_param1 req_param2 m_spec req_context st resp #tr0 p_req p_resp b_req b_resp ))))
