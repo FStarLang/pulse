@@ -231,7 +231,7 @@ let session_state_related (s:state) (gs:g_state) : slprop =
 //r is the ghost ptr to trace t with full permission.
 // state s and current state of trace t are session_state_related.
 
-let inv (s:state) (r:gref) (t:trace) : slprop =
+let spdm_inv (s:state) (r:gref) (t:trace) : slprop =
   ghost_pcm_pts_to r (Some 1.0R, t) **
   session_state_related s (current_state t)
 
@@ -275,7 +275,7 @@ let current_key_size (t:trace { has_full_state_info (current_state t) }) : u32 =
   g_key_len_of_gst (current_state t)
 
 let init_client_perm (s:state) (b:Seq.seq u8) (key_len:u32): slprop =
-  exists* (t:trace). inv s trace_ref t ** 
+  exists* (t:trace). spdm_inv s trace_ref t ** 
                                    pure (G_Initialized? (current_state t) /\
                                         g_key_of_gst (current_state t) == b /\
                                         g_key_len_of_gst (current_state t) == key_len
@@ -514,7 +514,7 @@ val no_sign_resp
     (requires (exists* p_req b_req p_resp b_resp.
                           V.pts_to req #p_req b_req **
                           V.pts_to resp #p_resp b_resp) **
-              inv st trace_ref tr0 **
+              spdm_inv st trace_ref tr0 **
                pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0)))
     (ensures fun res -> (exists* p_req b_req p_resp b_resp.
                          V.pts_to req #p_req b_req **
@@ -531,7 +531,7 @@ val no_sign_resp
                               
                               //state change related post-condition 
                               (exists* r tr1. valid_resp req_param1 req_param2 m_spec req_context resp r **
-                                        inv st trace_ref tr1 **
+                                        spdm_inv st trace_ref tr1 **
                                         (pure (G_Recv_no_sign_resp? (current_state tr1) /\
                                               valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1))) **
                                         (pure (G_Recv_no_sign_resp? (current_state tr1) /\
@@ -553,7 +553,7 @@ let sign_resp_pre (st:state)
 (exists* p_req b_req p_resp b_resp.
                           V.pts_to req #p_req b_req **
                           V.pts_to resp #p_resp b_resp) **
-inv st trace_ref tr0 **
+spdm_inv st trace_ref tr0 **
 pure (G_Recv_no_sign_resp? (current_state tr0) \/
       G_Initialized? (current_state tr0))
 
@@ -585,7 +585,7 @@ let sign_resp_post_result_success (req_param1: u8)
                                   (b_req : Seq.seq u8)
                                   (b_resp : Seq.seq u8): slprop =
   (exists* resp_repr tr1 sign. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr**
-                                        inv st trace_ref tr1 **
+                                        spdm_inv st trace_ref tr1 **
                                         //tr1 current_state is G_Initailized
                                         pure (G_Initialized? (current_state tr1)) **
                                         
@@ -651,7 +651,7 @@ val reset
   (b:Seq.seq u8) (key_len:u32)
   (#tr0:trace {has_full_state_info(current_state tr0) })
   : stt unit
-    (requires (inv st trace_ref tr0 **
+    (requires (spdm_inv st trace_ref tr0 **
                           pure (G_Recv_no_sign_resp? (current_state tr0))
                           ))
     (ensures fun res -> init_client_perm st b key_len)
