@@ -288,9 +288,9 @@ let inv_is_slprop2 (r:gref) (s:option st)
   : Lemma (is_slprop2 (meas_inv r s))
           [SMTPat (is_slprop2 (meas_inv r s))] = admit()
 
-val trace_ref : gref
+//val trace_ref : gref
 
-let trace_ref = admit()
+(*let trace_ref = admit()
 
 
 noextract
@@ -313,3 +313,5 @@ val initialize_context
         (ensures fun b ->
            A.pts_to uds #p uds_bytes **
            initialize_context_client_perm uds_bytes)
+*)
+
