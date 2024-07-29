@@ -62,7 +62,7 @@ type g_transcript = Seq.seq u8
 //
 noeq
 type repr = {
-  key_size : u32;
+  key_size_repr : u32;
   signing_pub_key_repr : Seq.seq u8;
   transcript : g_transcript;
 }
@@ -111,7 +111,7 @@ let next (s0 s1:g_state) : prop =
   // initial ---> sign (upon sign call)
   | G_Initialized k, G_Recv_sign_resp r ->
     k.signing_pub_key_repr == r.signing_pub_key_repr /\
-    k.key_size == r.key_size
+    k.key_size_repr == r.key_size_repr
 
 
   // no_sign --> no_sign (upon no_sign call)
@@ -119,7 +119,7 @@ let next (s0 s1:g_state) : prop =
   //no_sign ---> sign (upon sign call)
   | G_Recv_no_sign_resp r0, G_Recv_sign_resp r1  ->
     r0.signing_pub_key_repr == r1.signing_pub_key_repr /\
-    r0.key_size = r1.key_size /\
+    r0.key_size_repr = r1.key_size_repr /\
     is_prefix_of r0.transcript r1.transcript 
         
   //sign ---> initial (no call is needed)
@@ -127,7 +127,7 @@ let next (s0 s1:g_state) : prop =
   //no_sign --> initial (upon reset call)
   | G_Recv_no_sign_resp r, G_Initialized k ->
     r.signing_pub_key_repr == k.signing_pub_key_repr /\
-    r.key_size == k.key_size
+    r.key_size_repr == k.key_size_repr
 
   | _ -> False
 
@@ -213,12 +213,12 @@ let session_state_related (s:state) (gs:g_state) : slprop =
   | Initialized st, G_Initialized repr ->
     V.pts_to st.signing_pub_key repr.signing_pub_key_repr **
     V.pts_to st.session_transcript Seq.empty **
-    pure (st.key_size == repr.key_size)
+    pure (st.key_size == repr.key_size_repr)
 
   | Recv_no_sign_resp st, G_Recv_no_sign_resp repr ->
     V.pts_to st.signing_pub_key repr.signing_pub_key_repr **
     V.pts_to st.session_transcript repr.transcript **
-    pure (st.key_size == repr.key_size)
+    pure (st.key_size == repr.key_size_repr)
 
   | _ -> pure False
 
@@ -263,7 +263,7 @@ let g_key_len_of_gst (s:g_state {has_full_state_info s})
   match s with
   | G_Initialized r
   | G_Recv_no_sign_resp r
-  | G_Recv_sign_resp r -> r.key_size
+  | G_Recv_sign_resp r -> r.key_size_repr
 
 let current_transcript (t:trace {has_full_state_info (current_state t) }) : g_transcript =
   g_transcript_of_gst (current_state t)

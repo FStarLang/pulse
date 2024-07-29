@@ -48,13 +48,34 @@ assume val run_stt (#a:Type) (#post:a -> slprop) (f:stt a emp post) : a
 // We assume this code will be executed on a machine where u32 fits the word size
 assume SZ_fits_u32 : SZ.fits_u32
 
+let trace_ref : gref = admit()
 
-fn initialize_global_state ()
-  requires emp
-   
-  ensures emp
+fn __init (s:state) (t:trace) (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len})
+  requires spdm_inv s trace_ref t
+  returns r:(st & state)
+  ensures spdm_inv (snd r) trace_ref t **
+          (exists* p b. V.pts_to signing_key #p b **
+                   init_client_perm (snd r) b key_len)
+
+
+
+assume val emptyVector : v:V.vec u8{V.length v = 0}
+ 
+fn init  (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len })
+  requires (exists* p b. V.pts_to signing_key #p b)
+  returns r:(state)
+  ensures (exists* p b. V.pts_to signing_key #p b ** 
+                                        init_client_perm r b key_len)
 {
-  admit()
-}
+   let st =  { key_size = key_len; signing_pub_key = signing_key; session_transcript = emptyVector};
+   Initialized st;
+   admit()
+} 
 
-let gst : (r:gref & mutex (dpe_inv r)) = run_stt (initialize_global_state ())
+
+
+
+
+
+
+
