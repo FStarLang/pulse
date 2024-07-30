@@ -131,6 +131,7 @@ let next (s0 s1:g_state) : prop =
 
   | _ -> False
 
+
 //
 // Until gref, this is setting up the trace PCM
 //
@@ -161,6 +162,10 @@ type trace_pcm_t : Type u#1 = FP.pcm_carrier trace_preorder
 
 noextract
 let trace_pcm : FStar.PCM.pcm trace_pcm_t = FP.fp_pcm trace_preorder
+
+noextract
+type pcm_t : Type u#1 = trace_pcm_t
+
 
 noextract
 let current_state (t:trace) : g_state =
@@ -207,6 +212,19 @@ let previous_trace (t:trace): trace =
 
 noextract
 type gref = ghost_pcm_ref trace_pcm
+ 
+noextract
+let emp_trace : trace = []
+
+noextract
+let emp_trace_pcm  (p:perm) (t:trace) : GTot pcm_t =
+   (None, emp_trace)
+
+noextract
+let singleton (p:perm) (t:trace) : GTot pcm_t =
+  Map.upd (Map.const (None, emp_trace)) (Some p, t)
+
+
 
 let session_state_related (s:state) (gs:g_state) : slprop =
   match s, gs with
