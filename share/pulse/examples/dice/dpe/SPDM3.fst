@@ -42,6 +42,38 @@ module PHT = Pulse.Lib.HashTable.Spec
 open PulseCore.Preorder
 open Pulse.Lib.OnRange
 
+let trace_ref = admit ()
+
+let init _ _ = admit ()
+
+let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) (r:gref) : slprop =
+  exists* (t:trace).
+    spdm_inv s r t ** 
+    pure (G_Initialized? (current_state t) /\
+          g_key_of_gst (current_state t) == b /\
+          g_key_len_of_gst (current_state t) == key_len)
+
+let pcm_elt (p:perm) (t:trace) : pcm_t = Some p, t
+
+fn init0 (key_size:u32) (signing_pub_key:V.vec u8 { V.length signing_pub_key == U32.v key_size })
+  (#p:perm)
+  (#s:Seq.seq u8)
+  requires V.pts_to signing_pub_key #p s
+  returns r:state & gref
+  ensures V.pts_to signing_pub_key #p s **
+          init_inv key_size s (fst r) (snd r)
+{
+  let session_transcript = V.alloc 0uy 0sz;
+  let c_st = Initialized { key_size; signing_pub_key; session_transcript };
+  
+  let tr_elt = G_Initialized ({key_size_repr = key_size; signing_pub_key_repr = s; transcript = Seq.empty});
+  let trace = next_trace emp_trace tr_elt;
+  let r = ghost_alloc #trace_pcm_t #trace_pcm (pcm_elt 1.0R trace);
+
+  admit ()
+}
+
+
 // We assume a combinator to run pulse computations for initialization of top-level state, it gets primitive support in extraction
 assume val run_stt (#a:Type) (#post:a -> slprop) (f:stt a emp post) : a
 

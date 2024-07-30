@@ -87,6 +87,7 @@ type state =
 //
 // Corresponding ghost states
 //
+[@@ erasable]
 noeq
 type g_state : Type u#1 =
   | G_UnInitialized : g_state
@@ -220,11 +221,9 @@ noextract
 let emp_trace_pcm  (p:perm) (t:trace) : GTot pcm_t =
    (None, emp_trace)
 
-noextract
-let singleton (p:perm) (t:trace) : GTot pcm_t =
-  Map.upd (Map.const (None, emp_trace)) (Some p, t)
-
-
+// noextract
+// let singleton (p:perm) (t:trace) : GTot pcm_t =
+//   Map.upd (Map.const (None, emp_trace)) (Some p, t)
 
 let session_state_related (s:state) (gs:g_state) : slprop =
   match s, gs with
@@ -263,33 +262,33 @@ let has_full_state_info (s:g_state) :prop =
   G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s \/ G_Initialized?s
 
 let g_transcript_of_gst (s:g_state {has_full_state_info s})
-  : g_transcript =
+  : GTot g_transcript =
   match s with
   | G_Initialized r
   | G_Recv_no_sign_resp r
   | G_Recv_sign_resp r -> r.transcript
 
 let g_key_of_gst (s:g_state {has_full_state_info s})
-  : Seq.seq u8 =
+  : GTot (Seq.seq u8) =
   match s with
   | G_Initialized r
   | G_Recv_no_sign_resp r
   | G_Recv_sign_resp r -> r.signing_pub_key_repr
 
 let g_key_len_of_gst (s:g_state {has_full_state_info s})
-  : u32 =
+  : GTot u32 =
   match s with
   | G_Initialized r
   | G_Recv_no_sign_resp r
   | G_Recv_sign_resp r -> r.key_size_repr
 
-let current_transcript (t:trace {has_full_state_info (current_state t) }) : g_transcript =
+let current_transcript (t:trace {has_full_state_info (current_state t) }) : GTot g_transcript =
   g_transcript_of_gst (current_state t)
 
-let current_key (t:trace { has_full_state_info (current_state t) }) : Seq.seq u8 =
+let current_key (t:trace { has_full_state_info (current_state t) }) : GTot (Seq.seq u8) =
   g_key_of_gst (current_state t)
 
-let current_key_size (t:trace { has_full_state_info (current_state t) }) : u32 =
+let current_key_size (t:trace { has_full_state_info (current_state t) }) : GTot u32 =
   g_key_len_of_gst (current_state t)
 
 let init_client_perm (s:state) (b:Seq.seq u8) (key_len:u32): slprop =
