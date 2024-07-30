@@ -63,26 +63,24 @@ fn init0 (key_size:u32) (signing_pub_key:V.vec u8 { V.length signing_pub_key == 
 {
   let session_transcript = V.alloc 0uy 0sz;
   
-  let st_repr = { key_size; signing_pub_key; session_transcript };
-  let c_st = Initialized st_repr;
+  let st = { key_size; signing_pub_key; session_transcript };
   
   let repr = {key_size_repr = key_size; signing_pub_key_repr = s; transcript = Seq.empty};
   
-  let tr_elt = G_Initialized repr;
-  let trace = next_trace emp_trace tr_elt;
+  let trace = next_trace emp_trace (G_Initialized repr);
   
-  let r = ghost_alloc #trace_pcm_t #trace_pcm (pcm_elt 1.0R trace);
+  let r = ghost_alloc #_ #trace_pcm (pcm_elt 1.0R trace);
 
   rewrite each
-    signing_pub_key as st_repr.signing_pub_key,
+    signing_pub_key as st.signing_pub_key,
     s as repr.signing_pub_key_repr;
 
   assert_ (pure (Seq.equal (Seq.create (SZ.v 0sz) 0uy) Seq.empty));
   with _v. rewrite (V.pts_to session_transcript _v) as
-                   (V.pts_to st_repr.session_transcript Seq.empty);
-  fold (session_state_related (Initialized st_repr) (G_Initialized repr));
-  fold (spdm_inv c_st r trace);
-  let res = (Initialized st_repr, r);
+                   (V.pts_to st.session_transcript Seq.empty);
+  fold (session_state_related (Initialized st) (G_Initialized repr));
+  fold (spdm_inv (Initialized st) r trace);
+  let res = (Initialized st, r);
   fold (init_inv key_size s (fst res) (snd res));
   res
 }

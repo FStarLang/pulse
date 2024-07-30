@@ -60,6 +60,7 @@ type g_transcript = Seq.seq u8
 
 // Ghost repr
 //
+[@@ erasable]
 noeq
 type repr = {
   key_size_repr : u32;
