@@ -136,67 +136,59 @@ let valid_resp_bytes (req_param1: u8)
                             (r:resp_repr req_param1 req_param2 measurementspecification req_context) =
 admit()
 
-fn parser 
-  (req_param1: u8)
-  (req_param2 : u8)
+type parser_context = {
+  req_param1 : u8;
+  req_param2 : u8;
+  req_context0 : u8;
+  req_context1 : u8;
+  req_context2 : u8;
+  m_spec : u8
+}
+
+assume val resp_repr0 (ctx:parser_context) : Type0
+assume val valid_resp_bytes0 (ctx:parser_context) (s:Seq.seq u8) (r:resp_repr0 ctx) : slprop
+assume val blocks_of_resp_repr (#ctx:parser_context) (r:resp_repr0 ctx)
+  : GTot (Seq.seq (measurement_block_repr ctx.req_param2 ctx.m_spec))
+assume val valid_measurement_blocks0
+  (ctx:parser_context)
+  (s:Seq.seq (measurement_block_repr ctx.req_param2 ctx.m_spec)) : slprop
+
+let parser_post (ctx:parser_context) (s:Seq.seq u8) (res:spdm_measurement_result_t) =
+  match res.status with
+  | Parse_error -> pure True
+  | Signature_verification_error -> pure False
+  | Success ->
+    exists* (r:resp_repr0 ctx).
+    valid_resp_bytes0 ctx s r **
+    valid_measurement_blocks0 ctx (blocks_of_resp_repr r)
+
+fn parser0
+  (ctx:parser_context)
   (resp_size: u32)
-  (m_spec: u8) 
-  (req_context: Seq.seq u8{Seq.length req_context == 8})
   (resp:V.vec u8 { V.length resp == u32_v resp_size })
-  (*(signature_size: u8)*)
-  
-  
-    requires exists* p_resp b_resp. V.pts_to resp #p_resp b_resp
-    returns res: spdm_measurement_result_t 
-    ensures 
-     exists* p_resp b_resp. V.pts_to resp #p_resp b_resp **
-                           (match res.status with
-                            | Parse_error -> pure True
-                            | Signature_verification_error -> pure False
-                            | Success ->
-                              exists* resp_repr. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr **
-                              valid_measurement_blocks req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record)
+  (#p:perm)
+  (#s:Ghost.erased (Seq.seq u8))
+    
+  requires V.pts_to resp #p s
+  returns res:spdm_measurement_result_t
+  ensures 
+    V.pts_to resp #p s **
+    parser_post ctx s res
 {
-  admit()
-}
-fn get_state_data (c:state)
-requires emp
-returns s:st
-ensures emp
-{
-  match c {
-    Initialized s-> {
-      s
-    }
-    Recv_no_sign_resp s -> {
-      s
-    } 
-  }
+  admit ()
 }
 
-fn get_state_data_transcript (s_data:st)
-requires emp
-returns v:V.vec u8
-ensures emp
-{
-  s_data.session_transcript
-}
 
-fn get_state_data_signing_pub_key (s_data:st)
-requires emp
-returns v:V.vec u8
-ensures emp
-{
-  s_data.signing_pub_key
-}
+let get_state_data (c:state) =
+  match c with
+  | Initialized s -> s
+  | Recv_no_sign_resp s -> s
 
-fn get_state_data_key_size (s_data:st)
-requires emp
-returns k:u32
-ensures emp
-{
-  s_data.key_size
-}
+let get_state_data_transcript (s_data:st) = s_data.session_transcript
+
+let get_state_data_signing_pub_key (s_data:st) = s_data.signing_pub_key
+
+let get_state_data_key_size (s_data:st) = s_data.key_size
 
 //We have taken permissions on v1 and v2 and if we are not returning v1 nad v2, then the client losts this permission and then
 //the client will not be able to deallocate v1 and v2. Read permissions.
@@ -204,14 +196,13 @@ fn append_vec
   (#a:Type0)
   (v1: V.vec a)
   (v2: V.vec a)
-  (#v1_seq: Ghost.erased (Seq.seq a)) //put G.erased
-  (#v2_seq: Ghost.erased (Seq.seq a))
   (#p1:perm)
   (#p2:perm)
+  (#v1_seq: Ghost.erased (Seq.seq a)) //put G.erased
+  (#v2_seq: Ghost.erased (Seq.seq a))
   
   requires V.pts_to v1 #p1 v1_seq **
            V.pts_to v2 #p2 v2_seq
-
   returns v:V.vec a
   ensures V.pts_to v (Seq.append v1_seq v2_seq) **
           V.pts_to v1 #p1 v1_seq **
@@ -222,115 +213,131 @@ fn append_vec
 
 #push-options "--query_stats"
 
+// (pure ((G_Recv_no_sign_resp? (current_state tr1) /\
+//                                                  valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
+//                                                  (G_Recv_no_sign_resp? (current_state tr1) /\
+                                               
+//                                                   g_transcript_current_session_grows_by (current_transcript tr0 ) 
+//                                                                                      (current_transcript tr1) 
+//                                                                                      (Seq.append b_req b_resp))))
+assume val valid_trace_for_no_sign_resp (tr0 tr1:trace) : prop
+
 fn no_sign_resp1
-  (req_param1: u8)
-  (req_param2 : u8)
-  (m_spec: u8) 
-  (req_context: Seq.seq u8{Seq.length req_context == 8})
+  (ctx:parser_context)
   (req_size: u32)
   (resp_size: u32)
   (req:V.vec u8 { V.length req == u32_v req_size })
   (resp:V.vec u8 { V.length resp == u32_v resp_size })
   (c:state)
   (#tr0:trace{has_full_state_info (current_state tr0)})
-  (#b_resp: Seq.seq u8)
-  (#b_req: Seq.seq u8)
-  (#p_req : perm)
+  (#p_req:perm)
   (#p_resp:perm)
-   requires (V.pts_to req #p_req b_req **
-             V.pts_to resp #p_resp b_resp) **
-             spdm_inv c trace_ref tr0 **
-             pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
-    returns res: spdm_measurement_result_t & state
+  (#b_resp:G.erased (Seq.seq u8))
+  (#b_req:G.erased (Seq.seq u8))
+  
+  requires V.pts_to req #p_req b_req **
+           V.pts_to resp #p_resp b_resp **
+           spdm_inv c trace_ref tr0 **
+           pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
+  
+  returns res:spdm_measurement_result_t & state
     
-    ensures V.pts_to req #p_req b_req **
-            V.pts_to resp #p_resp b_resp **
-            (let measurement_block_count = (fst res).measurement_block_count in
-            let result = (fst res).status in
-                  (match result with
-                    | Parse_error -> pure True
-                    | Signature_verification_error -> pure False
-                    | Success ->
-                              //parser post-condition 
-                              (exists* resp_repr. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr **
-                                       valid_measurement_blocks req_param2 m_spec (fst res).measurement_block_vector resp_repr.measurement_record) **
+  ensures V.pts_to req #p_req b_req **
+          V.pts_to resp #p_resp b_resp **
+          (match (fst res).status with
+           | Parse_error -> pure True
+           | Signature_verification_error -> pure False
+           | Success ->
+             //parser post-condition 
+             (exists* r. valid_resp_bytes0 ctx b_resp r **
+                         valid_measurement_blocks0 ctx (blocks_of_resp_repr r)) **
                               
-                              //state change related post-condition 
-                              (exists* r tr1. valid_resp req_param1 req_param2 m_spec req_context resp r **
-                                        spdm_inv c trace_ref tr1 **
-                                         (pure ((G_Recv_no_sign_resp? (current_state tr1) /\
-                                                 valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
-                                                 (G_Recv_no_sign_resp? (current_state tr1) /\
-                                               
-                                                  g_transcript_current_session_grows_by (current_transcript tr0 ) 
-                                                                                     (current_transcript tr1) 
-                                                                                     (Seq.append b_req b_resp))))
-)))
+             //state change related post-condition 
+             (exists* tr1. spdm_inv c trace_ref tr1 **
+                           pure (valid_trace_for_no_sign_resp tr0 tr1)))
+                                         
+
 {
-  //current state transcript
-  let curr_state_data = get_state_data c;
-  let curr_state_transcript = get_state_data_transcript curr_state_data;
-  let curr_state_signing_pub_key = get_state_data_signing_pub_key curr_state_data;
-  let curr_state_key_size = get_state_data_key_size curr_state_data;
+  let res = parser0 ctx resp_size resp;
 
-  
-  //append req and resp
-  let append_req_resp = append_vec req resp #b_req #b_resp #p_req #p_resp;
-  
-  //get the ghost transcript
-  let curr_g_transcript = current_transcript tr0;
-  let curr_g_key = current_key tr0;
-  let curr_g_key_size = current_key_size tr0;
-  //unfold (spdm_inv c trace_ref tr0);
-  
-  //unfold (session_state_related c (current_state tr0));
-
-  assume_(V.pts_to curr_state_transcript (G.reveal curr_g_transcript));
-  //append req/resp to the current trascript
-  let new_transcript = append_vec curr_state_transcript append_req_resp #curr_g_transcript #(Seq.append b_req b_resp);
-  let new_g_transcript = g_append curr_g_transcript (Seq.append b_req b_resp);
-  //create a new state data record with the new transcript
-  assume_ (pure (V.length curr_state_signing_pub_key == u32_v curr_state_key_size));
-
-  let new_st = {key_size = curr_state_key_size; signing_pub_key = curr_state_signing_pub_key; session_transcript = new_transcript };
-  
-  ////creation of the ghost session data storage
-  let repr = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
-
-  //Do the state change
-  let new_state = (Recv_no_sign_resp new_st);
-  
-  assume_ (pure (g_transcript_non_empty repr.transcript));
-  assume_ (pure (valid_transition tr0 (G_Recv_no_sign_resp repr)));
-  let tr1 = next_trace tr0 (G_Recv_no_sign_resp repr);
-  
-  assert (pure (G_Recv_no_sign_resp? (current_state tr1)));
-  assert (pure (valid_transition tr0 (current_state tr1)));
-  assert (pure (tr1 == next_trace tr0 (current_state tr1)));
-  assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
-                                                (current_transcript tr1) 
-                                                (Seq.append b_req b_resp)));
-  //Call parser to parse and get the measurement blocks.
-
-  let parser_res = parser req_param1 req_param2 resp_size m_spec req_context resp;
-
-  let parser_res_result = parser_res.status;
-  let parser_res_measurement_block_count = parser_res.measurement_block_count;
-  let parser_res_measurement_block_vector = parser_res.measurement_block_vector;
-  match parser_res_result {
+  match res.status {
     Parse_error -> {
-      
-      admit() //(parser_res,new_state)
+      admit ()
     }
     Signature_verification_error -> {
-     
-      admit()//unreachable ()
+      rewrite (parser_post ctx b_resp res) as
+              (pure False);
+      unreachable ()
     }
     Success -> {
-      admit()
+      admit ()
     }
-  
   }
+
+  // //current state transcript
+  // let curr_state_data = get_state_data c;
+  // let curr_state_transcript = get_state_data_transcript curr_state_data;
+  // let curr_state_signing_pub_key = get_state_data_signing_pub_key curr_state_data;
+  // let curr_state_key_size = get_state_data_key_size curr_state_data;
+
+  
+  // //append req and resp
+  // let append_req_resp = append_vec req resp #b_req #b_resp #p_req #p_resp;
+  
+  // //get the ghost transcript
+  // let curr_g_transcript = current_transcript tr0;
+  // let curr_g_key = current_key tr0;
+  // let curr_g_key_size = current_key_size tr0;
+  // //unfold (spdm_inv c trace_ref tr0);
+  
+  // //unfold (session_state_related c (current_state tr0));
+
+  // assume_(V.pts_to curr_state_transcript (G.reveal curr_g_transcript));
+  // //append req/resp to the current trascript
+  // let new_transcript = append_vec curr_state_transcript append_req_resp #curr_g_transcript #(Seq.append b_req b_resp);
+  // let new_g_transcript = g_append curr_g_transcript (Seq.append b_req b_resp);
+  // //create a new state data record with the new transcript
+  // assume_ (pure (V.length curr_state_signing_pub_key == u32_v curr_state_key_size));
+
+  // let new_st = {key_size = curr_state_key_size; signing_pub_key = curr_state_signing_pub_key; session_transcript = new_transcript };
+  
+  // ////creation of the ghost session data storage
+  // let repr = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
+
+  // //Do the state change
+  // let new_state = (Recv_no_sign_resp new_st);
+  
+  // assume_ (pure (g_transcript_non_empty repr.transcript));
+  // assume_ (pure (valid_transition tr0 (G_Recv_no_sign_resp repr)));
+  // let tr1 = next_trace tr0 (G_Recv_no_sign_resp repr);
+  
+  // assert (pure (G_Recv_no_sign_resp? (current_state tr1)));
+  // assert (pure (valid_transition tr0 (current_state tr1)));
+  // assert (pure (tr1 == next_trace tr0 (current_state tr1)));
+  // assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
+  //                                               (current_transcript tr1) 
+  //                                               (Seq.append b_req b_resp)));
+  // //Call parser to parse and get the measurement blocks.
+
+  // let parser_res = parser req_param1 req_param2 resp_size m_spec req_context resp;
+
+  // let parser_res_result = parser_res.status;
+  // let parser_res_measurement_block_count = parser_res.measurement_block_count;
+  // let parser_res_measurement_block_vector = parser_res.measurement_block_vector;
+  // match parser_res_result {
+  //   Parse_error -> {
+      
+  //     admit() //(parser_res,new_state)
+  //   }
+  //   Signature_verification_error -> {
+     
+  //     admit()//unreachable ()
+  //   }
+  //   Success -> {
+  //     admit()
+  //   }
+  
+  // }
 }
 
 fn no_sign_resp3
