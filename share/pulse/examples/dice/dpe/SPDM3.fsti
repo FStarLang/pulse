@@ -13,7 +13,7 @@ module V = Pulse.Lib.Vec
 module FP = Pulse.Lib.PCM.FractionalPreorder
 module L = FStar.List.Tot
 module E = FStar.Endianness
-module R = Pulse.Lib.OnRange
+module O = Pulse.Lib.OnRange
 
 
 type u8 = FStar.UInt8.t
@@ -56,7 +56,7 @@ type st = {
   session_transcript : V.vec u8;
 }
 
-type g_transcript = Seq.seq u8
+type g_transcript = Ghost.erased (Seq.seq u8)
 
 // Ghost repr
 //
@@ -286,10 +286,10 @@ let g_key_len_of_gst (s:g_state {has_full_state_info s})
 let current_transcript (t:trace {has_full_state_info (current_state t) }) : GTot g_transcript =
   g_transcript_of_gst (current_state t)
 
-let current_key (t:trace { has_full_state_info (current_state t) }) : GTot (Seq.seq u8) =
+let current_key (t:trace { has_full_state_info (current_state t) }) : GTot (Ghost.erased(Seq.seq u8)) =
   g_key_of_gst (current_state t)
 
-let current_key_size (t:trace { has_full_state_info (current_state t) }) : GTot u32 =
+let current_key_size (t:trace { has_full_state_info (current_state t) }) : GTot (Ghost.erased u32) =
   g_key_len_of_gst (current_state t)
 
 let init_client_perm (s:state) (b:Seq.seq u8) (key_len:u32): slprop =
@@ -299,18 +299,30 @@ let init_client_perm (s:state) (b:Seq.seq u8) (key_len:u32): slprop =
                                         g_key_len_of_gst (current_state t) == key_len
                                         )
 
+let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) (r:gref) : slprop =
+  exists* (t:trace).
+    spdm_inv s r t ** 
+    pure (G_Initialized? (current_state t) /\
+          g_key_of_gst (current_state t) == b /\
+          g_key_len_of_gst (current_state t) == key_len)
+
+ val init0 (key_size:u32) (signing_pub_key:V.vec u8 { V.length signing_pub_key == U32.v key_size }) (#s:Seq.seq u8)
+   : stt (state & gref)
+    (requires V.pts_to signing_pub_key s)
+    (ensures fun res -> init_inv key_size s (fst res) (snd res))
+
 //
 // TODO: think about how you want to state this relation. Because state will be abstract to the client
 // If the state info details are abstracted behind init_client_perm, will that be sufficient?
 //
-val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len })
+(*val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len })
   : stt state (requires exists* p b. V.pts_to signing_key #p b)
               (ensures fun s -> exists* p b. V.pts_to signing_key #p b ** 
                                         init_client_perm s b key_len
-                                       )
+                                       )*)
 
 //
-// TODO: add DMTF and other structure in it
+// TODO: add DMTF and other structure in it - Added
 //
 
 let measurement_size_select (measurement_specification:u8) (measurement_size:u16) (dmtf_spec_measurement_value_size:u16)
@@ -470,7 +482,7 @@ let valid_measurement_blocks (req_param2:u8) (m_spec: u8)
                       : slprop =
   pure(V.length blks == Seq.length repr) **
   (exists* s. V.pts_to blks s **
-  (R.on_range (aux req_param2 m_spec s repr) 0 (V.length blks))) 
+  (O.on_range (aux req_param2 m_spec s repr) 0 (V.length blks))) 
 
 module C = Pulse.Lib.Core 
 //
@@ -508,8 +520,15 @@ val parser
 let g_transcript_current_session_grows (t0 t1:g_transcript) : prop =
   is_prefix_of t0 t1 
 
+let g_append (t0:g_transcript) (s:Seq.seq u8) : g_transcript =
+ Seq.append t0 s
+
 let g_transcript_current_session_grows_by (t0 t1:g_transcript) (s:Seq.seq u8) : prop =
-   t1 == Seq.append t0 s
+   t1 == g_append t0 s
+  
+let g_seq_empty : g_transcript =
+ Seq.empty
+
 //
 // TODO: add request param etc. - added
 // TODO: add parser postcondition to relate the measurement blocks to resp - added
@@ -622,7 +641,7 @@ let sign_resp_post_result_success (req_param1: u8)
                                         // TODO: do we need this? You have already told us that current state is G_Initialized
                                         //this can act as an additional check?
                                         (let t1 = current_transcript tr1 in
-                                         pure (t1 == Seq.empty)
+                                         pure (t1 == g_seq_empty)
                                          )
                                 )
 
