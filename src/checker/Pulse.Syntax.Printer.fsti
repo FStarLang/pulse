@@ -32,6 +32,7 @@ val binder_to_string (b:binder) : T.Tac string
 val ctag_to_string (c:ctag) : string
 val observability_to_string (obs:observability) : string
 val effect_annot_to_string (e:effect_annot) : T.Tac string
+val st_term_to_doc (t:st_term) : T.Tac document
 val comp_to_string (c:comp) : T.Tac string
 val term_list_to_string (sep:string) (t:list term): T.Tac string
 val pattern_to_string (p:pattern) : T.Tac string
