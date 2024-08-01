@@ -139,11 +139,11 @@ admit()
 fn parser 
   (req_param1: u8)
   (req_param2 : u8)
-  (resp_size: u8)
+  (resp_size: u32)
   (m_spec: u8) 
   (req_context: Seq.seq u8{Seq.length req_context == 8})
-  (resp:V.vec u8 { V.length resp == u8_v resp_size })
-  (signature_size: u8)
+  (resp:V.vec u8 { V.length resp == u32_v resp_size })
+  (*(signature_size: u8)*)
   
     requires exists* p_resp b_resp. V.pts_to resp #p_resp b_resp
     returns res: spdm_measurement_result_t 
@@ -158,20 +158,6 @@ fn parser
 {
   admit()
 }
-
-(*noeq
-type state =
-  | Initialized : st -> state
-  | Recv_no_sign_resp : st -> state*)
-
-(*noeq
-type st = {
-  key_size : u32;
-  signing_pub_key : v:V.vec u8 { V.length v == U32.v key_size };
-  session_transcript : V.vec u8;
-}*)
-
-
 fn get_state_data (c:state)
 requires emp
 returns s:st
@@ -233,17 +219,7 @@ fn append_vec
     admit()
   }      
 
-(*ghost
-fn current_state_transcript_points_to_trace_current_transcript
-  (c:state)
-  (#tr0:trace{has_full_state_info (current_state tr0)})
-  
-  requires  spdm_inv c trace_ref tr0 
-  ensures   spdm_inv c trace_ref tr0  ** V.pts_to (get_state_data_transcript (get_state_data c)) (current_transcript tr0)
-{
-  admit()
-}
-*)
+#push-options "--query_stats"
 
 fn no_sign_resp1
   (req_param1: u8)
@@ -334,7 +310,51 @@ fn no_sign_resp1
                                                 (current_transcript tr1) 
                                                 (Seq.append b_req b_resp)));
   //Call parser to parse and get the measurement blocks.
-  admit()
+
+  let parser_res = parser req_param1 req_param2 resp_size m_spec req_context resp;
+
+  let parser_res_result = parser_res.status;
+  let parser_res_measurement_block_count = parser_res.measurement_block_count;
+  let parser_res_measurement_block_vector = parser_res.measurement_block_vector;
+  match parser_res_result {
+    Parse_error -> {
+      admit() //(parser_res,new_state)
+    }
+    Signature_verification_error -> {
+      
+      admit()//unreachable ()
+    }
+    Success -> {
+      admit()
+    }
+  
+  }
 }
 
-                                       
+
+
+
+(*Current context:
+    V.pts_to req b_req **
+    V.pts_to resp (G.reveal b_resp) **
+    V.pts_to curr_state_transcript (G.reveal curr_g_transcript) **
+    V.pts_to append_req_resp (Seq.Base.append b_req b_resp) **
+    V.pts_to new_transcript
+      (Seq.Base.append (G.reveal curr_g_transcript)
+          (Seq.Base.append b_req b_resp)) **
+    spdm_inv c trace_ref tr0 **
+    match parser_res.status with
+    | SPDM3.Parse_error -> C.pure l_True
+    | SPDM3.Signature_verification_error -> C.pure l_False
+    | SPDM3.Success ->
+       exists* (resp_repr: resp_repr req_param1 req_param2 m_spec req_context).
+        valid_resp_bytes req_param1
+          req_param2
+          m_spec
+          req_context
+          (G.reveal b_resp)
+          resp_repr **
+        valid_measurement_blocks req_param2
+          m_spec
+          parser_res.measurement_block_vector
+          resp_repr.measurement_record*)
