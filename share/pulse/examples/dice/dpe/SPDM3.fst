@@ -264,30 +264,31 @@ fn no_sign_resp1
              V.pts_to resp #p_resp b_resp) **
              spdm_inv c trace_ref tr0 **
              pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
-    returns res: spdm_measurement_result_t 
+    returns res: spdm_measurement_result_t & state
     
     ensures V.pts_to req #p_req b_req **
             V.pts_to resp #p_resp b_resp **
-            (let measurement_block_count = res.measurement_block_count in
-            let result = res.status in
+            (let measurement_block_count = (fst res).measurement_block_count in
+            let result = (fst res).status in
                   (match result with
                     | Parse_error -> pure True
                     | Signature_verification_error -> pure False
                     | Success ->
                               //parser post-condition 
                               (exists* resp_repr. valid_resp_bytes req_param1 req_param2 m_spec req_context b_resp resp_repr **
-                                       valid_measurement_blocks req_param2 m_spec res.measurement_block_vector resp_repr.measurement_record) **
+                                       valid_measurement_blocks req_param2 m_spec (fst res).measurement_block_vector resp_repr.measurement_record) **
                               
                               //state change related post-condition 
                               (exists* r tr1. valid_resp req_param1 req_param2 m_spec req_context resp r **
                                         spdm_inv c trace_ref tr1 **
-                                        (pure (G_Recv_no_sign_resp? (current_state tr1) /\
-                                              valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1))) **
-                                        (pure (G_Recv_no_sign_resp? (current_state tr1) /\
+                                         (pure ((G_Recv_no_sign_resp? (current_state tr1) /\
+                                                 valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
+                                                 (G_Recv_no_sign_resp? (current_state tr1) /\
                                                
-                                               g_transcript_current_session_grows_by (current_transcript tr0 ) 
+                                                  g_transcript_current_session_grows_by (current_transcript tr0 ) 
                                                                                      (current_transcript tr1) 
-                                                                                     (Seq.append b_req b_resp))))))
+                                                                                     (Seq.append b_req b_resp))))
+)))
 {
   //current state transcript
   let curr_state_data = get_state_data c;
@@ -320,8 +321,20 @@ fn no_sign_resp1
   let repr = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
 
   //Do the state change
-
+  let new_state = (Recv_no_sign_resp new_st);
   
+  assume_ (pure (g_transcript_non_empty repr.transcript));
+  assume_ (pure (valid_transition tr0 (G_Recv_no_sign_resp repr)));
+  let tr1 = next_trace tr0 (G_Recv_no_sign_resp repr);
+  
+  assert (pure (G_Recv_no_sign_resp? (current_state tr1)));
+  assert (pure (valid_transition tr0 (current_state tr1)));
+  assert (pure (tr1 == next_trace tr0 (current_state tr1)));
+  assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
+                                                (current_transcript tr1) 
+                                                (Seq.append b_req b_resp)));
   //Call parser to parse and get the measurement blocks.
   admit()
 }
+
+                                       
