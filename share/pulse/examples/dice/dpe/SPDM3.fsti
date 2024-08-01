@@ -497,11 +497,11 @@ val valid_resp_bytes (req_param1: u8)
 val parser 
   (req_param1: u8)
   (req_param2 : u8)
-  (resp_size: u8)
+  (resp_size: u32)
   (m_spec: u8) 
   (req_context: Seq.seq u8{Seq.length req_context == 8})
-  (resp:V.vec u8 { V.length resp == u8_v resp_size })
-  (signature_size: u8)
+  (resp:V.vec u8 { V.length resp == u32_v resp_size })
+  (*(signature_size: u8)*)
   : stt spdm_measurement_result_t 
     (requires exists* p_resp b_resp. V.pts_to resp #p_resp b_resp)
     (ensures fun res ->
