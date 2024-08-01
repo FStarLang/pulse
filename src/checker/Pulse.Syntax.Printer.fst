@@ -138,7 +138,7 @@ let should_paren_term (t:term) : T.Tac bool =
 let rec binder_to_doc b : T.Tac document =
   parens (doc_of_string (T.unseal b.binder_ppname.name)
           ^^ doc_of_string ":"
-          ^^ term_to_doc b.binder_ty)
+          ^/^ term_to_doc b.binder_ty)
 
 and term_to_doc t : T.Tac document
   = match inspect_term t with
@@ -252,17 +252,16 @@ let rec st_term_to_doc (t:st_term)
   : T.Tac document
   = match t.term with
     | Tm_Return { insert_eq; term } ->
-      let kw = if insert_eq then "return" else "return_noeq" in
-      group (nest 2 (doc_of_string kw ^/^ term_to_doc term))
+      group (nest 2 (term_to_doc term))
       
     | Tm_STApp {head; arg_qual; arg } ->
-      group (parens (nest 2 (term_to_doc head ^^ doc_of_string (qual_to_string arg_qual) ^/^ term_to_doc arg)))
+      T.term_to_doc (T.pack_ln (Stubs.Reflection.V2.Data.Tv_App head (arg, (match arg_qual with | Some _ -> T.Q_Implicit | _ -> T.Q_Explicit))))
         
     | Tm_Bind { binder; head; body } ->
-      group (parens (nest 2 (group (doc_of_string "let" ^/^ binder_to_doc binder ^/^ doc_of_string "=") ^/^ st_term_to_doc head))) ^^ hardline ^^
+      group (nest 2 (group (doc_of_string "let" ^/^ binder_to_doc binder ^/^ doc_of_string "=") ^/^ st_term_to_doc head) ^^ doc_of_string ";") ^^ hardline ^^
         st_term_to_doc body
     | Tm_TotBind { head; binder; body } -> // FIXME?
-      group (parens (nest 2 (group (doc_of_string "let" ^/^ binder_to_doc binder ^/^ doc_of_string "=") ^/^ term_to_doc head))) ^^ hardline ^^
+      group (nest 2 (group (doc_of_string "let" ^/^ binder_to_doc binder ^/^ doc_of_string "=") ^/^ term_to_doc head) ^^ doc_of_string ";") ^^ hardline ^^
         st_term_to_doc body
 
     | Tm_Abs { b; q; ascription=c; body } ->
@@ -288,8 +287,8 @@ let rec st_term_to_doc (t:st_term)
       group (doc_of_string "introduce" ^/^ term_to_doc p ^/^ doc_of_string "with" ^/^ separate (break_ 1) (T.map term_to_doc witnesses))
 
     | Tm_While { invariant; condition; body } ->
-      group (group (doc_of_string "while" ^/^ parens (st_term_to_doc condition)) ^/^
-        group (doc_of_string "invariant" ^/^ term_to_doc invariant) ^/^
+      group (nest 2 (group (doc_of_string "while" ^^ nest 2 (break_ 1 ^^ parens (group (st_term_to_doc condition)))) ^/^
+        group (doc_of_string "invariant" ^/^ term_to_doc invariant)) ^^ space ^^
         block_to_doc body)
 
     | Tm_Par { pre1; body1; post1; pre2; body2; post2 } ->
@@ -302,13 +301,13 @@ let rec st_term_to_doc (t:st_term)
       group (doc_of_string "rewrite" ^/^ term_to_doc t1 ^/^ term_to_doc t2)
 
     | Tm_WithLocal { binder; initializer; body } ->
-      group (doc_of_string "let mut" ^/^ binder_to_doc binder ^^ doc_of_string " =" ^/^ term_to_doc initializer ^^ semi) ^^ hardline ^^
+      group (doc_of_string "let mut" ^/^ binder_to_doc binder ^^ doc_of_string " =" ^/^ term_to_doc initializer ^^ doc_of_string ";") ^^ hardline ^^
       st_term_to_doc body
 
     | Tm_WithLocalArray { binder; initializer; length; body } ->
       group (doc_of_string "let mut" ^/^ binder_to_doc binder ^^ doc_of_string " =" ^/^
-          group (doc_of_string "[|" ^/^ term_to_doc initializer ^/^ semi ^/^ term_to_doc length ^/^ doc_of_string "|]") ^^
-        semi) ^^ hardline ^^
+          group (doc_of_string "[|" ^/^ term_to_doc initializer ^^ doc_of_string ";" ^/^ term_to_doc length ^/^ doc_of_string "|]") ^^
+        doc_of_string ";") ^^ hardline ^^
       st_term_to_doc body
 
     | Tm_Admit { ctag; u; typ; post } ->
@@ -324,15 +323,15 @@ let rec st_term_to_doc (t:st_term)
       in
       let names_to_doc = function
         | None -> empty
-        | Some l -> space ^^ brackets (flow semi (T.map (fun x -> doc_of_string x) l))
+        | Some l -> space ^^ brackets (flow (doc_of_string ";") (T.map (fun x -> doc_of_string x) l))
       in
       let ht =
         match hint_type with
         | ASSERT { p } -> doc_of_string "assert " ^^ term_to_doc p
         | UNFOLD { names; p } -> doc_of_string "unfold" ^^ names_to_doc names ^^ space ^^ term_to_doc p
-        | FOLD { names; p } -> doc_of_string "fold" ^^ names_to_doc names ^^ term_to_doc p
+        | FOLD { names; p } -> doc_of_string "fold" ^^ names_to_doc names ^^ space ^^ term_to_doc p
         | RENAME { pairs; goal } ->
-          doc_of_string "rewrite each" ^^
+          doc_of_string "rewrite each" ^/^
             (flow (doc_of_string ",")
               (T.map (fun (x, y) -> group (term_to_doc x ^^ doc_of_string " as" ^/^ term_to_doc y))
               pairs)) ^/^
@@ -344,7 +343,7 @@ let rec st_term_to_doc (t:st_term)
         | WILD -> underscore
         | SHOW_PROOF_STATE _ -> doc_of_string "show_proof_state"
       in
-      group (with_prefix ^^ ht ^^ semi) ^^ hardline ^^
+      group (with_prefix ^^ ht ^^ doc_of_string ";") ^^ hardline ^^
       st_term_to_doc t
         
     | Tm_WithInv { name; body; returns_inv } ->
@@ -358,7 +357,7 @@ let rec st_term_to_doc (t:st_term)
             group (doc_of_string "opens " ^^ term_to_doc is))))
 
 and block_to_doc body : T.Tac document =
-  nest 2 (group (braces (break_ 1 ^^ st_term_to_doc body ^^ break_ 1)))
+  group (nest 2 (lbrace ^/^ st_term_to_doc body) ^/^ rbrace)
 
 and branches_to_doc brs : T.Tac document =
   match brs with

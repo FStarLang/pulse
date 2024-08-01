@@ -657,7 +657,7 @@ let (dataset_print :
                                                                     (Prims.of_int (146))
                                                                     (Prims.of_int (8))
                                                                     (Prims.of_int (146))
-                                                                    (Prims.of_int (65)))))
+                                                                    (Prims.of_int (84)))))
                                                                     (FStar_Sealed.seal
                                                                     (Obj.magic
                                                                     (FStar_Range.mk_range
@@ -675,7 +675,7 @@ let (dataset_print :
                                                                     (Prims.of_int (146))
                                                                     (Prims.of_int (21))
                                                                     (Prims.of_int (146))
-                                                                    (Prims.of_int (65)))))
+                                                                    (Prims.of_int (84)))))
                                                                     (FStar_Sealed.seal
                                                                     (Obj.magic
                                                                     (FStar_Range.mk_range
@@ -683,7 +683,7 @@ let (dataset_print :
                                                                     (Prims.of_int (146))
                                                                     (Prims.of_int (8))
                                                                     (Prims.of_int (146))
-                                                                    (Prims.of_int (65)))))
+                                                                    (Prims.of_int (84)))))
                                                                     (Obj.magic
                                                                     (FStar_Tactics_Effect.tac_bind
                                                                     (FStar_Sealed.seal
@@ -693,7 +693,7 @@ let (dataset_print :
                                                                     (Prims.of_int (146))
                                                                     (Prims.of_int (29))
                                                                     (Prims.of_int (146))
-                                                                    (Prims.of_int (65)))))
+                                                                    (Prims.of_int (84)))))
                                                                     (FStar_Sealed.seal
                                                                     (Obj.magic
                                                                     (FStar_Range.mk_range
@@ -701,10 +701,35 @@ let (dataset_print :
                                                                     (Prims.of_int (146))
                                                                     (Prims.of_int (21))
                                                                     (Prims.of_int (146))
-                                                                    (Prims.of_int (65)))))
+                                                                    (Prims.of_int (84)))))
                                                                     (Obj.magic
-                                                                    (Pulse_Syntax_Printer.st_term_to_string
+                                                                    (FStar_Tactics_Effect.tac_bind
+                                                                    (FStar_Sealed.seal
+                                                                    (Obj.magic
+                                                                    (FStar_Range.mk_range
+                                                                    "Pulse.Checker.fst"
+                                                                    (Prims.of_int (146))
+                                                                    (Prims.of_int (50))
+                                                                    (Prims.of_int (146))
+                                                                    (Prims.of_int (83)))))
+                                                                    (FStar_Sealed.seal
+                                                                    (Obj.magic
+                                                                    (FStar_Range.mk_range
+                                                                    "Pulse.Checker.fst"
+                                                                    (Prims.of_int (146))
+                                                                    (Prims.of_int (29))
+                                                                    (Prims.of_int (146))
+                                                                    (Prims.of_int (84)))))
+                                                                    (Obj.magic
+                                                                    (Pulse_Syntax_Printer.st_term_to_doc
                                                                     t))
+                                                                    (fun
+                                                                    uu___1 ->
+                                                                    FStar_Tactics_Effect.lift_div_tac
+                                                                    (fun
+                                                                    uu___2 ->
+                                                                    FStar_Pprint.render
+                                                                    uu___1))))
                                                                     (fun
                                                                     uu___1 ->
                                                                     FStar_Tactics_Effect.lift_div_tac
