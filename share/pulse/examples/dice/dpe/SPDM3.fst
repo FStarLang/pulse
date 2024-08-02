@@ -195,10 +195,11 @@ let no_sign_resp_state_related_post_conditions
   (c:state)
   (res_state:state) 
   (#b_resp: Seq.seq u8)
-  (#b_req: Seq.seq u8) :slprop =
+  (#b_req: Seq.seq u8) 
+  (res:spdm_measurement_result_t) :slprop =
 
 
-pure ((G_Recv_no_sign_resp? (current_state tr1) /\
+pure (res.status == Success ==> (G_Recv_no_sign_resp? (current_state tr1) /\
 valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
 (G_Recv_no_sign_resp? (current_state tr1) /\
 g_transcript_current_session_grows_by (current_transcript tr0 ) 
@@ -211,6 +212,7 @@ g_transcript_current_session_grows_by (current_transcript tr0 )
 (*only pure slprops are in smt context, no other slprop. This means smt needs additional rewrites to bring in the other slprop context*)
 (*Whenever a vector is passed with explicit permission, ensure to return that vector with the passed in permission*)
 //
+#push-options "--print_implicits"
 
 fn no_sign_resp1
   (ctx:parser_context)
@@ -233,18 +235,23 @@ fn no_sign_resp1
 
             //parser related post-conditions
             parser_post ctx (fst res) #b_resp **
-            (exists* r. (parser_post ctx (fst res) #b_resp).status == Success ==>
-                               valid_resp0 ctx r) ** 
+           
             //state change related post-condition 
             (exists* tr1.
                      spdm_inv c (get_state_data (snd res)).g_trace_ref tr1 **
-                     no_sign_resp_state_related_post_conditions ctx tr0 tr1 c (snd res) #b_resp #b_req)
+                     (*no_sign_resp_state_related_post_conditions ctx tr0 tr1 c (snd res) #b_resp #b_req (fst res)*)
+                     pure ((fst res).status == Success ==> (G_Recv_no_sign_resp? (current_state tr1) /\
+                            valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
+                           (G_Recv_no_sign_resp? (current_state tr1) /\
+                           g_transcript_current_session_grows_by (current_transcript tr0 ) 
+                                      (current_transcript tr1) 
+                                      (Seq.append b_req b_resp))))
 {
   let res = parser0 ctx #p_resp #b_resp;
   match res.status {
     Parse_error -> {
-      rewrite (parser_post ctx res #b_resp) as
-              (pure True);
+      (*rewrite (parser_post ctx res #b_resp) as
+              (pure True);*)
       
       let tr1 = tr0;
       let r = (get_state_data c).g_trace_ref;
@@ -255,15 +262,25 @@ fn no_sign_resp1
         (spdm_inv c ((get_state_data c).g_trace_ref) tr0) as
         (spdm_inv c (get_state_data c).g_trace_ref tr1);
       
+      assert_ (pure (res.status == Success ==> (G_Recv_no_sign_resp? (current_state tr1) /\
+               valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
+              (G_Recv_no_sign_resp? (current_state tr1) /\
+               g_transcript_current_session_grows_by (current_transcript tr0 ) 
+                                      (current_transcript tr1) 
+                                      (Seq.append b_req b_resp))));
       
-
-      (* V.pts_to req b_req **
-         V.pts_to ctx.resp (G.reveal b_resp) **
-         spdm_inv c (get_state_data c).g_trace_ref tr1*)
+      (*Comment*)
+      (*If I write the condition explicitly, assert passes. How can I abstract the above conditions using 
+            no_sign_resp_state_related_post_conditions*)
+      //assert_ (no_sign_resp_state_related_post_conditions ctx tr0 tr1 c c #b_resp #b_req res);
      
+      (*parser_post ctx res #b_resp is rewritten as pure True, then why the assert for parser_post ctx res #b_resp is not holding? *)
+      rewrite (parser_post ctx res #b_resp) as
+              (pure True);
 
-      assume_ (parser_post ctx res #b_resp);
-      admit()//(res,c)
+      //show_proof_state;
+      assert_ (parser_post ctx res #b_resp);
+      (res,c)
     }
     (*spdm_inv c (get_state_data c).g_trace_ref tr0*)
     Signature_verification_error -> {
