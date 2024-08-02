@@ -232,7 +232,7 @@ let session_state_related (s:state) (gs:g_state) : slprop =
   match s, gs with
   | Initialized st, G_Initialized repr ->
     V.pts_to st.signing_pub_key repr.signing_pub_key_repr **
-    V.pts_to st.session_transcript Seq.empty **
+    V.pts_to st.session_transcript repr.transcript **
     pure (st.key_size == repr.key_size_repr)
 
   | Recv_no_sign_resp st, G_Recv_no_sign_resp repr ->

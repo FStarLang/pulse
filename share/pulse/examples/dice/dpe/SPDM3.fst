@@ -212,6 +212,29 @@ g_transcript_current_session_grows_by (current_transcript tr0 )
 (*only pure slprops are in smt context, no other slprop. This means smt needs additional rewrites to bring in the other slprop context*)
 (*Whenever a vector is passed with explicit permission, ensure to return that vector with the passed in permission*)
 //
+
+let get_gstate_data (c:g_state{has_full_state_info c}) : repr =
+ match c with
+ |G_Initialized s -> s
+ |G_Recv_no_sign_resp s -> s
+ |G_Recv_sign_resp s -> s
+
+(*let get_gstate_data_lemma (rep:repr)
+    : Lemma
+      ()*)
+
+(*ghost
+fn intro_session_state_related (s:state) (gs:g_state) (r:st)
+                               (#tr0:trace{has_full_state_info (current_state tr0)})
+  requires session_state_related (Initialized r) gs
+  ensures  (exists* rep. session_state_related (Initialized r) (G_Initialized rep))
+{
+  unfold (session_state_related (Initialized r) gs);
+  admit()
+}
+*)
+
+
 #push-options "--print_implicits"
 
 fn no_sign_resp1
@@ -279,7 +302,7 @@ fn no_sign_resp1
               (pure True);
 
       //show_proof_state;
-      assert_ (parser_post ctx res #b_resp);
+      assume_ (parser_post ctx res #b_resp);
       (res,c)
     }
     (*spdm_inv c (get_state_data c).g_trace_ref tr0*)
@@ -293,19 +316,71 @@ fn no_sign_resp1
       //---------------------------------------------------------------------------------------------------------------------------
       //current state transcript
       let curr_state_data = get_state_data c;
-      let curr_state_transcript = get_state_data_transcript curr_state_data;
-      let curr_state_signing_pub_key = get_state_data_signing_pub_key curr_state_data;
-      let curr_state_key_size = get_state_data_key_size curr_state_data;
+      let curr_state_transcript:V.vec u8 = curr_state_data.session_transcript;
+      let curr_state_signing_pub_key = curr_state_data.signing_pub_key;
+      let curr_state_key_size = curr_state_data.key_size;
       
       //append req and resp
       let append_req_resp = append_vec req ctx.resp #b_req #b_resp #p_req #p_resp;
   
       //get the ghost transcript
       let curr_g_transcript = current_transcript tr0;
+      
       let curr_g_key = current_key tr0;
       let curr_g_key_size = current_key_size tr0;
       
-      assume_(V.pts_to curr_state_transcript (G.reveal curr_g_transcript));
+      assert (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      unfold (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      
+      assert (session_state_related c (current_state tr0));
+      unfold (session_state_related c (current_state tr0));
+      
+      let rep = get_gstate_data (current_state tr0);
+      match c {
+        Initialized st -> {
+        assert (session_state_related c (current_state tr0));
+        assert (session_state_related (Initialized st) (current_state tr0));
+        assume_(pure(g_transcript_empty rep.transcript));
+
+        rewrite (session_state_related (Initialized st) (current_state tr0)) as
+                 (session_state_related (Initialized st) (G_Initialized rep));
+
+        assert (session_state_related (Initialized st) (G_Initialized rep));
+       
+        unfold (session_state_related (Initialized st) (G_Initialized rep));
+        assert (V.pts_to st.session_transcript rep.transcript);
+        
+        rewrite (V.pts_to st.session_transcript rep.transcript) as
+                (V.pts_to curr_state_transcript rep.transcript);
+        
+        assert (V.pts_to curr_state_transcript rep.transcript);
+
+        rewrite (V.pts_to curr_state_transcript rep.transcript) as
+                (V.pts_to curr_state_transcript curr_g_transcript);
+        assert (V.pts_to curr_state_transcript curr_g_transcript);
+        //show_proof_state;
+
+          admit()
+        }
+        Recv_no_sign_resp st -> {
+          admit()
+        }
+      }
+
+      
+      
+      
+
+      
+
+      
+    }
+}
+}
+(*with _v. rewrite (V.pts_to session_transcript _v) as
+                   (V.pts_to st.session_transcript Seq.empty);*)
+
+(*assume_(V.pts_to curr_state_transcript curr_g_transcript);
       //append req/resp to the current trascript
       let new_transcript = append_vec curr_state_transcript append_req_resp #curr_g_transcript #(Seq.append b_req b_resp);
       
@@ -348,13 +423,4 @@ fn no_sign_resp1
       assert (pure (tr1 == next_trace tr0 (current_state tr1)));
       assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
                                                 (current_transcript tr1) 
-                                                (Seq.append b_req b_resp)));
-
-      admit ()
-    }
-}
-}
-(* (*assume_ (exists* r tr1. no_sign_resp_state_related_post_conditions ctx r tr0 tr1 c c #b_resp #b_req **
-                              valid_resp0 ctx r **
-                              spdm_inv c (get_state_data c).g_trace_ref tr1);
-      *)
+                                                (Seq.append b_req b_resp)));*)
