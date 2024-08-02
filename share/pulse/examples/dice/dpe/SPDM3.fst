@@ -207,7 +207,12 @@ g_transcript_current_session_grows_by (current_transcript tr0 )
                                       (current_transcript tr1) 
                                       (Seq.append b_req b_resp))))
 
-
+//
+(*NOTES:*)
+(*When we get an error, expected a function, check whether any of the function has insufficient number of arguments*)
+(*only pure slprops are in smt context, no other slprop. This means smt needs additional rewrites to bring in the other slprop context*)
+(*Whenever a vector is passed with explicit permission, ensure to return that vector with the passed in permission*)
+//
 
 fn no_sign_resp1
   (ctx:parser_context)
@@ -215,7 +220,7 @@ fn no_sign_resp1
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)
   (#tr0:trace{has_full_state_info (current_state tr0)})
-  (#b_resp: Seq.seq u8)
+  (#b_resp: G.erased (Seq.seq u8))
   (#b_req: Seq.seq u8)
   (#p_req : perm)
   (#p_resp:perm)
@@ -233,70 +238,82 @@ fn no_sign_resp1
             //state change related post-condition 
             (exists* r tr1. no_sign_resp_state_related_post_conditions ctx r tr0 tr1 c (snd res) #b_resp #b_req)
 {
-  //current state transcript
-  (*let curr_state_data = get_state_data c;
-  let curr_state_transcript = get_state_data_transcript curr_state_data;
-  let curr_state_signing_pub_key = get_state_data_signing_pub_key curr_state_data;
-  let curr_state_key_size = get_state_data_key_size curr_state_data;
-
-  
-  //append req and resp
-  let append_req_resp = append_vec req resp #b_req #b_resp #p_req #p_resp;
-  
-  //get the ghost transcript
-  let curr_g_transcript = current_transcript tr0;
-  let curr_g_key = current_key tr0;
-  let curr_g_key_size = current_key_size tr0;
-  //unfold (spdm_inv c trace_ref tr0);
-  
-  //unfold (session_state_related c (current_state tr0));
-
-  assume_(V.pts_to curr_state_transcript (G.reveal curr_g_transcript));
-  //append req/resp to the current trascript
-  let new_transcript = append_vec curr_state_transcript append_req_resp #curr_g_transcript #(Seq.append b_req b_resp);
-  let new_g_transcript = g_append curr_g_transcript (Seq.append b_req b_resp);
-  //create a new state data record with the new transcript
-  assume_ (pure (V.length curr_state_signing_pub_key == u32_v curr_state_key_size));
-
-  let new_st = {key_size = curr_state_key_size; signing_pub_key = curr_state_signing_pub_key; session_transcript = new_transcript };
-  
-  ////creation of the ghost session data storage
-  let repr = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
-
-  //Do the state change
-  let new_state = (Recv_no_sign_resp new_st);
-  
-  assume_ (pure (g_transcript_non_empty repr.transcript));
-  assume_ (pure (valid_transition tr0 (G_Recv_no_sign_resp repr)));
-  let tr1 = next_trace tr0 (G_Recv_no_sign_resp repr);
-  
-  assert (pure (G_Recv_no_sign_resp? (current_state tr1)));
-  assert (pure (valid_transition tr0 (current_state tr1)));
-  assert (pure (tr1 == next_trace tr0 (current_state tr1)));
-  assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
-                                                (current_transcript tr1) 
-                                                (Seq.append b_req b_resp)));
-  //Call parser to parse and get the measurement blocks.
-
-  let parser_res = parser req_param1 req_param2 resp_size m_spec req_context resp;
-
-  let parser_res_result = parser_res.status;
-  let parser_res_measurement_block_count = parser_res.measurement_block_count;
-  let parser_res_measurement_block_vector = parser_res.measurement_block_vector;
-  match parser_res_result {
+  let res = parser0 ctx #p_resp #b_resp;
+  match res.status {
     Parse_error -> {
+      rewrite (parser_post ctx res #b_resp) as
+              (pure True);
       
-      admit() //(parser_res,new_state)
+      admit()//(res,c)
     }
     Signature_verification_error -> {
-     
-      admit()//unreachable ()
+      rewrite (parser_post ctx res #b_resp) as
+              (pure False);
+      unreachable ()
     }
     Success -> {
-      admit()
-    }
+      //Grow the transcript
+      //---------------------------------------------------------------------------------------------------------------------------
+      //current state transcript
+      let curr_state_data = get_state_data c;
+      let curr_state_transcript = get_state_data_transcript curr_state_data;
+      let curr_state_signing_pub_key = get_state_data_signing_pub_key curr_state_data;
+      let curr_state_key_size = get_state_data_key_size curr_state_data;
+      
+      //append req and resp
+      let append_req_resp = append_vec req ctx.resp #b_req #b_resp #p_req #p_resp;
   
-  }*)
-  admit()
-}
+      //get the ghost transcript
+      let curr_g_transcript = current_transcript tr0;
+      let curr_g_key = current_key tr0;
+      let curr_g_key_size = current_key_size tr0;
+      
+      assume_(V.pts_to curr_state_transcript (G.reveal curr_g_transcript));
+      //append req/resp to the current trascript
+      let new_transcript = append_vec curr_state_transcript append_req_resp #curr_g_transcript #(Seq.append b_req b_resp);
+      
+      let new_g_transcript = g_append curr_g_transcript (Seq.append b_req b_resp);
+      //create a new state data record with the new transcript
+      assume_ (pure (V.length curr_state_signing_pub_key == u32_v curr_state_key_size));
+      
+      //creation of the ghost session data storage
+      let repr = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
+      
+      assume_ (pure(g_transcript_non_empty repr.transcript));
+      assume_ (pure (valid_transition tr0 (G_Recv_no_sign_resp repr)));
+      
+      
+      //Trace ref creation-----------------------------------------------------------------------------------------------------------
+      //creation of the trace
+      let trace = next_trace tr0 (G_Recv_no_sign_resp repr);
+      
+      //creation of the ghost trace ref
+      let r = ghost_alloc #_ #trace_pcm (pcm_elt 1.0R trace);
+      
+      //New state data record creation
+      //----------------------------------------------------------------------------------------------------------------------------
+      let new_st = {key_size = curr_state_key_size; 
+                    signing_pub_key = curr_state_signing_pub_key; 
+                    session_transcript = new_transcript;
+                    g_trace_ref = r};
 
+      //Do the state change---------------------------------------------------------------------------------------------------------
+      let new_state = (Recv_no_sign_resp new_st);
+  
+      assume_ (pure (g_transcript_non_empty repr.transcript));
+      assume_ (pure (valid_transition tr0 (G_Recv_no_sign_resp repr)));
+      
+      //new trace----------------------------------------------------------------------------------------------------------------
+      let tr1 = next_trace tr0 (G_Recv_no_sign_resp repr);
+  
+      assert (pure (G_Recv_no_sign_resp? (current_state tr1)));
+      assert (pure (valid_transition tr0 (current_state tr1)));
+      assert (pure (tr1 == next_trace tr0 (current_state tr1)));
+      assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
+                                                (current_transcript tr1) 
+                                                (Seq.append b_req b_resp)));
+
+      admit ()
+    }
+}
+}
