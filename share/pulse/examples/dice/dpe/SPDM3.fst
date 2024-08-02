@@ -190,22 +190,20 @@ ensures V.pts_to ctx.resp #p b_resp **
 
 let no_sign_resp_state_related_post_conditions 
   (ctx:parser_context)
-  (r:resp_repr ctx)
   (tr0:trace)
   (tr1:trace)
   (c:state)
   (res_state:state) 
   (#b_resp: Seq.seq u8)
-  (#b_req: Seq.seq u8) =
-valid_resp0 ctx r **
-spdm_inv c (get_state_data res_state).g_trace_ref tr1 **
+  (#b_req: Seq.seq u8) :slprop =
 
-(pure ((G_Recv_no_sign_resp? (current_state tr1) /\
+
+pure ((G_Recv_no_sign_resp? (current_state tr1) /\
 valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
 (G_Recv_no_sign_resp? (current_state tr1) /\
 g_transcript_current_session_grows_by (current_transcript tr0 ) 
                                       (current_transcript tr1) 
-                                      (Seq.append b_req b_resp))))
+                                      (Seq.append b_req b_resp)))
 
 //
 (*NOTES:*)
@@ -235,8 +233,12 @@ fn no_sign_resp1
 
             //parser related post-conditions
             parser_post ctx (fst res) #b_resp **
+            (exists* r. (parser_post ctx (fst res) #b_resp).status == Success ==>
+                               valid_resp0 ctx r) ** 
             //state change related post-condition 
-            (exists* r tr1. no_sign_resp_state_related_post_conditions ctx r tr0 tr1 c (snd res) #b_resp #b_req)
+            (exists* tr1.
+                     spdm_inv c (get_state_data (snd res)).g_trace_ref tr1 **
+                     no_sign_resp_state_related_post_conditions ctx tr0 tr1 c (snd res) #b_resp #b_req)
 {
   let res = parser0 ctx #p_resp #b_resp;
   match res.status {
@@ -244,8 +246,26 @@ fn no_sign_resp1
       rewrite (parser_post ctx res #b_resp) as
               (pure True);
       
+      let tr1 = tr0;
+      let r = (get_state_data c).g_trace_ref;
+      assert (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      assert (spdm_inv c (get_state_data c).g_trace_ref tr1);
+
+      rewrite 
+        (spdm_inv c ((get_state_data c).g_trace_ref) tr0) as
+        (spdm_inv c (get_state_data c).g_trace_ref tr1);
+      
+      
+
+      (* V.pts_to req b_req **
+         V.pts_to ctx.resp (G.reveal b_resp) **
+         spdm_inv c (get_state_data c).g_trace_ref tr1*)
+     
+
+      assume_ (parser_post ctx res #b_resp);
       admit()//(res,c)
     }
+    (*spdm_inv c (get_state_data c).g_trace_ref tr0*)
     Signature_verification_error -> {
       rewrite (parser_post ctx res #b_resp) as
               (pure False);
@@ -317,3 +337,7 @@ fn no_sign_resp1
     }
 }
 }
+(* (*assume_ (exists* r tr1. no_sign_resp_state_related_post_conditions ctx r tr0 tr1 c c #b_resp #b_req **
+                              valid_resp0 ctx r **
+                              spdm_inv c (get_state_data c).g_trace_ref tr1);
+      *)
