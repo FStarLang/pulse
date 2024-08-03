@@ -219,20 +219,34 @@ let get_gstate_data (c:g_state{has_full_state_info c}) : repr =
  |G_Recv_no_sign_resp s -> s
  |G_Recv_sign_resp s -> s
 
-(*let get_gstate_data_lemma (rep:repr)
-    : Lemma
-      ()*)
+let session_state_tag_related (s:state) (gs:g_state) : GTot bool =
+  match s, gs with
+   | Initialized st, G_Initialized repr
+   
+   | Recv_no_sign_resp st, G_Recv_no_sign_resp repr ->
+    true
+   
+   | _ -> false
 
-(*ghost
-fn intro_session_state_related (s:state) (gs:g_state) (r:st)
-                               (#tr0:trace{has_full_state_info (current_state tr0)})
-  requires session_state_related (Initialized r) gs
-  ensures  (exists* rep. session_state_related (Initialized r) (G_Initialized rep))
+ghost
+fn intro_session_state_tag_related (s:state) (gs:g_state)
+  requires session_state_related s gs
+  ensures session_state_related s gs **
+          pure (session_state_tag_related s gs)
 {
-  unfold (session_state_related (Initialized r) gs);
-  admit()
+  let b = session_state_tag_related s gs;
+  if b {
+    ()
+  } else {
+    rewrite (session_state_related s gs) as
+            (pure False);
+    unreachable ()
+  }
 }
-*)
+
+
+(* assume_ (pure (G_Initialized? (current_state tr0)));
+  assert (pure(g_transcript_empty rep.transcript));*)
 
 
 #push-options "--print_implicits"
@@ -340,8 +354,8 @@ fn no_sign_resp1
         Initialized st -> {
         assert (session_state_related c (current_state tr0));
         assert (session_state_related (Initialized st) (current_state tr0));
-        assume_(pure(g_transcript_empty rep.transcript));
 
+        intro_session_state_tag_related (Initialized st) (current_state tr0);
         rewrite (session_state_related (Initialized st) (current_state tr0)) as
                  (session_state_related (Initialized st) (G_Initialized rep));
 
@@ -377,6 +391,7 @@ fn no_sign_resp1
     }
 }
 }
+
 (*with _v. rewrite (V.pts_to session_transcript _v) as
                    (V.pts_to st.session_transcript Seq.empty);*)
 
@@ -424,3 +439,5 @@ fn no_sign_resp1
       assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
                                                 (current_transcript tr1) 
                                                 (Seq.append b_req b_resp)));*)
+
+  
