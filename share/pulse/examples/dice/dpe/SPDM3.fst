@@ -244,6 +244,11 @@ fn intro_session_state_tag_related (s:state) (gs:g_state)
   }
 }
 
+let g_append_lemma (t0:g_transcript) (s:Seq.seq u8{Seq.length s > 0}) 
+    : Lemma
+      (ensures Seq.length (g_append t0 s) > 0) =
+()
+
 
 (* assume_ (pure (G_Initialized? (current_state tr0)));
   assert (pure(g_transcript_empty rep.transcript));*)
@@ -257,8 +262,8 @@ fn no_sign_resp1
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)
   (#tr0:trace{has_full_state_info (current_state tr0)})
-  (#b_resp: G.erased (Seq.seq u8))
-  (#b_req: Seq.seq u8)
+  (#b_resp: G.erased (Seq.seq u8){Seq.length b_resp > 0})
+  (#b_req: G.erased (Seq.seq u8){Seq.length b_req > 0})
   (#p_req : perm)
   (#p_resp:perm)
    requires (V.pts_to req #p_req b_req **
@@ -372,9 +377,51 @@ fn no_sign_resp1
         rewrite (V.pts_to curr_state_transcript rep.transcript) as
                 (V.pts_to curr_state_transcript curr_g_transcript);
         assert (V.pts_to curr_state_transcript curr_g_transcript);
-        //show_proof_state;
+        
+        //append req/resp to the current trascript
+        let new_transcript = append_vec curr_state_transcript append_req_resp #curr_g_transcript #(Seq.append b_req b_resp);
+        
+        let new_g_transcript = g_append curr_g_transcript (Seq.append b_req b_resp);
+       
+       //create a new state data record with the new transcript
+        assert_ (pure (V.length curr_state_signing_pub_key == u32_v curr_state_key_size));
+        
+        //creation of the ghost session data storage
+        let rep_new = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
+        
+        assert_ (pure(g_transcript_non_empty rep_new.transcript));
+        assert_ (pure (valid_transition tr0 (G_Recv_no_sign_resp rep_new)));
 
-          admit()
+        //Trace ref creation-----------------------------------------------------------------------------------------------------------
+        //creation of the trace
+        let trace = next_trace tr0 (G_Recv_no_sign_resp rep_new);
+        
+        //creation of the ghost trace ref
+        let r = ghost_alloc #_ #trace_pcm (pcm_elt 1.0R trace);
+      
+        //New state data record creation
+        //----------------------------------------------------------------------------------------------------------------------------
+        let new_st = {key_size = curr_state_key_size; 
+                    signing_pub_key = curr_state_signing_pub_key; 
+                    session_transcript = new_transcript;
+                    g_trace_ref = r};
+        
+        //Do the state change---------------------------------------------------------------------------------------------------------
+        let new_state = (Recv_no_sign_resp new_st);
+  
+        assert_ (pure (g_transcript_non_empty rep_new.transcript));
+        assert_ (pure (valid_transition tr0 (G_Recv_no_sign_resp rep_new)));
+        
+        //new trace----------------------------------------------------------------------------------------------------------------
+        let tr1 = next_trace tr0 (G_Recv_no_sign_resp rep_new);
+  
+        assert (pure (G_Recv_no_sign_resp? (current_state tr1)));
+        assert (pure (valid_transition tr0 (current_state tr1)));
+        assert (pure (tr1 == next_trace tr0 (current_state tr1)));
+        assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
+                                                (current_transcript tr1) 
+                                                (Seq.append b_req b_resp)));
+        admit()
         }
         Recv_no_sign_resp st -> {
           admit()
