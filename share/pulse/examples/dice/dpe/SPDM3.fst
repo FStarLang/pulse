@@ -458,6 +458,7 @@ fn no_sign_resp1
         rewrite (V.pts_to new_transcript new_g_transcript) as
                 (V.pts_to new_st.session_transcript rep_new.transcript);
         
+       
         assert_ (V.pts_to new_st.session_transcript rep_new.transcript);
         //assert_ (V.pts_to new_st.signing_pub_key rep_new.signing_pub_key_repr);
         assert_ (V.pts_to st.signing_pub_key rep.signing_pub_key_repr);
@@ -524,6 +525,39 @@ fn no_sign_resp1
                                       (current_transcript tr1) 
                                       (Seq.append b_req b_resp)))));
         
+        
+        assert_ (V.pts_to curr_state_transcript curr_g_transcript);
+
+        assert_ (pure (curr_state_transcript == (get_state_data c).session_transcript));
+        rewrite (V.pts_to curr_state_transcript curr_g_transcript) as
+                (V.pts_to ((get_state_data c).session_transcript) curr_g_transcript);
+        
+        assert (pure (curr_g_transcript == current_transcript tr0));
+
+        rewrite (V.pts_to ((get_state_data c).session_transcript) curr_g_transcript) as
+                (V.pts_to ((get_state_data c).session_transcript) (current_transcript tr0));
+        
+        assert_ (V.pts_to ((get_state_data c).session_transcript) (current_transcript tr0));
+        
+        assert_ (pure ((get_gstate_data (current_state tr0)).transcript == (current_transcript tr0)));
+
+        rewrite (V.pts_to ((get_state_data c).session_transcript) (current_transcript tr0)) as
+                (V.pts_to ((get_state_data c).session_transcript) ((get_gstate_data (current_state tr0)).transcript));
+        
+        assert_ (V.pts_to ((get_state_data c).session_transcript) ((get_gstate_data (current_state tr0)).transcript));
+        
+        assert_ (pure (st == get_state_data c));
+
+        rewrite (V.pts_to ((get_state_data c).session_transcript) ((get_gstate_data (current_state tr0)).transcript)) as
+                (V.pts_to (st.session_transcript) ((get_gstate_data (current_state tr0)).transcript));
+
+        assert_ (pure ((get_gstate_data (current_state tr0)) == rep));
+        
+        rewrite (V.pts_to (st.session_transcript) ((get_gstate_data (current_state tr0)).transcript)) as
+                (V.pts_to (st.session_transcript) (rep.transcript));
+        
+        
+        //fold (session_state_related (Initialized st) (G_Initialized rep));
         admit()
 
         (*All post conditions are proved, figuring out how to free these resources*)
@@ -534,6 +568,18 @@ fn no_sign_resp1
                 C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some 1.0R,tr0)
               
               - Did you forget to free these resources?*)
+
+          (*syatem level formal verification analogy
+             - deassembling and reassebling with changes.
+               concrete memory is deassembled, make the changes that the system need, assemble back.
+               For a physical system, if the making of changes and reassembling is not correct, we can
+               be in a "extra nuts or bolts or extra componenets kind of situation!"
+               similar to that in SL, extra dangling condtions after the required postcondition is met means
+               the making changes and folding it back is not correct. 
+               While in real physical component assembling, we can see the extra components (that are once part of the system) 
+               that does not fit in with the new whole system, without formal verification, we cannot see, the
+               extra conditions that are not folding back into the system. Therefore, without formal verification,
+               such extra conditions remains, which is indicative of an incorrect reassembling. *)
           //fin
         }
         
