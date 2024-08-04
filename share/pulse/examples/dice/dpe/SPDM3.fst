@@ -541,34 +541,7 @@ fn no_sign_resp1
           admit()
         }
       }
-
-(*
-  Current context:
-   
-    C.ghost_pcm_pts_to r (pcm_elt 1.0R tr1) **
-    
-    C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some 1.0R, tr0) **
-    
-    V.pts_to req b_req) **
-    
-    V.pts_to curr_state_transcript curr_g_transcript) **
-    
-    V.pts_to append_req_resp (Seq.Base.append b_req b_resp) **
-    V.pts_to ctx.resp b_resp) **
-    
-    parser_post ctx res #b_resp **
-    session_state_related (Recv_no_sign_resp new_st) (G_Recv_no_sign_resp rep_new)
-
-*)
-      
-(*let spdm_inv (s:state) (r:gref) (t:trace) : slprop =
-  ghost_pcm_pts_to r (Some 1.0R, t) **
-  session_state_related s (current_state t)*)
-
-      
-
-      
-    }
+}
 }
 }
 
