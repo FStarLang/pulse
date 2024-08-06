@@ -64,6 +64,8 @@ fn init0 (key_size:u32) (signing_pub_key:V.vec u8 { V.length signing_pub_key == 
   //creation of the ghost trace ref
   let r = ghost_alloc #_ #trace_pcm (pcm_elt 1.0R trace);
 
+
+
   //creation of the session data storage
   let st = { key_size; signing_pub_key; session_transcript;g_trace_ref = r };
   
@@ -155,6 +157,9 @@ let get_state_data_key_size (s_data:st) : u32 = s_data.key_size
 
 //We have taken permissions on v1 and v2 and if we are not returning v1 nad v2, then the client losts this permission and then
 //the client will not be able to deallocate v1 and v2. Read permissions.
+
+
+
 fn append_vec
   (#a:Type0)
   (v1: V.vec a)
@@ -170,7 +175,8 @@ fn append_vec
   returns v:V.vec a
   ensures V.pts_to v (Seq.append v1_seq v2_seq) **
           V.pts_to v1 #p1 v1_seq **
-          V.pts_to v2 #p2 v2_seq
+          V.pts_to v2 #p2 v2_seq **
+          pure (V.is_full_vec v)
   {
     admit()
   }      
@@ -252,9 +258,36 @@ let g_append_lemma (t0:g_transcript) (s:Seq.seq u8{Seq.length s > 0})
 
 (* assume_ (pure (G_Initialized? (current_state tr0)));
   assert (pure(g_transcript_empty rep.transcript));*)
+noextract
+let full (t0:trace) = Some #perm 1.0R, t0
+
+noextract
+let half (t0:trace) = Some #perm 0.5R, t0
 
 
 #push-options "--print_implicits"
+
+ghost
+fn extend_trace (gr: gref) (tr0: trace) (gs:g_state{valid_transition tr0 gs})
+  requires C.ghost_pcm_pts_to gr (Some #perm 1.0R, tr0)
+  ensures  C.ghost_pcm_pts_to gr (Some #perm 1.0R, next_trace tr0 gs)
+  {
+     ghost_write 
+      gr
+      (Some #perm 1.0R, tr0)
+      (Some #perm 1.0R, (next_trace tr0 gs))
+      (mk_frame_preserving_upd tr0 gs)
+     
+  }
+
+
+(*noextract
+let mk_frame_preserving_upd
+  (t:trace)
+  (s:g_state { valid_transition t s})
+  : FStar.PCM.frame_preserving_upd trace_pcm (Some 1.0R, t) (Some 1.0R, next_trace t s) =
+  fun _ -> Some 1.0R, next_trace t s*)
+
 
 fn no_sign_resp1
   (ctx:parser_context)
@@ -394,14 +427,17 @@ fn no_sign_resp1
                                                 (Seq.append b_req b_resp)));
         
         //creation of the ghost trace ref
-        let r = ghost_alloc #_ #trace_pcm (pcm_elt 1.0R tr1);
-      
+        //let r = ghost_alloc #_ #trace_pcm (pcm_elt 1.0R tr1);
+        extend_trace ((get_state_data (Initialized st)).g_trace_ref) tr0 ((G_Recv_no_sign_resp rep_new)); 
+        
+        
+
         //New state data record creation
         //----------------------------------------------------------------------------------------------------------------------------
         let new_st = {key_size = curr_state_key_size; 
                     signing_pub_key = curr_state_signing_pub_key; 
                     session_transcript = new_transcript;
-                    g_trace_ref = r};
+                    g_trace_ref = curr_state_data.g_trace_ref(*r*)};
         
         //Do the state change---------------------------------------------------------------------------------------------------------
         let new_state = (Recv_no_sign_resp new_st);
@@ -461,7 +497,14 @@ fn no_sign_resp1
                                       (Seq.append b_req b_resp)))));
         
         
-        admit()
+        //assume_ (pure(V.is_full_vec curr_state_transcript));
+        V.free curr_state_transcript;
+
+        //assume_ (pure(V.is_full_vec append_req_resp));
+        V.free append_req_resp;
+
+        
+        
 
         (*All post conditions are proved, figuring out how to free these resources*)
         (*Error in proving postcondition
@@ -471,7 +514,7 @@ fn no_sign_resp1
                 C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some 1.0R,tr0)
               
               - Did you forget to free these resources?*)
-          //fin
+         fin
         }
         
         Recv_no_sign_resp st -> {
@@ -481,3 +524,7 @@ fn no_sign_resp1
 }
 }
 }
+
+//finish this proof first
+//in the next iteration, better odular restucture, say a module called transcript with an interface
+//the interface looks something like....

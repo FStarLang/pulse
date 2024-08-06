@@ -206,11 +206,29 @@ noextract
 let emp_trace_pcm  (p:perm) (t:trace) : GTot pcm_t =
    (None, emp_trace)
 
+//
+// A frame preserving update in the trace PCM,
+//   given a valid transition
+//
+noextract
+let mk_frame_preserving_upd
+  (t:trace)
+  (s:g_state { valid_transition t s})
+  : FStar.PCM.frame_preserving_upd trace_pcm (Some 1.0R, t) (Some 1.0R, next_trace t s) =
+  fun _ -> Some 1.0R, next_trace t s
+
+
+//The vector append or vector reallocation issues can be resolved if we can keep the transcript as a hash
+//The req message should be hashed with the digset context
+//The resp message - signature field should be hashed with the digest context
+//session_transcript is a fixed length buffer to hold the hash
+//The length of the session_trasncript is determined by the hash algorithm.
+
 noeq
 type st = {
   key_size : u32;
   signing_pub_key : v:V.vec u8 { V.length v == U32.v key_size };
-  session_transcript : V.vec u8;
+  session_transcript : v:V.vec u8{V.is_full_vec v};
   g_trace_ref:gref
 }
 
