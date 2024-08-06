@@ -348,50 +348,40 @@ fn no_sign_resp1
       let curr_g_key = current_key tr0;
       let curr_g_key_size = current_key_size tr0;
       
-      assert (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      //assert (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
       unfold (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
       
-      assert (session_state_related c (current_state tr0));
+      //assert (session_state_related c (current_state tr0));
       unfold (session_state_related c (current_state tr0));
       
       let rep = get_gstate_data (current_state tr0);
       match c {
         Initialized st -> {
-        assert (session_state_related c (current_state tr0));
-        assert (session_state_related (Initialized st) (current_state tr0));
-
+        
         intro_session_state_tag_related (Initialized st) (current_state tr0);
         rewrite (session_state_related (Initialized st) (current_state tr0)) as
                  (session_state_related (Initialized st) (G_Initialized rep));
 
-        assert (session_state_related (Initialized st) (G_Initialized rep));
-       
+        
         unfold (session_state_related (Initialized st) (G_Initialized rep));
-        assert (V.pts_to st.session_transcript rep.transcript);
+        
         
         rewrite (V.pts_to st.session_transcript rep.transcript) as
                 (V.pts_to curr_state_transcript rep.transcript);
         
-        assert (V.pts_to curr_state_transcript rep.transcript);
+        
 
         rewrite (V.pts_to curr_state_transcript rep.transcript) as
                 (V.pts_to curr_state_transcript curr_g_transcript);
-        assert (V.pts_to curr_state_transcript curr_g_transcript);
         
-        //append req/resp to the current trascript
         let new_transcript = append_vec curr_state_transcript append_req_resp #curr_g_transcript #(Seq.append b_req b_resp);
         
         let new_g_transcript = g_append curr_g_transcript (Seq.append b_req b_resp);
        
        //create a new state data record with the new transcript
-        assert_ (pure (V.length curr_state_signing_pub_key == u32_v curr_state_key_size));
-        
-        //creation of the ghost session data storage
+       //creation of the ghost session data storage
         let rep_new = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
         
-        assert_ (pure(g_transcript_non_empty rep_new.transcript));
-        assert_ (pure (valid_transition tr0 (G_Recv_no_sign_resp rep_new)));
-
         //Trace ref creation-----------------------------------------------------------------------------------------------------------
         //creation of the trace
         //let trace = next_trace tr0 (G_Recv_no_sign_resp rep_new);
@@ -399,9 +389,6 @@ fn no_sign_resp1
          //new trace----------------------------------------------------------------------------------------------------------------
         let tr1 = next_trace tr0 (G_Recv_no_sign_resp rep_new);
   
-        assert (pure (G_Recv_no_sign_resp? (current_state tr1)));
-        assert (pure (valid_transition tr0 (current_state tr1)));
-        assert (pure (tr1 == next_trace tr0 (current_state tr1)));
         assert (pure(g_transcript_current_session_grows_by (current_transcript tr0 ) 
                                                 (current_transcript tr1) 
                                                 (Seq.append b_req b_resp)));
@@ -418,14 +405,6 @@ fn no_sign_resp1
         
         //Do the state change---------------------------------------------------------------------------------------------------------
         let new_state = (Recv_no_sign_resp new_st);
-  
-        assert_ (pure (g_transcript_non_empty rep_new.transcript));
-        assert_ (pure (valid_transition tr0 (G_Recv_no_sign_resp rep_new)));
-        
-        assert_ (V.pts_to req #p_req b_req);
-        assert_ (V.pts_to ctx.resp #p_resp b_resp);
-
-        assert_ (parser_post ctx res #b_resp);
         
         assert_ (pure (res.status == Success ==> (G_Recv_no_sign_resp? (current_state tr1) /\
                             valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
@@ -435,41 +414,11 @@ fn no_sign_resp1
                                       (Seq.append b_req b_resp))));
         
         
-        //assert_ (session_state_related (Recv_no_sign_resp new_st) (G_Recv_no_sign_resp rep_new));
-        assert (pure (new_st.key_size == rep_new.key_size_repr));
-        
-        //assert (V.pts_to new_st.session_transcript rep_new.transcript);
-        assert_ (V.pts_to curr_state_transcript curr_g_transcript);
-        assert_ (V.pts_to new_transcript (Seq.Base.append curr_g_transcript (Seq.Base.append b_req b_resp)));
-        
-        assert_ (pure(new_g_transcript == g_append curr_g_transcript (Seq.append b_req b_resp)));
-
-        assert_ (pure(new_g_transcript == (Seq.Base.append curr_g_transcript (Seq.Base.append b_req b_resp))));
-        
         with _v. rewrite (V.pts_to new_transcript _v) as
                          (V.pts_to new_transcript new_g_transcript);
 
-        assert_ (V.pts_to new_transcript new_g_transcript);
-
-        assert_ (pure (new_st.session_transcript == new_transcript));
-
-        assert_ (pure (new_g_transcript == rep_new.transcript));
-
         rewrite (V.pts_to new_transcript new_g_transcript) as
                 (V.pts_to new_st.session_transcript rep_new.transcript);
-        
-       
-        assert_ (V.pts_to new_st.session_transcript rep_new.transcript);
-        //assert_ (V.pts_to new_st.signing_pub_key rep_new.signing_pub_key_repr);
-        assert_ (V.pts_to st.signing_pub_key rep.signing_pub_key_repr);
-
-        assert_ (pure (st.signing_pub_key == new_st.signing_pub_key));
-
-        assert_ (pure (rep.signing_pub_key_repr == rep_new.signing_pub_key_repr));
-        
-        assert_ (pure (new_st.signing_pub_key == curr_state_signing_pub_key));
-
-        assert_ (pure (curr_g_key == rep_new.signing_pub_key_repr));
         
         rewrite (V.pts_to st.signing_pub_key rep.signing_pub_key_repr) as
                 (V.pts_to curr_state_signing_pub_key rep.signing_pub_key_repr);
@@ -480,29 +429,15 @@ fn no_sign_resp1
         rewrite (V.pts_to curr_state_signing_pub_key curr_g_key) as
                 (V.pts_to new_st.signing_pub_key rep_new.signing_pub_key_repr);
         
-        assert_  (V.pts_to new_st.signing_pub_key rep_new.signing_pub_key_repr);
-        assert_  (V.pts_to new_st.session_transcript rep_new.transcript);
-        assert_  (pure (new_st.key_size == rep_new.key_size_repr));
-
         assert_ ( V.pts_to new_st.signing_pub_key rep_new.signing_pub_key_repr **
                   V.pts_to new_st.session_transcript rep_new.transcript **
                   pure (new_st.key_size == rep_new.key_size_repr));
         
         fold (session_state_related (Recv_no_sign_resp new_st) (G_Recv_no_sign_resp rep_new));
         
-        assert_ (session_state_related (Recv_no_sign_resp new_st) (G_Recv_no_sign_resp rep_new)); 
-        
-        //fold (spdm_inv (Recv_no_sign_resp new_st) (get_state_data (Recv_no_sign_resp new_st)).g_trace_ref tr1);
-        
-        assert_ (C.ghost_pcm_pts_to r (pcm_elt 1.0R tr1));
-
-        assert_ (pure (r == (get_state_data (Recv_no_sign_resp new_st)).g_trace_ref));
-
         with _v. rewrite (C.ghost_pcm_pts_to #trace_pcm_t #trace_pcm _v (pcm_elt 1.0R tr1)) as
                          (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp new_st)).g_trace_ref (pcm_elt 1.0R tr1));
         
-        
-        assert_ (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp new_st)).g_trace_ref (pcm_elt 1.0R tr1));
         
         fold (spdm_inv (Recv_no_sign_resp new_st) (get_state_data (Recv_no_sign_resp new_st)).g_trace_ref tr1);
         
@@ -526,38 +461,6 @@ fn no_sign_resp1
                                       (Seq.append b_req b_resp)))));
         
         
-        assert_ (V.pts_to curr_state_transcript curr_g_transcript);
-
-        assert_ (pure (curr_state_transcript == (get_state_data c).session_transcript));
-        rewrite (V.pts_to curr_state_transcript curr_g_transcript) as
-                (V.pts_to ((get_state_data c).session_transcript) curr_g_transcript);
-        
-        assert (pure (curr_g_transcript == current_transcript tr0));
-
-        rewrite (V.pts_to ((get_state_data c).session_transcript) curr_g_transcript) as
-                (V.pts_to ((get_state_data c).session_transcript) (current_transcript tr0));
-        
-        assert_ (V.pts_to ((get_state_data c).session_transcript) (current_transcript tr0));
-        
-        assert_ (pure ((get_gstate_data (current_state tr0)).transcript == (current_transcript tr0)));
-
-        rewrite (V.pts_to ((get_state_data c).session_transcript) (current_transcript tr0)) as
-                (V.pts_to ((get_state_data c).session_transcript) ((get_gstate_data (current_state tr0)).transcript));
-        
-        assert_ (V.pts_to ((get_state_data c).session_transcript) ((get_gstate_data (current_state tr0)).transcript));
-        
-        assert_ (pure (st == get_state_data c));
-
-        rewrite (V.pts_to ((get_state_data c).session_transcript) ((get_gstate_data (current_state tr0)).transcript)) as
-                (V.pts_to (st.session_transcript) ((get_gstate_data (current_state tr0)).transcript));
-
-        assert_ (pure ((get_gstate_data (current_state tr0)) == rep));
-        
-        rewrite (V.pts_to (st.session_transcript) ((get_gstate_data (current_state tr0)).transcript)) as
-                (V.pts_to (st.session_transcript) (rep.transcript));
-        
-        
-        //fold (session_state_related (Initialized st) (G_Initialized rep));
         admit()
 
         (*All post conditions are proved, figuring out how to free these resources*)
@@ -568,18 +471,6 @@ fn no_sign_resp1
                 C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some 1.0R,tr0)
               
               - Did you forget to free these resources?*)
-
-          (*syatem level formal verification analogy
-             - deassembling and reassebling with changes.
-               concrete memory is deassembled, make the changes that the system need, assemble back.
-               For a physical system, if the making of changes and reassembling is not correct, we can
-               be in a "extra nuts or bolts or extra componenets kind of situation!"
-               similar to that in SL, extra dangling condtions after the required postcondition is met means
-               the making changes and folding it back is not correct. 
-               While in real physical component assembling, we can see the extra components (that are once part of the system) 
-               that does not fit in with the new whole system, without formal verification, we cannot see, the
-               extra conditions that are not folding back into the system. Therefore, without formal verification,
-               such extra conditions remains, which is indicative of an incorrect reassembling. *)
           //fin
         }
         
@@ -590,4 +481,3 @@ fn no_sign_resp1
 }
 }
 }
-
