@@ -200,10 +200,10 @@ fn write_req_resp_to_transcript
            V.pts_to v_resp #p2 s_resp **
            V.pts_to v_tx s_tx
   returns b:bool
-  ensures V.pts_to v_tx (Seq.append (Seq.append s_tx s_req) s_resp) **
+  ensures V.pts_to v_tx (if b then Seq.append (Seq.append s_tx s_req) s_resp else s_tx) **
           V.pts_to v_req #p1 s_req **
-          V.pts_to v_resp #p2 s_resp **
-          pure (V.is_full_vec v_tx)
+          V.pts_to v_resp #p2 s_resp (***
+          pure (V.is_full_vec v_tx)*)
   {
     let rem_size = U32.sub (U32.uint_to_t max_transcript_message_buffer_size) tx_size;
 
@@ -218,6 +218,8 @@ fn write_req_resp_to_transcript
     }
     else
     {
+      
+      //split v_tx 
       admit()
     }
   }    
@@ -293,10 +295,10 @@ fn intro_session_state_tag_related (s:state) (gs:g_state)
   }
 }
 
-let g_append_lemma (t0:g_transcript) (s:Seq.seq u8{Seq.length s > 0}) 
+(*let g_append_lemma (t0:g_transcript) (s:Seq.seq u8{Seq.length s > 0}) 
     : Lemma
       (ensures Seq.length (g_append t0 s) > 0) =
-()
+()*)
 
 
 (* assume_ (pure (G_Initialized? (current_state tr0)));
@@ -393,11 +395,13 @@ fn no_sign_resp1
       //assert_ (no_sign_resp_state_related_post_conditions ctx tr0 tr1 c c #b_resp #b_req res);
      
       (*parser_post ctx res #b_resp is rewritten as pure True, then why the assert for parser_post ctx res #b_resp is not holding? *)
-      rewrite (parser_post ctx res #b_resp) as
-              (pure True);
+      (*rewrite (parser_post ctx res #b_resp) as
+              (pure True);*)
 
+      // rewrite  (pure True) as
+      //           (parser_post ctx res #b_resp);
       //show_proof_state;
-      assume_ (parser_post ctx res #b_resp);
+      //assume_ (parser_post ctx res #b_resp);
       (res,c)
     }
     (*spdm_inv c (get_state_data c).g_trace_ref tr0*)
@@ -578,7 +582,7 @@ fn no_sign_resp1
 
           assert_ (pure(Seq.length rep.transcript < Seq.length rep_new.transcript));
 
-          assume_ (pure(rep.transcript == Seq.slice rep_new.transcript 0 (Seq.length rep.transcript)));
+          assert_ (pure(rep.transcript `FStar.Seq.equal` Seq.slice rep_new.transcript 0 (Seq.length rep.transcript)));
 
           assert_ (pure (is_prefix_of rep.transcript rep_new.transcript));
 
@@ -722,4 +726,7 @@ fn intro_session_state_tag_related (s:state) (gs:g_state)
 
 (*assume in Recv_No_Sign branch
   st should contain the size of the transcript
-  new signature for write_to_transcript based on buffer overflow condition*)
+  new signature for write_to_transcript based on buffer overflow condition
+  The transcript vector points to the Seq.slice of the some seq upto transcript_buffer_size*)
+
+  (*Abstract the two branches*)
