@@ -642,3 +642,84 @@ fn no_sign_resp1
 }
 }
 }
+
+fn reset
+  (c:state)
+  (#tr0:trace {has_full_state_info(current_state tr0) })
+  requires (spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
+           pure (G_Recv_no_sign_resp? (current_state tr0))
+                          )
+  returns r:state
+  ensures init_inv (get_state_data c).key_size (current_key tr0) r
+  {
+    //get the ghost transcript
+      
+      let curr_g_key = current_key tr0;
+      let curr_g_key_size = current_key_size tr0;
+      let curr_g_transcript = current_transcript tr0;
+    
+    //creation of the ghost session data storage
+    let rep_new = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = Seq.empty};
+    
+    let curr_state_data = get_state_data c;
+    let curr_state_transcript:V.vec u8 = curr_state_data.session_transcript;
+    let curr_state_signing_pub_key = curr_state_data.signing_pub_key;
+    let curr_state_key_size = curr_state_data.key_size;
+    
+    let curr_state_gref = curr_state_data.g_trace_ref;
+
+    assert_ (pure (valid_transition tr0 (G_Initialized rep_new)));
+    
+    unfold (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      
+    //assert (session_state_related c (current_state tr0));
+    unfold (session_state_related c (current_state tr0));
+    
+    let rep = get_gstate_data (current_state tr0);
+
+    match c {
+        Initialized st -> {
+         intro_session_state_tag_related (Initialized st) (current_state tr0);
+         assert_ (pure (session_state_tag_related (Initialized st) (current_state tr0)));
+         assert_ (pure false);
+         unreachable()
+        }
+        Recv_no_sign_resp st -> {
+           intro_session_state_tag_related (Recv_no_sign_resp st ) (current_state tr0);
+           assert_ (pure (session_state_tag_related (Recv_no_sign_resp st) (current_state tr0)));
+           rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
+                 (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep));
+           unfold (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep));
+           rewrite (V.pts_to st.session_transcript rep.transcript) as
+                   (V.pts_to curr_state_transcript rep.transcript);
+
+           rewrite (V.pts_to curr_state_transcript rep.transcript) as
+                   (V.pts_to curr_state_transcript curr_g_transcript);
+          admit()
+        }
+    }
+  }
+
+(*ghost
+fn intro_session_state_tag_related (s:state) (gs:g_state)
+  requires session_state_related s gs
+  ensures session_state_related s gs **
+          pure (session_state_tag_related s gs)*)
+
+
+(*fn init0 (key_size:u32) (signing_pub_key:V.vec u8 { V.length signing_pub_key == U32.v key_size })
+  (#s:Seq.seq u8)
+  requires V.pts_to signing_pub_key s
+  returns r:state 
+  ensures init_inv key_size s r*)
+
+  (*let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) : slprop =
+  exists* (t:trace).
+    spdm_inv s (get_state_data s).g_trace_ref t ** 
+    pure (G_Initialized? (current_state t) /\
+          g_key_of_gst (current_state t) == b /\
+          g_key_len_of_gst (current_state t) == key_len)*)
+
+(*assume in Recv_No_Sign branch
+  st should contain the size of the transcript
+  new signature for write_to_transcript based on buffer overflow condition*)
