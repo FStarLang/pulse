@@ -50,6 +50,23 @@ let signature_size = 256
 // the current memory state and returns a state of the state machine.
 //
 
+(*#define LIBSPDM_MAX_MESSAGE_M_BUFFER_SIZE (63 + SPDM_NONCE_SIZE + \
+                                           LIBSPDM_MAX_MEASUREMENT_RECORD_SIZE + \
+                                           LIBSPDM_MAX_ASYM_KEY_SIZE + SPDM_MAX_OPAQUE_DATA_SIZE)*)
+
+let spdm_nonce_size = 32
+
+let max_measurement_record_size = 0x1000
+
+let max_asym_key_size = (48 * 2)
+
+let max_opaque_data_size = 1024
+
+let max_transcript_message_buffer_size = 
+  63 + spdm_nonce_size  +  max_measurement_record_size  + max_asym_key_size + max_opaque_data_size
+
+let max_transcript_message_buffer_size_u32 = U32.uint_to_t max_transcript_message_buffer_size
+
 type g_transcript = Ghost.erased (Seq.seq u8)
 
 // Ghost repr
@@ -227,8 +244,9 @@ let mk_frame_preserving_upd
 noeq
 type st = {
   key_size : u32;
+  //session_transcript_size : ts:u32 {u32_v ts <= max_transcript_message_buffer_size};
   signing_pub_key : v:V.vec u8 { V.length v == U32.v key_size };
-  session_transcript : v:V.vec u8{V.is_full_vec v};
+  session_transcript : v:V.vec u8{V.is_full_vec v (*/\ V.length v = u32_v session_transcript_size*)};
   g_trace_ref:gref
 }
 
@@ -560,6 +578,24 @@ let g_transcript_current_session_grows (t0 t1:g_transcript) : prop =
 
 let g_append (t0:g_transcript) (s:Seq.seq u8) : g_transcript =
  Seq.append t0 s
+
+let g_slice (t0:g_transcript) (s:Seq.seq u8) : (G.erased (Seq.seq u8)) = 
+  Seq.slice (g_append t0 s) 0 (Seq.length t0)
+   
+
+let slice_append (s1: Seq.seq u8) (s2: Seq.seq u8) 
+     : Lemma
+       (ensures s1 == Seq.slice (Seq.append s1 s2) 0 (Seq.length s1)) =
+  assert (Seq.length s1 == Seq.length (Seq.slice (Seq.append s1 s2) 0 (Seq.length s1)));
+  assume (forall i. i < Seq.length s1 ==> 
+            Seq.index s1 i == Seq.index (Seq.slice (Seq.append s1 s2) 0 (Seq.length s1)) i);
+  admit()
+
+let g_append_lemma (t0:g_transcript) (s:Seq.seq u8)
+      : Lemma
+        (ensures t0 == g_slice t0 s) =
+  slice_append t0 s;
+  ()
 
 let g_transcript_current_session_grows_by (t0 t1:g_transcript) (s:Seq.seq u8) : prop =
    t1 == g_append t0 s
