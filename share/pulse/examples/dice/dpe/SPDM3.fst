@@ -699,34 +699,77 @@ fn reset
 
            rewrite (V.pts_to curr_state_transcript rep.transcript) as
                    (V.pts_to curr_state_transcript curr_g_transcript);
-          admit()
+          
+          let new_transcript = V.alloc 0uy 0sz;
+          assert_ (pure(current_state tr0 == G_Recv_no_sign_resp rep));
+          
+          assert_ (pure (rep_new.signing_pub_key_repr == rep.signing_pub_key_repr)); 
+          assert_ (pure(rep_new.key_size_repr == rep.key_size_repr));
+
+          assert_ (pure(next (current_state tr0) (G_Initialized rep_new)));
+          assert_ (pure (valid_transition tr0 (G_Initialized rep_new)));
+
+          extend_trace ((get_state_data (Recv_no_sign_resp st)).g_trace_ref) tr0 (G_Initialized rep_new); 
+
+          //----------------------------------------------------------------------------------------------------------------------------
+          let new_st = {key_size = curr_state_key_size; 
+                        signing_pub_key = curr_state_signing_pub_key; 
+                        session_transcript = new_transcript;
+                        g_trace_ref = curr_state_data.g_trace_ref(*r*)};
+          
+          let new_state = (Initialized new_st);
+          
+          let tr1 = next_trace tr0 (G_Initialized rep_new);
+
+          assert_ (pure (G_Initialized? (current_state tr1)));
+          assert_ (pure(g_key_of_gst (current_state tr1) ==  (current_key tr0)));
+
+          assert_ (pure (g_key_len_of_gst (current_state tr1) == (get_state_data c).key_size));
+
+          rewrite each
+           curr_state_signing_pub_key as new_st.signing_pub_key,
+           curr_g_key as rep_new.signing_pub_key_repr;
+
+          assert_ (pure (Seq.equal (Seq.create (SZ.v 0sz) 0uy) Seq.empty));
+
+          with _v. rewrite (V.pts_to new_transcript _v) as
+                           (V.pts_to new_st.session_transcript Seq.empty);
+          
+          assert_ (pure(st.signing_pub_key == new_st.signing_pub_key));
+          assert_ (pure (rep.signing_pub_key_repr == rep_new.signing_pub_key_repr));
+
+          assert_ (V.pts_to st.signing_pub_key rep.signing_pub_key_repr);
+
+          rewrite (V.pts_to st.signing_pub_key rep.signing_pub_key_repr) as
+                  (V.pts_to new_st.signing_pub_key rep_new.signing_pub_key_repr);
+          
+          assert_ (V.pts_to #u8 new_st.signing_pub_key #1.0R rep_new.signing_pub_key_repr);
+          
+          fold (session_state_related (Initialized new_st) (G_Initialized rep_new));
+          
+          with _v. rewrite (C.ghost_pcm_pts_to #trace_pcm_t #trace_pcm _v (pcm_elt 1.0R tr1)) as
+                           (C.ghost_pcm_pts_to (get_state_data (Initialized new_st)).g_trace_ref (pcm_elt 1.0R tr1));
+        
+          fold (spdm_inv (Initialized new_st) (get_state_data (Initialized new_st)).g_trace_ref tr1);
+          
+          assert_ (spdm_inv (Initialized new_st) (get_state_data (Initialized new_st)).g_trace_ref tr1 ** 
+                   pure (G_Initialized? (current_state tr1) /\
+                         g_key_of_gst (current_state tr1) == (current_key tr0) /\
+                         g_key_len_of_gst (current_state tr1) == (get_state_data c).key_size));
+          
+          assert_ ( exists* (t:trace).
+                    spdm_inv (Initialized new_st) (get_state_data (Initialized new_st)).g_trace_ref t ** 
+                    pure (G_Initialized? (current_state t) /\
+                    g_key_of_gst (current_state t) ==  (current_key tr0) /\
+                    g_key_len_of_gst (current_state t) == (get_state_data c).key_size));
+          
+          fold (init_inv (get_state_data c).key_size (current_key tr0) (Initialized new_st));
+
+          assert_ (init_inv (get_state_data c).key_size (current_key tr0) (Initialized new_st));
+
+          V.free curr_state_transcript;
+          new_state
         }
     }
   }
 
-(*ghost
-fn intro_session_state_tag_related (s:state) (gs:g_state)
-  requires session_state_related s gs
-  ensures session_state_related s gs **
-          pure (session_state_tag_related s gs)*)
-
-
-(*fn init0 (key_size:u32) (signing_pub_key:V.vec u8 { V.length signing_pub_key == U32.v key_size })
-  (#s:Seq.seq u8)
-  requires V.pts_to signing_pub_key s
-  returns r:state 
-  ensures init_inv key_size s r*)
-
-  (*let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) : slprop =
-  exists* (t:trace).
-    spdm_inv s (get_state_data s).g_trace_ref t ** 
-    pure (G_Initialized? (current_state t) /\
-          g_key_of_gst (current_state t) == b /\
-          g_key_len_of_gst (current_state t) == key_len)*)
-
-(*assume in Recv_No_Sign branch
-  st should contain the size of the transcript
-  new signature for write_to_transcript based on buffer overflow condition
-  The transcript vector points to the Seq.slice of the some seq upto transcript_buffer_size*)
-
-  (*Abstract the two branches*)
