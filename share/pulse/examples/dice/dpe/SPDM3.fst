@@ -642,24 +642,3 @@ fn no_sign_resp1
 }
 }
 }
-
-(* r0.signing_pub_key_repr == r1.signing_pub_key_repr /\
-    r0.key_size_repr = r1.key_size_repr /\
-    is_prefix_of r0.transcript r1.transcript *)
-
-(*ghost
-fn extend_trace (gr: gref) (tr0: trace) (gs:g_state{valid_transition tr0 gs})
-  requires C.ghost_pcm_pts_to gr (Some #perm 1.0R, tr0)
-  ensures  C.ghost_pcm_pts_to gr (Some #perm 1.0R, next_trace tr0 gs)
-  {
-     ghost_write 
-      gr
-      (Some #perm 1.0R, tr0)
-      (Some #perm 1.0R, (next_trace tr0 gs))
-      (mk_frame_preserving_upd tr0 gs)
-     
-  }*)
-
-//finish this proof first
-//in the next iteration, modular restucture, say a module called transcript with an interface
-//the interface looks something like....
