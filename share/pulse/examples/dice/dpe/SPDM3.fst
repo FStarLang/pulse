@@ -18,12 +18,6 @@ module O = Pulse.Lib.OnRange
 
 open FStar.Mul
 open Pulse.Lib.Pervasives
-open DPETypes
-open HACL
-open EngineTypes
-open EngineCore
-open L0Types
-open L0Core
 
 module G = FStar.Ghost
 module PCM = FStar.PCM
@@ -33,12 +27,11 @@ module U32 = FStar.UInt32
 module PP = PulseCore.Preorder
 module PM = Pulse.Lib.PCMMap
 module FP = Pulse.Lib.PCM.FractionalPreorder
-module M = Pulse.Lib.MutexToken
+
 module A = Pulse.Lib.Array
 module V = Pulse.Lib.Vec
 module R = Pulse.Lib.Reference
-module HT = Pulse.Lib.HashTable
-module PHT = Pulse.Lib.HashTable.Spec
+
 
 open PulseCore.Preorder
 open Pulse.Lib.OnRange
@@ -138,12 +131,13 @@ fn parser0
   (ctx:parser_context)
   (#p:perm)
   (#b_resp: G.erased (Seq.seq u8))
+  (with_sign: bool)
 
 requires V.pts_to ctx.resp #p b_resp
-returns res: spdm_measurement_result_t 
+returns res: spdm_measurement_result_t
 ensures 
          V.pts_to ctx.resp #p b_resp **
-         parser_post ctx res #b_resp
+         parser_post1 ctx res #b_resp with_sign
 {
   admit()
 }
@@ -225,15 +219,15 @@ fn write_req_resp_to_transcript
   }    
 
 
-
 fn parser 
 (ctx:parser_context)
 (#p:perm)
 (#b_resp: G.erased (Seq.seq u8))  
+(with_sign:bool)
 requires V.pts_to ctx.resp #p b_resp
- returns res: spdm_measurement_result_t 
+ returns res: spdm_measurement_result_t
 ensures V.pts_to ctx.resp #p b_resp **
-                        parser_post ctx res #b_resp
+        parser_post1 ctx res #b_resp with_sign
 
 {
   admit()
@@ -325,15 +319,6 @@ fn extend_trace (gr: gref) (tr0: trace) (gs:g_state{valid_transition tr0 gs})
      
   }
 
-
-(*noextract
-let mk_frame_preserving_upd
-  (t:trace)
-  (s:g_state { valid_transition t s})
-  : FStar.PCM.frame_preserving_upd trace_pcm (Some 1.0R, t) (Some 1.0R, next_trace t s) =
-  fun _ -> Some 1.0R, next_trace t s*)
-
-
 fn no_sign_resp1
   (ctx:parser_context)
   (req_size: u32)
@@ -354,7 +339,7 @@ fn no_sign_resp1
             V.pts_to ctx.resp #p_resp b_resp **
 
             //parser related post-conditions
-            parser_post ctx (fst res) #b_resp **
+            parser_post1 ctx (fst res) #b_resp false**
            
             //state change related post-condition 
             (exists* tr1.
@@ -367,7 +352,7 @@ fn no_sign_resp1
                                       (current_transcript tr1) 
                                       (Seq.append b_req b_resp))))
 {
-  let res = parser0 ctx #p_resp #b_resp;
+  let res = parser0 ctx #p_resp #b_resp false;
   match res.status {
     Parse_error -> {
       (*rewrite (parser_post ctx res #b_resp) as
@@ -397,16 +382,11 @@ fn no_sign_resp1
       (*parser_post ctx res #b_resp is rewritten as pure True, then why the assert for parser_post ctx res #b_resp is not holding? *)
       (*rewrite (parser_post ctx res #b_resp) as
               (pure True);*)
-
-      // rewrite  (pure True) as
-      //           (parser_post ctx res #b_resp);
-      //show_proof_state;
-      //assume_ (parser_post ctx res #b_resp);
       (res,c)
     }
     (*spdm_inv c (get_state_data c).g_trace_ref tr0*)
     Signature_verification_error -> {
-      rewrite (parser_post ctx res #b_resp) as
+      rewrite (parser_post1 ctx res #b_resp false) as
               (pure False);
       unreachable ()
     }
@@ -528,24 +508,6 @@ fn no_sign_resp1
         
         let fin = (res, new_state);
 
-        assert_ (V.pts_to req #p_req b_req **
-                 V.pts_to ctx.resp #p_resp b_resp **
-
-                //parser related post-conditions
-                parser_post ctx (fst fin) #b_resp **
-           
-                //state change related post-condition 
-                (exists* tr1.
-                     spdm_inv (snd fin) (get_state_data (snd fin)).g_trace_ref tr1 **
-                     (*no_sign_resp_state_related_post_conditions ctx tr0 tr1 c (snd res) #b_resp #b_req (fst res)*)
-                     pure ((fst fin).status == Success ==> (G_Recv_no_sign_resp? (current_state tr1) /\
-                            valid_transition tr0 (current_state tr1) /\ tr1 == next_trace tr0 (current_state tr1)) /\
-                           (G_Recv_no_sign_resp? (current_state tr1) /\
-                           g_transcript_current_session_grows_by (current_transcript tr0 ) 
-                                      (current_transcript tr1) 
-                                      (Seq.append b_req b_resp)))));
-        
-        
         
         V.free curr_state_transcript;
 
@@ -772,4 +734,119 @@ fn reset
         }
     }
   }
+
+let valid_signature (signature msg key:Seq.seq u8) = admit()
+
+let sign_resp_pre (c:state) 
+                  (req_size: u8)
+                  (resp_size: u8)
+                  (req:V.vec u8 { V.length req == u8_v req_size })
+                  (resp:V.vec u8 { V.length resp == u8_v resp_size })
+                  (#tr0:trace {has_full_state_info (current_state tr0) }): slprop =
+                  
+(exists* p_req b_req p_resp b_resp.
+                          V.pts_to req #p_req b_req **
+                          V.pts_to resp #p_resp b_resp) **
+        spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
+        pure 
+        (G_Recv_no_sign_resp? (current_state tr0) \/
+         G_Initialized? (current_state tr0))
+
+let sign_resp_post_pts_to (req_size: u8)
+                          (resp_size: u8)
+                          (req:V.vec u8 { V.length req == u8_v req_size })
+                          (resp:V.vec u8 { V.length resp == u8_v resp_size })
+                          (p_req : perm)
+                          (p_resp : perm)
+                          (b_req : Seq.seq u8)
+                          (b_resp : Seq.seq u8): slprop =
+  V.pts_to req #p_req b_req **
+  V.pts_to resp #p_resp b_resp
+
+  noextract
+let next_next_trace (t:trace) 
+                    (s1:g_state { valid_transition t s1 }) 
+                    (s2:g_state { valid_transition ((next_trace t s1)) s2 }) : trace =
+ next_trace (next_trace t s1) s2
+
+let sign_resp_post_result_success (ctx:parser_context)
+                                  
+                                  (#tr0:trace {has_full_state_info (current_state tr0) })
+                                  (p_req : perm)
+                                  (p_resp : perm)
+                                  (b_req : Seq.seq u8)
+                                  (b_resp : Seq.seq u8)
+                                  (res:spdm_measurement_result_t & state) : slprop =
+          
+    exists* tr1 sign .
+        spdm_inv (snd res) (get_state_data (snd res)).g_trace_ref tr1 **
+    //tr1 current_state is G_Initailized
+    pure (G_Initialized? (current_state tr1)) **
+                                        
+    //(previous_current_state tr1) transcript gets the req resp appended
+    pure (G_Recv_sign_resp?(previous_current_state tr1) /\
+    (let t0 = current_transcript tr0 in
+    let t' = g_transcript_of_gst  (previous_current_state tr1 )in
+    let key = g_key_of_gst (previous_current_state tr1 ) in
+    let msg = t' in
+    valid_signature sign msg key /\
+    g_transcript_current_session_grows_by t0 t' (Seq.append b_req b_resp) /\
+    valid_transition tr0 (previous_current_state tr1 ) /\
+    tr1 == next_next_trace tr0 (previous_current_state tr1 ) (current_state tr1))) **
+    (let t1 = current_transcript tr1 in
+      pure (t1 == g_seq_empty)
+    )
+                                
+let parser_post_sign (ctx:parser_context) (res:spdm_measurement_result_t)
+                 (#b_resp: G.erased (Seq.seq u8)) =
+  match res.status with
+  | Parse_error -> pure True
+  | Signature_verification_error -> pure True
+  | Success ->
+    exists* resp_repr. valid_resp0 ctx resp_repr **
+                       valid_measurement_blocks ctx res.measurement_block_vector resp_repr.measurement_record
+
+fn
+sign_resp
+  (ctx:parser_context)
+  (req_size: u8)
+  (req:V.vec u8 { V.length req == u8_v req_size })
+  (c:state)
+  (#tr0:trace {has_full_state_info (current_state tr0) })
+  (#b_resp: G.erased (Seq.seq u8){Seq.length b_resp > 0})
+  (#b_req: G.erased (Seq.seq u8){Seq.length b_req > 0})
+  (#p_req : perm)
+  (#p_resp:perm)
+
+   requires (V.pts_to req #p_req b_req **
+             V.pts_to ctx.resp #p_resp b_resp) **
+             spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
+             pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
+   returns res: spdm_measurement_result_t & state
+   ensures 
+               (
+                         V.pts_to req #p_req b_req **
+                         V.pts_to ctx.resp #p_resp b_resp **
+                         parser_post1 ctx (fst res) #b_resp true**
+
+                        //sign_state related post-condition
+                        sign_resp_post_result_success ctx #tr0 p_req p_resp b_req b_resp res)
+{
+  let res = parser0 ctx #p_resp #b_resp true;
+  match res.status {
+    Parse_error -> {
+       admit()//(res,c)
+    }
+    (*spdm_inv c (get_state_data c).g_trace_ref tr0*)
+    Signature_verification_error -> {
+     admit()
+    }
+    Success -> {
+      admit()
+    }
+}
+}
+
+
+
 

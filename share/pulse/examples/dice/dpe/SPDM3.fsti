@@ -557,6 +557,17 @@ let parser_post (ctx:parser_context) (res:spdm_measurement_result_t)
     exists* resp_repr. valid_resp0 ctx resp_repr **
                        valid_measurement_blocks ctx res.measurement_block_vector resp_repr.measurement_record
 
+let parser_post1 (ctx:parser_context) (res:spdm_measurement_result_t)
+                 (#b_resp: G.erased (Seq.seq u8)) 
+                 (is_sign_resp:bool) =
+  match res.status with
+  | Parse_error -> pure True
+  | Signature_verification_error -> if is_sign_resp then pure True else pure False
+  | Success ->
+    exists* resp_repr. valid_resp0 ctx resp_repr **
+                       valid_measurement_blocks ctx res.measurement_block_vector resp_repr.measurement_record
+
+
 val valid_resp_bytes  (ctx:parser_context)
                       (b:Seq.seq u8) 
                       (r:resp_repr ctx) : slprop
@@ -565,10 +576,11 @@ val parser
 (ctx:parser_context)
 (#p:perm)
 (#b_resp: G.erased (Seq.seq u8))
-  : stt spdm_measurement_result_t 
+(with_sign:bool)
+  : stt (spdm_measurement_result_t)
     (requires V.pts_to ctx.resp #p b_resp)
     (ensures fun res -> V.pts_to ctx.resp #p b_resp **
-                        parser_post ctx res #b_resp)
+                        parser_post1 ctx res #b_resp with_sign)
 
 //
 //Signature of get_measurement_blocks_without_signature
