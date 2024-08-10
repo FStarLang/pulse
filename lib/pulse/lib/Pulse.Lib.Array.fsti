@@ -23,6 +23,7 @@ include Pulse.Lib.Array.Core
 module SZ = FStar.SizeT
 module Seq = FStar.Seq
 module U8 = FStar.UInt8
+module A = Pulse.Lib.Array.Core
 
 val compare
         (#t:eqtype)
@@ -68,6 +69,24 @@ val memcpy
             pts_to src #p src0 **
             pts_to dst src0))
 
+val memcpy_from
+ (#t:eqtype)
+        (l:SZ.t)
+        (src:larray t (SZ.v l))
+        (ldst:SZ.t)
+        (dst:larray t (SZ.v ldst))
+        (from:SZ.t {0 <= SZ.v from /\ (SZ.v l + SZ.v from) < SZ.v ldst })
+        (#p:perm)
+        (#src0 #dst0:Ghost.erased (Seq.seq t))
+ : stt (squash (Seq.length src0 == A.length src /\ Seq.length dst0 == A.length dst))
+  (requires A.pts_to src #p src0 **
+           A.pts_to dst dst0)
+  
+  (ensures (fun _ -> 
+             A.pts_to src #p src0 **
+             A.pts_to dst (Seq.append (Seq.append (Seq.slice dst0 0 (SZ.v from)) src0) 
+                                         (Seq.slice dst0 (SZ.v from + SZ.v l) (SZ.v ldst)))))
+
 val fill
         (#t:Type0)
         (l:SZ.t)
@@ -93,3 +112,4 @@ val zeroize
             exists* (s:Seq.seq U8.t).
                 pts_to a s **
                 pure (s `Seq.equal` Seq.create (SZ.v l) 0uy))
+

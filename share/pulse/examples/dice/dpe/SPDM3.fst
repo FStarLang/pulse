@@ -779,23 +779,33 @@ let sign_resp_post_result_success (ctx:parser_context)
                                   (res:spdm_measurement_result_t & state) : slprop =
           
     exists* tr1 sign .
+    
+    //write something about current state, that is, state transitions does not happen in the event of errors
         spdm_inv (snd res) (get_state_data (snd res)).g_trace_ref tr1 **
-    //tr1 current_state is G_Initailized
-    pure (G_Initialized? (current_state tr1)) **
-                                        
-    //(previous_current_state tr1) transcript gets the req resp appended
-    pure (G_Recv_sign_resp?(previous_current_state tr1) /\
-    (let t0 = current_transcript tr0 in
-    let t' = g_transcript_of_gst  (previous_current_state tr1 )in
-    let key = g_key_of_gst (previous_current_state tr1 ) in
-    let msg = t' in
-    valid_signature sign msg key /\
-    g_transcript_current_session_grows_by t0 t' (Seq.append b_req b_resp) /\
-    valid_transition tr0 (previous_current_state tr1 ) /\
-    tr1 == next_next_trace tr0 (previous_current_state tr1 ) (current_state tr1))) **
-    (let t1 = current_transcript tr1 in
-      pure (t1 == g_seq_empty)
-    )
+   
+    //If the res is SUCCESS, then only state transitions happens
+    pure ( (fst res).status == Success ==>  
+           //tr1 current_state is G_Initailized
+            ((G_Initialized? (current_state tr1)) /\
+            (current_transcript tr1 == g_seq_empty) /\
+          
+          //(previous_current_state tr1) transcript gets the req resp appended
+            G_Recv_sign_resp?(previous_current_state tr1) /\
+
+          //This signifies that the sign extracted from the response and the sign created after applying
+          //the stored public key on the transcript are same.
+           (valid_signature sign 
+                            (g_transcript_of_gst  (previous_current_state tr1)) 
+                            (g_key_of_gst (previous_current_state tr1 )) /\
+            
+            g_transcript_current_session_grows_by (current_transcript tr0) 
+                                                  (g_transcript_of_gst  (previous_current_state tr1)) 
+                                                  (Seq.append b_req b_resp) /\
+    
+            valid_transition tr0 (previous_current_state tr1 ) /\
+            tr1 == next_next_trace tr0 (previous_current_state tr1 ) (current_state tr1)))) 
+    
+    
                                 
 let parser_post_sign (ctx:parser_context) (res:spdm_measurement_result_t)
                  (#b_resp: G.erased (Seq.seq u8)) =
@@ -830,11 +840,41 @@ sign_resp
                          parser_post1 ctx (fst res) #b_resp true**
 
                         //sign_state related post-condition
-                        sign_resp_post_result_success ctx #tr0 p_req p_resp b_req b_resp res)
+                        sign_resp_post_result_success ctx #tr0 p_req p_resp b_req b_resp res
+                        
+              )
 {
   let res = parser0 ctx #p_resp #b_resp true;
   match res.status {
     Parse_error -> {
+      let tr1 = tr0;
+      let r = (get_state_data c).g_trace_ref;
+      assert_ (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      assert_ (spdm_inv c (get_state_data c).g_trace_ref tr1);
+       rewrite 
+        (spdm_inv c ((get_state_data c).g_trace_ref) tr0) as
+        (spdm_inv c (get_state_data c).g_trace_ref tr1);
+      
+      assert_ (V.pts_to req #p_req b_req **
+               V.pts_to ctx.resp #p_resp b_resp);
+
+      assert_ (parser_post1 ctx res #b_resp true);
+      assert_ (pure(res.status == Success ==>  
+                         (G_Initialized? (current_state tr1)) /\
+                          (current_transcript tr1 == g_seq_empty) /\
+          
+          //(previous_current_state tr1) transcript gets the req resp appended
+            G_Recv_sign_resp?(previous_current_state tr1) /\
+           (*(valid_signature sign 
+                            (g_transcript_of_gst  (previous_current_state tr1)) 
+                            (g_key_of_gst (previous_current_state tr1 ))) /\*)
+            
+           (g_transcript_current_session_grows_by (current_transcript tr0) 
+                                                  (g_transcript_of_gst  (previous_current_state tr1)) 
+                                                  (Seq.append b_req b_resp)) /\
+    
+            (valid_transition tr0 (previous_current_state tr1 )) /\
+            (tr1 == next_next_trace tr0 (previous_current_state tr1 ) (current_state tr1))));
        admit()//(res,c)
     }
     (*spdm_inv c (get_state_data c).g_trace_ref tr0*)
@@ -846,6 +886,15 @@ sign_resp
     }
 }
 }
+
+
+(*version 1 - Implement all the API, assuming some write_to_transcript is there with explicit buffer allocation. And after that,
+              the extra buffers will be freed.*)
+(*version 2 - Implement write_to_transcript as writing to the existing transcript and error out when there is no sufficient space;
+              Modify the api to incorpoarate this change*)
+(*version 3 - 2 branches of concrete state operates in the same way in the case of no_sign_resp. Make a top level abstraction to
+              capture it to reduce the lines of code.*)
+(*Additional work - make the ghost_pcm module more abstract by writing a top level wrapper module on top of the current low level module*)
 
 
 
