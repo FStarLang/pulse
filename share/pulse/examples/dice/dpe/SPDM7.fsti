@@ -93,8 +93,8 @@ let hash_seq (algo:u32)
          (ts_digest: Seq.seq u8{Seq.length ts_digest == hash_size})
          (msg_size: u32{u32_v msg_size > 0})
          (msg: Seq.seq u8{Seq.length msg == u32_v msg_size})
-  : (t:Seq.seq u8{Seq.length ts_digest == hash_size /\
-                  ~(all_zeros_hash_transcript ts_digest)})  = admit()
+  : (t:Seq.seq u8{Seq.length t== hash_size /\
+                  ~(all_zeros_hash_transcript t)})  = admit()
         
 
 
@@ -114,12 +114,15 @@ val hash (hash_algo: u32)
                                            pure (new_ts_seq == hash_seq hash_algo ts_seq msg_size msg_seq)))
 
 let hash_of (hash_algo: u32)
-            (s0:Seq.seq u8{Seq.length s0 == hash_size})
-            (msg_size:u32{u32_v msg_size > 0})
-            (msg:Seq.seq u8{Seq.length msg == u32_v msg_size})
+            (s0:Seq.seq u8{Seq.length s0 == hash_size /\
+                            ~(all_zeros_hash_transcript s0)})
+            (req_size:u32{u32_v req_size > 0})
+            (req:Seq.seq u8{Seq.length req == u32_v req_size})
+            (resp_size:u32{u32_v resp_size > 0})
+            (resp:Seq.seq u8{Seq.length resp == u32_v resp_size})
             (s1:Seq.seq u8{Seq.length s1 == hash_size})
                   : prop =
- Seq.equal s1 (hash_seq hash_algo s0 msg_size msg)
+ Seq.equal s1 (hash_seq hash_algo (hash_seq hash_algo s0 req_size req) resp_size resp)
 
 
 
@@ -191,7 +194,8 @@ let next (s0 s1:g_state) : prop =
     r0.signing_pub_key_repr == r1.signing_pub_key_repr /\
     r0.key_size_repr = r1.key_size_repr /\
     (*is_prefix_of r0.transcript r1.transcript*)
-    (exists msg_size msg hash_algo. hash_of hash_algo r0.transcript msg_size msg r1.transcript) 
+    (exists req_size req resp_size resp hash_algo. 
+         hash_of hash_algo r0.transcript req_size req resp_size resp r1.transcript)
         
   //sign ---> initial (no call is needed)
   | G_Recv_sign_resp r, G_Initialized k
