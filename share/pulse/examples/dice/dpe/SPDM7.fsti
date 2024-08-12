@@ -115,10 +115,11 @@ val hash (hash_algo: u32)
 
 let hash_of (hash_algo: u32)
             (s0:Seq.seq u8{Seq.length s0 == hash_size})
-            (s1_size:u32{u32_v s1_size > 0})
-            (s1:Seq.seq u8{Seq.length s1 == u32_v s1_size})
+            (msg_size:u32{u32_v msg_size > 0})
+            (msg:Seq.seq u8{Seq.length msg == u32_v msg_size})
+            (s1:Seq.seq u8{Seq.length s1 == hash_size})
                   : prop =
- Seq.equal s1 (hash_seq hash_algo s0 s1_size s1)
+ Seq.equal s1 (hash_seq hash_algo s0 msg_size msg)
 
 
 
@@ -190,7 +191,7 @@ let next (s0 s1:g_state) : prop =
     r0.signing_pub_key_repr == r1.signing_pub_key_repr /\
     r0.key_size_repr = r1.key_size_repr /\
     (*is_prefix_of r0.transcript r1.transcript*)
-    (exists msg_size msg hash_algo. hash_of hash_algo r0.transcript msg_size msg) 
+    (exists msg_size msg hash_algo. hash_of hash_algo r0.transcript msg_size msg r1.transcript) 
         
   //sign ---> initial (no call is needed)
   | G_Recv_sign_resp r, G_Initialized k
