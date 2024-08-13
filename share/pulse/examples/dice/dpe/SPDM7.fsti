@@ -85,6 +85,8 @@ type g_transcript = Ghost.erased (Seq.seq u8)
 
 let hash_size = 256
 
+let hash_algo = 256ul
+
 let all_zeros_hash_transcript (t:g_transcript) : prop =
     (forall i. i < Seq.length t ==> Seq.index t i == 0uy)
 
@@ -93,7 +95,7 @@ let hash_seq (algo:u32)
          (ts_digest: Seq.seq u8{Seq.length ts_digest == hash_size})
          (msg_size: u32{u32_v msg_size > 0})
          (msg: Seq.seq u8{Seq.length msg == u32_v msg_size})
-  : (t:Seq.seq u8{Seq.length t== hash_size /\
+  : (t:(G.erased (Seq.seq u8)){Seq.length t== hash_size /\
                   ~(all_zeros_hash_transcript t)})  = admit()
         
 
@@ -102,8 +104,8 @@ val hash (hash_algo: u32)
          (ts_digest: V.vec u8{V.length ts_digest == hash_size})
          (msg_size: u32{u32_v msg_size > 0})
          (msg: V.vec u8{V.length msg == u32_v msg_size})
-         (#ts_seq: Seq.seq u8{Seq.length ts_seq == hash_size})
-         (#msg_seq: Seq.seq u8{Seq.length msg_seq == u32_v msg_size})
+         (#ts_seq: (G.erased (Seq.seq u8)){Seq.length ts_seq == hash_size})
+         (#msg_seq: (G.erased (Seq.seq u8)){Seq.length msg_seq == u32_v msg_size})
          (#p_msg:perm)
 
      : stt unit
@@ -111,11 +113,10 @@ val hash (hash_algo: u32)
               V.pts_to msg #p_msg msg_seq)
     (ensures fun _ -> (exists* new_ts_seq. V.pts_to ts_digest new_ts_seq **
                                            V.pts_to msg #p_msg msg_seq **
-                                           pure (new_ts_seq == hash_seq hash_algo ts_seq msg_size msg_seq)))
+                                           pure (Seq.equal new_ts_seq (hash_seq hash_algo ts_seq msg_size msg_seq))))
 
 let hash_of (hash_algo: u32)
-            (s0:Seq.seq u8{Seq.length s0 == hash_size /\
-                            ~(all_zeros_hash_transcript s0)})
+            (s0:Seq.seq u8{Seq.length s0 == hash_size })
             (req_size:u32{u32_v req_size > 0})
             (req:Seq.seq u8{Seq.length req == u32_v req_size})
             (resp_size:u32{u32_v resp_size > 0})
