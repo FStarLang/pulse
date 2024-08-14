@@ -334,7 +334,7 @@ fn no_sign_resp1
       let rep = get_gstate_data (current_state tr0);
       match c {
         Initialized st -> {
-          (*intro_session_state_tag_related (Initialized st) (current_state tr0);
+          intro_session_state_tag_related (Initialized st) (current_state tr0);
           rewrite (session_state_related (Initialized st) (current_state tr0)) as
                  (session_state_related (Initialized st) (G_Initialized rep));
 
@@ -440,8 +440,7 @@ fn no_sign_resp1
         
         let fin = (res, new_state);
         
-        fin*)
-        admit()
+        fin
         }
          Recv_no_sign_resp st ->{
           intro_session_state_tag_related (Recv_no_sign_resp st ) (current_state tr0);
@@ -662,6 +661,130 @@ fn reset
           V.free curr_state_transcript;
           new_state
         }
+    }
+  }
+
+let valid_signature (signature msg key:Seq.seq u8):prop = admit()
+
+let sign_resp_pre (c:state) 
+                  (req_size: u8)
+                  (resp_size: u8)
+                  (req:V.vec u8 { V.length req == u8_v req_size })
+                  (resp:V.vec u8 { V.length resp == u8_v resp_size })
+                  (#tr0:trace {has_full_state_info (current_state tr0) }): slprop =
+                  
+(exists* p_req b_req p_resp b_resp.
+                          V.pts_to req #p_req b_req **
+                          V.pts_to resp #p_resp b_resp) **
+        spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
+        pure 
+        (G_Recv_no_sign_resp? (current_state tr0) \/
+         G_Initialized? (current_state tr0))
+
+let sign_resp_post_pts_to (req_size: u8)
+                          (resp_size: u8)
+                          (req:V.vec u8 { V.length req == u8_v req_size })
+                          (resp:V.vec u8 { V.length resp == u8_v resp_size })
+                          (p_req : perm)
+                          (p_resp : perm)
+                          (b_req : Seq.seq u8)
+                          (b_resp : Seq.seq u8): slprop =
+  V.pts_to req #p_req b_req **
+  V.pts_to resp #p_resp b_resp
+
+noextract
+let next_next_trace (t:trace) 
+                    (s1:g_state { valid_transition t s1 }) 
+                    (s2:g_state { valid_transition ((next_trace t s1)) s2 }) : trace =
+ next_trace (next_trace t s1) s2
+
+let g_seq_transcript : g_transcript =
+  Seq.create hash_size 0uy
+
+let state_change_success_sign (tr1:trace) 
+                              (ctx:parser_context)
+                     : prop =
+   ((G_Initialized? (current_state tr1)) /\
+                                
+                                (current_transcript tr1 == g_seq_transcript) /\
+                                G_Recv_sign_resp?(previous_current_state tr1) /\
+                                (exists (resp_rep:resp_repr ctx). valid_signature resp_rep.signature
+                                     (g_transcript_of_gst  (previous_current_state tr1)) 
+                                     (g_key_of_gst (previous_current_state tr1))))
+
+let hash_result_success_sign (tr0:trace{has_full_state_info (current_state tr0)}) 
+                             (tr1:trace{has_full_state_info (current_state tr1)})
+                             (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)})
+                             (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
+                     : prop =
+  (exists hash_algo. 
+                hash_of hash_algo (current_transcript tr0 ) 
+                (U32.uint_to_t(Seq.length b_req)) 
+                 b_req 
+                (U32.uint_to_t (Seq.length b_resp)) 
+                 b_resp 
+                (current_transcript tr1)) /\
+                valid_transition tr0 (previous_current_state tr1 ) 
+
+let transition_related_sign_success (tr0:trace{has_full_state_info (current_state tr0)}) 
+                                    (tr1:trace{has_full_state_info (current_state tr1)})
+                  : prop =
+  valid_transition tr0 (previous_current_state tr1 ) /\
+  tr1 == next_next_trace tr0 (previous_current_state tr1 ) (current_state tr1)
+
+fn
+sign_resp
+  (ctx:parser_context)
+  (req_size: u8)
+  (req:V.vec u8 { V.length req == u8_v req_size })
+  (c:state)
+  (#tr0:trace {has_full_state_info (current_state tr0) })
+  (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)})
+  (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
+  (#p_req : perm)
+  (#p_resp:perm)
+
+   requires (V.pts_to req #p_req b_req **
+             V.pts_to ctx.resp #p_resp b_resp) **
+             spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
+             pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
+   returns res: (spdm_measurement_result_t & state)
+   
+   ensures (V.pts_to req #p_req b_req **
+            V.pts_to ctx.resp #p_resp b_resp **
+            parser_post1 ctx (fst res) true **
+            (exists* tr1.
+                  spdm_inv (snd res) (get_state_data (snd res)).g_trace_ref tr1 **
+                  pure ((fst res).status == Success ==>  
+                                   state_change_success_sign tr1 ctx /\
+                                   hash_result_success_sign tr0 tr1 #b_resp #b_req /\
+                                   transition_related_sign_success tr0 tr1)))
+    {
+    let res = parser0 ctx #p_resp #b_resp true;
+    match res.status {
+      Parse_error -> {
+        let tr1 = tr0;
+        let r = (get_state_data c).g_trace_ref;
+        assert_ (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+        assert_ (spdm_inv c (get_state_data c).g_trace_ref tr1);
+       rewrite 
+        (spdm_inv c ((get_state_data c).g_trace_ref) tr0) as
+        (spdm_inv c (get_state_data c).g_trace_ref tr1);
+      
+       assert_ (V.pts_to req #p_req b_req **
+               V.pts_to ctx.resp #p_resp b_resp);
+
+       assert_ (parser_post1 ctx res true);
+
+       assert_ (V.pts_to req #p_req b_req **
+               V.pts_to ctx.resp #p_resp b_resp **
+               parser_post1 ctx res true);
+      
+       (res,c)
+      }
+      Success -> {
+      admit()
+    }
     }
   }
 

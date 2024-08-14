@@ -568,7 +568,7 @@ let res_err_no_measurement (count:u8) (status:result) =
   | Success -> true
   | Parse_error -> u8_v count = 0
   //| Signature_verification_error -> u8_v count = 0
-                      
+
 //
 //result structure
 //
@@ -581,6 +581,22 @@ type spdm_measurement_result_t  = {
   sign: s:V.vec u8{V.length s == signature_size};
   status : r:result{res_err_no_measurement measurement_block_count r}
 }
+
+noeq
+type spdm_measurement_result_repr = {
+  measurement_block_count : u8;
+  measurement_block_seq : v:Seq.seq spdm_measurement_block_t {
+    Seq.length v == u8_v measurement_block_count
+  };
+  sign_repr: s:Seq.seq u8{Seq.length s == signature_size};
+  status : r:result{res_err_no_measurement measurement_block_count r}
+
+}
+
+let spdm_measurement_result_related (s:spdm_measurement_result_t) 
+                                    (r:spdm_measurement_result_repr) : slprop =
+  V.pts_to s.sign r.sign_repr
+
 
 let valid_measurement_block_repr (ctx:parser_context)
                                  (blk:spdm_measurement_block_t) 
@@ -649,11 +665,25 @@ let parser_success_post (ctx:parser_context) (res:spdm_measurement_result_t)
                          valid_measurement_blocks ctx (res.measurement_block_vector) (resp_repr.measurement_record)
     )
 
+let parser_parse_error_post (ctx:parser_context) (res:spdm_measurement_result_t)
+                       (is_sign_resp:bool) =
+   if is_sign_resp then 
+    (
+      exists* s_sign. 
+              V.pts_to res.sign s_sign **
+              pure (V.length res.sign == signature_size /\
+                     V.length res.sign <> 0) 
+                                                           
+    )
+    else
+    (
+      pure True
+    )
 
 let parser_post1 (ctx:parser_context) (res:spdm_measurement_result_t)
                  (is_sign_resp:bool) =
   match res.status with
-  | Parse_error -> pure True
+  | Parse_error -> pure True//parser_parse_error_post ctx res is_sign_resp
   
   | Success ->     parser_success_post ctx res is_sign_resp                 
                                
