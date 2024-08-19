@@ -926,12 +926,25 @@ sign_resp
           assert_ (V.pts_to curr_state_transcript curr_g_transcript);
           assert_ (V.pts_to req #p_req b_req);
           
+          //hash update
           hash hash_algo curr_state_transcript req_size req #curr_g_transcript #b_req #p_req;
           assert_ (pure (Seq.equal new_g_transcript' (hash_seq hash_algo curr_g_transcript req_size b_req)));
           assert_ (V.pts_to curr_state_transcript new_g_transcript');
           hash hash_algo curr_state_transcript ctx.resp_size ctx.resp #new_g_transcript' #b_resp #p_resp;
           assert_ (V.pts_to curr_state_transcript new_g_transcript);
+          //
+          //Do the changes required for transitioning to G_Sign state and extend the trace
+          let rep_new = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
+          let tr1 = next_trace tr0 (G_Recv_sign_resp rep_new);
+          assert_ (pure (valid_transition tr0 (G_Recv_sign_resp rep_new)));
+          extend_trace ((get_state_data (Initialized st)).g_trace_ref) tr0 ((G_Recv_sign_resp rep_new));
+          assert_ (pure(G_Recv_sign_resp? (current_state tr1)));
+          let new_st = {key_size = curr_state_key_size; 
+                    signing_pub_key = curr_state_signing_pub_key; 
+                    session_transcript = curr_state_transcript;
+                    g_trace_ref = curr_state_data.g_trace_ref};
 
+          //unfold parser post condition for SUCCESS result to bring the existence of sign coming out of the response
           assert_ (parser_post1 ctx res true);
           unfold (parser_post1 ctx res true);
           unfold (parser_success_post ctx res true);
@@ -950,62 +963,46 @@ sign_resp
                    (V.pts_to curr_state_signing_pub_key curr_g_key);
            assert_ (V.pts_to curr_state_signing_pub_key curr_g_key);
 
-           let rep_new = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
-          
-           let new_st = {key_size = curr_state_key_size; 
-                    signing_pub_key = curr_state_signing_pub_key; 
-                    session_transcript = curr_state_transcript;
-                    g_trace_ref = curr_state_data.g_trace_ref};
+          //with will help to bind the existential in the context. resp_repr.signature is in the context as an existential.
+           with sg_seq. assert (V.pts_to res.sign sg_seq);
 
-           (*assert_ (V.pts_to curr_state_transcript new_g_transcript **
-                    V.pts_to res.sign sg_seq **
-                    V.pts_to pub_key p_seq);*)
-           
-           //assert_ (exists* resp_repr. V.pts_to res.sign resp_repr.signature);
-           
+           //verify the signature
            let ret = verify_sign curr_state_transcript res.sign curr_state_signing_pub_key;
-           
           
+           assert_ (pure(ret == true ==> valid_signature sg_seq new_g_transcript curr_g_key));
+           
+           //fold back the parser post condition
+           fold (parser_success_post ctx res true);
+           fold (parser_post1 ctx res true);
 
-           //show_proof_state;
-
+           assert_ (pure(G_Recv_sign_resp? (current_state tr1)));
            assert_ (V.pts_to curr_state_signing_pub_key curr_g_key);
-           if ret
-           {
-             (*let tr1 = next_trace tr0 (G_Recv_sign_resp rep_new);
-             assert_ (pure (valid_transition tr0 (G_Recv_sign_resp rep_new)));
-             extend_trace ((get_state_data (Initialized st)).g_trace_ref) tr0 ((G_Recv_sign_resp rep_new));
-             assert_ (pure(G_Recv_sign_resp? (current_state tr1)));
 
-             let ts = Seq.create hash_size 0uy;
-             let rep_new1 = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = ts};
-             
-             //Final trace)
-             // G_Recv_sign_resp _ ---> G_Initialized _
-             let tr2 = next_trace tr1 (G_Initialized rep_new1);
-             assert_ (pure (valid_transition tr1 (G_Initialized rep_new1)));
+           //Do the changes required for transitioning to Initialized state and extend the trace
+           let ts = Seq.create hash_size 0uy;
+           let rep_new1 = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = ts};
+           let tr2 = next_trace tr1 (G_Initialized rep_new1);
+           assert_ (pure (valid_transition tr1 (G_Initialized rep_new1)));
         
-             extend_trace ((get_state_data (Initialized st)).g_trace_ref) tr1 ((G_Initialized rep_new1));
-             assert_ (pure(G_Initialized? (current_state tr2)));
-             assert_ (pure(G_Recv_sign_resp?(previous_current_state tr2)));
-        
-             assert_ (pure(exists hash_algo.  
-                hash_of hash_algo (current_transcript tr0 ) 
-                (U32.uint_to_t(Seq.length b_req)) 
-                 b_req 
-                (U32.uint_to_t (Seq.length b_resp)) 
-                 b_resp 
-                (g_transcript_of_gst (previous_current_state tr2 ))));
+           extend_trace ((get_state_data (Initialized st)).g_trace_ref) tr1 ((G_Initialized rep_new1));
+           assert_ (pure(G_Initialized? (current_state tr2)));
+           assert_ (pure(G_Recv_sign_resp?(previous_current_state tr2)));
+           assert_ (pure(exists hash_algo.  
+                         hash_of hash_algo (current_transcript tr0 ) 
+                        (U32.uint_to_t(Seq.length b_req)) 
+                         b_req 
+                        (U32.uint_to_t (Seq.length b_resp)) 
+                        b_resp 
+                        (g_transcript_of_gst (previous_current_state tr2 ))));
         
              assert_ (pure(valid_transition tr0 (previous_current_state tr2)));
              assert_ (pure(tr2 == next_next_trace tr0 (previous_current_state tr2 ) (current_state tr2)));
 
+             //zero mem the current_transcript to transition to concrete Initialized state
              zeroize_vector curr_state_transcript;
-
              assert_ (exists* (s:Seq.seq U8.t).
-                        V.pts_to curr_state_transcript s **
-                       
-                        pure (Seq.length s == hash_size /\ (s `Seq.equal` Seq.create (Seq.length s) 0uy)));
+                               V.pts_to curr_state_transcript s **
+                               pure (Seq.length s == hash_size /\ (s `Seq.equal` Seq.create (Seq.length s) 0uy)));
              
              assert_ (pure(Seq.equal ts (Seq.create hash_size 0uy)));
 
@@ -1015,67 +1012,50 @@ sign_resp
                            signing_pub_key = curr_state_signing_pub_key; 
                            session_transcript = curr_state_transcript;
                            g_trace_ref = curr_state_data.g_trace_ref};
-
-             //let new_state = (Initialized new_st1);
-
-             rewrite each
+            
+            //start folding back spdm_inv
+            rewrite each
               curr_state_signing_pub_key as new_st1.signing_pub_key,
               curr_g_key as rep_new1.signing_pub_key_repr;
             
-             with _v. rewrite (V.pts_to curr_state_transcript _v) as
+            with _v. rewrite (V.pts_to curr_state_transcript _v) as
                            (V.pts_to new_st1.session_transcript ts);
 
-             assert_ (pure(st.signing_pub_key == new_st1.signing_pub_key));
-             assert_ (pure (rep.signing_pub_key_repr == rep_new1.signing_pub_key_repr));
+            assert_ (pure(st.signing_pub_key == new_st1.signing_pub_key));
+            assert_ (pure (rep.signing_pub_key_repr == rep_new1.signing_pub_key_repr));
 
-             rewrite (V.pts_to new_st1.session_transcript ts) as
+            rewrite (V.pts_to new_st1.session_transcript ts) as
                      (V.pts_to new_st1.session_transcript rep_new1.transcript);
              
-             assert_ (V.pts_to new_st1.signing_pub_key rep_new1.signing_pub_key_repr);
+            assert_ (V.pts_to new_st1.signing_pub_key rep_new1.signing_pub_key_repr);
 
-             assert_ (pure (new_st1.key_size == rep_new1.key_size_repr));
+            assert_ (pure (new_st1.key_size == rep_new1.key_size_repr));
 
-             //let new_state = (Initialized new_st1);
-             assert_ ( V.pts_to new_st1.session_transcript rep_new1.transcript **
+            assert_ ( V.pts_to new_st1.session_transcript rep_new1.transcript **
                        V.pts_to new_st1.signing_pub_key rep_new1.signing_pub_key_repr **
                        pure (new_st1.key_size == rep_new1.key_size_repr));
              
-             fold (session_state_related (Initialized new_st1) (G_Initialized rep_new1));
-             
-             with _v. rewrite (C.ghost_pcm_pts_to #trace_pcm_t #trace_pcm _v (pcm_elt 1.0R tr2)) as
+            fold (session_state_related (Initialized new_st1) (G_Initialized rep_new1));
+
+            with _v. rewrite (C.ghost_pcm_pts_to #trace_pcm_t #trace_pcm _v (pcm_elt 1.0R tr2)) as
                               (C.ghost_pcm_pts_to (get_state_data (Initialized new_st1)).g_trace_ref (pcm_elt 1.0R tr2));
             
-             fold (spdm_inv (Initialized new_st1) (get_state_data (Initialized new_st1)).g_trace_ref tr2);
+            fold (spdm_inv (Initialized new_st1) (get_state_data (Initialized new_st1)).g_trace_ref tr2);
+
+           if ret
+           {
+             //assert_ (pure(valid_signature sg_seq new_g_transcript curr_g_key));
+             //assert_ (pure(G_Recv_sign_resp? (current_state tr1)));
+             //assert_ (pure (exists (resp_rep:resp_repr ctx). valid_signature resp_rep.signature new_g_transcript curr_g_key));
             
-             fold (parser_success_post ctx res true);
 
-             fold (parser_post1 ctx res true);
-
-             assert_ (pure ((G_Initialized? (current_state tr2)) /\
-                            (G_Recv_sign_resp?(previous_current_state tr2)) /\
-                            (current_transcript tr2 == Seq.create hash_size 0uy) 
-                            ) 
-
-                     );
-
-             (* (current_transcript tr1 == g_seq_transcript) /\
-                                G_Recv_sign_resp?(previous_current_state tr1) /\
-                                (exists (resp_rep:resp_repr ctx). valid_signature resp_rep.signature
-                                     (g_transcript_of_gst  (previous_current_state tr1)) 
-                                     (g_key_of_gst (previous_current_state tr1))))*)*)
+             
              admit()
            }
            else
            {
-             fold (parser_success_post ctx res true);
-             fold (parser_post1 ctx res true);
              
-             //
-
-        
-             
-
-             admit()
+              admit()
            }
         
         
