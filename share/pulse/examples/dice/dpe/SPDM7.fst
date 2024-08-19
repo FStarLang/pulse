@@ -797,6 +797,21 @@ let hash_result_success_sign (tr0:trace{has_full_state_info (current_state tr0)}
                  b_resp 
                 (current_transcript tr1)) 
 
+let hash_result_success_sign1 (tr0:trace{has_full_state_info (current_state tr0)}) 
+                             (tr1:trace{has_full_state_info (current_state tr1) /\
+                                        has_full_state_info (previous_current_state tr1)})
+                             (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)})
+                             (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
+                     : prop =
+  (exists hash_algo. 
+                hash_of hash_algo (current_transcript tr0 ) 
+                (U32.uint_to_t(Seq.length b_req)) 
+                 b_req 
+                (U32.uint_to_t (Seq.length b_resp)) 
+                 b_resp 
+                (g_transcript_of_gst (previous_current_state tr1))) 
+
+
 let transition_related_sign_success (tr0:trace{has_full_state_info (current_state tr0)}) 
                                     (tr1:trace{has_full_state_info (current_state tr1)})
                   : prop =
@@ -1042,6 +1057,43 @@ sign_resp
             
             fold (spdm_inv (Initialized new_st1) (get_state_data (Initialized new_st1)).g_trace_ref tr2);
 
+            assert_ (pure (valid_transition tr0 (previous_current_state tr2) /\
+                           tr2 == next_next_trace tr0 (previous_current_state tr2 ) (current_state tr2)));
+            
+            assert_ (pure (transition_related_sign_success tr0 tr2));
+            assert_ (pure (exists hash_algo.  
+                                  hash_of hash_algo (current_transcript tr0 ) 
+                                 (U32.uint_to_t(Seq.length b_req)) 
+                                  b_req 
+                                 (U32.uint_to_t (Seq.length b_resp)) 
+                                 b_resp 
+                                (g_transcript_of_gst (previous_current_state tr2 ))));
+            assert_ (pure (previous_current_state tr2 == G_Recv_sign_resp rep_new));
+            assert_ (pure(has_full_state_info (previous_current_state tr2)));
+
+            assert_ (pure(has_full_state_info (current_state tr2) /\
+                          has_full_state_info (previous_current_state tr2)));
+            assert_ (pure (exists hash_algo. 
+                             hash_of hash_algo (current_transcript tr0 ) 
+                            (U32.uint_to_t(Seq.length b_req)) 
+                             b_req 
+                            (U32.uint_to_t (Seq.length b_resp)) 
+                             b_resp 
+                            (g_transcript_of_gst (previous_current_state tr2))) );
+
+            assert_ (pure(Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)));
+            //assert_ (pure(hash_result_success_sign1 tr0 tr1 #b_resp #b_req));
+            assert_ (pure ((G_Initialized? (current_state tr2)) /\
+                     (current_transcript tr2 == Seq.create hash_size 0uy) /\
+                     G_Recv_sign_resp?(previous_current_state tr2)));
+            assert_ (pure(ret == true ==> valid_signature sg_seq new_g_transcript curr_g_key));
+            assert_ (pure(ret == true ==> valid_signature sg_seq new_g_transcript (g_key_of_gst (previous_current_state tr2))));
+            assert_ (pure(ret == true ==> valid_signature sg_seq (g_transcript_of_gst  (previous_current_state tr2)) (g_key_of_gst (previous_current_state tr2))));
+            
+             assert_ (pure(ret == true ==> (exists (resp_rep:resp_repr ctx).
+                                                           valid_signature resp_rep.signature 
+                                                           (g_transcript_of_gst (previous_current_state tr2)) 
+                                                           (g_key_of_gst (previous_current_state tr2)))));
            if ret
            {
              //assert_ (pure(valid_signature sg_seq new_g_transcript curr_g_key));
