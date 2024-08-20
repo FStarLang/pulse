@@ -821,6 +821,32 @@ let transition_related_sign_success (tr0:trace{has_full_state_info (current_stat
 
 #restart-solver
 
+
+noeq
+type sign_resp_result  = {
+  parser_result: spdm_measurement_result_t ;
+  curr_state : state;
+  sign_status : bool
+}
+
+let valid_signature_exists 
+ (ctx:parser_context)
+ (tr1:trace{has_full_state_info (current_state tr1) /\
+            has_full_state_info (previous_current_state tr1)}) : prop =
+    (exists (resp_rep:resp_repr ctx).
+        valid_signature resp_rep.signature 
+        (g_transcript_of_gst (previous_current_state tr1)) 
+        (g_key_of_gst (previous_current_state tr1)))
+
+let state_change_success_sign1 (tr1:trace)
+                     : prop =
+   ((G_Initialized? (current_state tr1)) /\
+    (current_transcript tr1 == g_seq_transcript) /\
+    G_Recv_sign_resp?(previous_current_state tr1))
+
+
+
+
 fn
 sign_resp
   (ctx:parser_context)
@@ -839,22 +865,24 @@ sign_resp
              V.pts_to ctx.resp #p_resp b_resp) **
              spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
              pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
-   returns res: (spdm_measurement_result_t & state)
+   returns res: sign_resp_result
    
    ensures (V.pts_to req #p_req b_req **
             V.pts_to ctx.resp #p_resp b_resp **
-            parser_post1 ctx (fst res) true **
+            parser_post1 ctx res.parser_result true **
             (exists* tr1.
-                  spdm_inv (snd res) (get_state_data (snd res)).g_trace_ref tr1 **
-                  pure ((fst res).status == Success ==>  
-                                   state_change_success_sign tr1 ctx /\
-                                   hash_result_success_sign tr0 tr1 #b_resp #b_req /\
-                                   transition_related_sign_success tr0 tr1)))
+                  spdm_inv res.curr_state (get_state_data (res.curr_state)).g_trace_ref tr1 **
+                  pure (res.parser_result.status == Success ==>
+                                  state_change_success_sign1 tr1 /\ 
+                                  hash_result_success_sign1 tr0 tr1 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr1 /\
+                                  (res.sign_status == true ==> valid_signature_exists ctx tr1)
+              )))
     {
     let res = parser0 ctx #p_resp #b_resp true;
     match res.status {
       Parse_error -> {
-        (*let tr1 = tr0;
+        let tr1 = tr0;
         let r = (get_state_data c).g_trace_ref;
         assert_ (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
         assert_ (spdm_inv c (get_state_data c).g_trace_ref tr1);
@@ -870,9 +898,9 @@ sign_resp
        assert_ (V.pts_to req #p_req b_req **
                V.pts_to ctx.resp #p_resp b_resp **
                parser_post1 ctx res true);
-      
-       (res,c)*)
-       admit()
+       let ret = {parser_result = res; curr_state = c; sign_status = true};
+       (*(res,c)*)
+       ret
       }
       Success -> {
       let curr_state_data = get_state_data c;
@@ -1061,58 +1089,75 @@ sign_resp
                            tr2 == next_next_trace tr0 (previous_current_state tr2 ) (current_state tr2)));
             
             assert_ (pure (transition_related_sign_success tr0 tr2));
-            assert_ (pure (exists hash_algo.  
-                                  hash_of hash_algo (current_transcript tr0 ) 
-                                 (U32.uint_to_t(Seq.length b_req)) 
-                                  b_req 
-                                 (U32.uint_to_t (Seq.length b_resp)) 
-                                 b_resp 
-                                (g_transcript_of_gst (previous_current_state tr2 ))));
+            
             assert_ (pure (previous_current_state tr2 == G_Recv_sign_resp rep_new));
-            assert_ (pure(has_full_state_info (previous_current_state tr2)));
-
-            assert_ (pure(has_full_state_info (current_state tr2) /\
-                          has_full_state_info (previous_current_state tr2)));
-            assert_ (pure (exists hash_algo. 
-                             hash_of hash_algo (current_transcript tr0 ) 
-                            (U32.uint_to_t(Seq.length b_req)) 
-                             b_req 
-                            (U32.uint_to_t (Seq.length b_resp)) 
-                             b_resp 
-                            (g_transcript_of_gst (previous_current_state tr2))) );
-
-            assert_ (pure(Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)));
-            //assert_ (pure(hash_result_success_sign1 tr0 tr1 #b_resp #b_req));
+           
+            assert_ (pure(hash_result_success_sign1 tr0 tr2 #b_resp #b_req));
+           
             assert_ (pure ((G_Initialized? (current_state tr2)) /\
                      (current_transcript tr2 == Seq.create hash_size 0uy) /\
                      G_Recv_sign_resp?(previous_current_state tr2)));
+
             assert_ (pure(ret == true ==> valid_signature sg_seq new_g_transcript curr_g_key));
             assert_ (pure(ret == true ==> valid_signature sg_seq new_g_transcript (g_key_of_gst (previous_current_state tr2))));
             assert_ (pure(ret == true ==> valid_signature sg_seq (g_transcript_of_gst  (previous_current_state tr2)) (g_key_of_gst (previous_current_state tr2))));
             
-             assert_ (pure(ret == true ==> (exists (resp_rep:resp_repr ctx).
+            assert_ (pure(ret == true ==> (exists (resp_rep:resp_repr ctx).
                                                            valid_signature resp_rep.signature 
                                                            (g_transcript_of_gst (previous_current_state tr2)) 
                                                            (g_key_of_gst (previous_current_state tr2)))));
            if ret
            {
-             //assert_ (pure(valid_signature sg_seq new_g_transcript curr_g_key));
-             //assert_ (pure(G_Recv_sign_resp? (current_state tr1)));
-             //assert_ (pure (exists (resp_rep:resp_repr ctx). valid_signature resp_rep.signature new_g_transcript curr_g_key));
-            
+              let final_ret = {parser_result = res; curr_state = Initialized new_st1; sign_status = true};
+              assert_ (pure(res.status == Success /\ ret == true ==> (exists (resp_rep:resp_repr ctx).
+                                                           valid_signature resp_rep.signature 
+                                                           (g_transcript_of_gst (previous_current_state tr2)) 
+                                                           (g_key_of_gst (previous_current_state tr2)))));
+              
+              assert_ (pure(res.status == Success /\ ret == true ==> valid_signature_exists ctx tr2));
+              assert_ (pure(res.status == Success ==> hash_result_success_sign1 tr0 tr2 #b_resp #b_req));
+              assert_ (pure (res.status == Success ==> transition_related_sign_success tr0 tr2));
+              assert_ (pure (res.status == Success ==> state_change_success_sign1 tr2));
 
-             
-             admit()
+              assert_ (pure (res.status == Success ==> 
+                                  hash_result_success_sign1 tr0 tr2 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr2 /\
+                                  state_change_success_sign1 tr2 /\
+                                  (ret == true ==> valid_signature_exists ctx tr2)
+              ));
+              assert_ (pure (final_ret.parser_result.status == Success ==> 
+                                  hash_result_success_sign1 tr0 tr2 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr2 /\
+                                  state_change_success_sign1 tr2 /\
+                                  (final_ret.sign_status == true ==> valid_signature_exists ctx tr2)
+              ));
+              final_ret
            }
            else
            {
-             
-              admit()
-           }
-        
-        
-        
-           
+              let final_ret = {parser_result = res; curr_state = Initialized new_st1; sign_status = false};
+              assert_ (pure(res.status == Success /\ ret == true ==> (exists (resp_rep:resp_repr ctx).
+                                                           valid_signature resp_rep.signature 
+                                                           (g_transcript_of_gst (previous_current_state tr2)) 
+                                                           (g_key_of_gst (previous_current_state tr2)))));
+              
+              assert_ (pure(res.status == Success /\ ret == true ==> valid_signature_exists ctx tr2));
+              assert_ (pure(res.status == Success ==> hash_result_success_sign1 tr0 tr2 #b_resp #b_req));
+              assert_ (pure (res.status == Success ==> transition_related_sign_success tr0 tr2));
+              assert_ (pure (res.status == Success ==> state_change_success_sign1 tr2));
+              assert_ (pure (res.status == Success ==> 
+                                  hash_result_success_sign1 tr0 tr2 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr2 /\
+                                  state_change_success_sign1 tr2 /\
+                                  (ret == true ==> valid_signature_exists ctx tr2)));
+              assert_ (pure (final_ret.parser_result.status == Success ==> 
+                                  hash_result_success_sign1 tr0 tr2 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr2 /\
+                                  state_change_success_sign1 tr2 /\
+                                  (final_ret.sign_status == true ==> valid_signature_exists ctx tr2)
+              ));
+              final_ret
+           }  
         }
         Recv_no_sign_resp st -> {
           admit()
@@ -1122,3 +1167,9 @@ sign_resp
     }
     }
 
+
+(*Frequently getting this, 
+   Assertion failed
+   - Raised within Tactics.refl_check_prop_validity
+  With a restart, it goes off*)
+                            
