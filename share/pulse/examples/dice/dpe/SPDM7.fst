@@ -708,32 +708,6 @@ fn
   admit()
 }
 
-let sign_resp_pre (c:state) 
-                  (req_size: u8)
-                  (resp_size: u8)
-                  (req:V.vec u8 { V.length req == u8_v req_size })
-                  (resp:V.vec u8 { V.length resp == u8_v resp_size })
-                  (#tr0:trace {has_full_state_info (current_state tr0) }): slprop =
-                  
-(exists* p_req b_req p_resp b_resp.
-                          V.pts_to req #p_req b_req **
-                          V.pts_to resp #p_resp b_resp) **
-        spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
-        pure 
-        (G_Recv_no_sign_resp? (current_state tr0) \/
-         G_Initialized? (current_state tr0))
-
-let sign_resp_post_pts_to (req_size: u8)
-                          (resp_size: u8)
-                          (req:V.vec u8 { V.length req == u8_v req_size })
-                          (resp:V.vec u8 { V.length resp == u8_v resp_size })
-                          (p_req : perm)
-                          (p_resp : perm)
-                          (b_req : Seq.seq u8)
-                          (b_resp : Seq.seq u8): slprop =
-  V.pts_to req #p_req b_req **
-  V.pts_to resp #p_resp b_resp
-
 noextract
 let next_next_trace (t:trace) 
                     (s1:g_state { valid_transition t s1 }) 
@@ -742,30 +716,6 @@ let next_next_trace (t:trace)
 
 let g_seq_transcript : g_transcript =
   Seq.create hash_size 0uy
-
-let state_change_success_sign (tr1:trace) 
-                              (ctx:parser_context)
-                     : prop =
-   ((G_Initialized? (current_state tr1)) /\
-                                
-                                (current_transcript tr1 == g_seq_transcript) /\
-                                G_Recv_sign_resp?(previous_current_state tr1) /\
-                                (exists (resp_rep:resp_repr ctx). valid_signature resp_rep.signature
-                                     (g_transcript_of_gst  (previous_current_state tr1)) 
-                                     (g_key_of_gst (previous_current_state tr1))))
-
-let hash_result_success_sign (tr0:trace{has_full_state_info (current_state tr0)}) 
-                             (tr1:trace{has_full_state_info (current_state tr1)})
-                             (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)})
-                             (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
-                     : prop =
-  (exists hash_algo. 
-                hash_of hash_algo (current_transcript tr0 ) 
-                (U32.uint_to_t(Seq.length b_req)) 
-                 b_req 
-                (U32.uint_to_t (Seq.length b_resp)) 
-                 b_resp 
-                (current_transcript tr1)) 
 
 let hash_result_success_sign1 (tr0:trace{has_full_state_info (current_state tr0)}) 
                              (tr1:trace{has_full_state_info (current_state tr1) /\
@@ -790,7 +740,6 @@ let transition_related_sign_success (tr0:trace{has_full_state_info (current_stat
 
 
 #restart-solver
-
 
 noeq
 type sign_resp_result  = {
