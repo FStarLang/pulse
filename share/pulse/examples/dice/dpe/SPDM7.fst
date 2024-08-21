@@ -280,11 +280,9 @@ no_sign_resp_aux
   (st:st)
   (rep:repr)
   (res:spdm_measurement_result_t)
-  (#tr0:trace {has_full_state_info (current_state tr0) })
-  (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ Seq.length b_resp == u32_v ctx.resp_size /\
-                       (UInt.fits (Seq.length b_resp) U32.n)})
-  (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ Seq.length b_req == u32_v req_size /\
-                      (UInt.fits (Seq.length b_req) U32.n)}) 
+  (#tr0:trace{has_full_state_info (current_state tr0)})
+  (#b_resp: G.erased (Seq.seq u8){u32_v ctx.resp_size > 0 /\ Seq.length b_resp == u32_v ctx.resp_size})
+  (#b_req: G.erased (Seq.seq u8){Seq.length b_req == u32_v req_size})
   (#p_req : perm)
   (#p_resp:perm)
   requires parser_post1 ctx res false **
@@ -446,22 +444,11 @@ fn no_sign_resp1
             parser_post1 ctx (fst res) false  **
            
             //state change related post-condition 
-             (exists* tr1.
-                     spdm_inv (snd res) (get_state_data (snd res)).g_trace_ref tr1 **
-                     (*no_sign_resp_state_related_post_conditions ctx tr0 tr1 c (snd res) #b_resp #b_req (fst res)*)
-                     pure ((fst res).status == Success ==> (G_Recv_no_sign_resp? (current_state tr1)) /\
-                            (valid_transition tr0 (current_state tr1)) /\ (tr1 == next_trace tr0 (current_state tr1)) /\
-                           (G_Recv_no_sign_resp? (current_state tr1)) /\
-
-                           (exists hash_algo. 
-                                   hash_of hash_algo (current_transcript tr0 ) 
-                                  (U32.uint_to_t(Seq.length b_req)) 
-                                  b_req 
-                                  (U32.uint_to_t (Seq.length b_resp)) 
-                                  b_resp 
-                                 (current_transcript tr1))))
-
-            
+            (exists* tr1.
+                  spdm_inv (snd res) (get_state_data (snd res)).g_trace_ref tr1 **
+                  pure ((fst res).status == Success ==>
+                                      state_change_success_no_sign tr0 tr1 /\
+                                      hash_result_success_no_sign tr0 tr1 #b_resp #b_req ))           
 {
   let res = parser0 ctx #p_resp #b_resp false;
   match res.status {
@@ -515,9 +502,19 @@ fn no_sign_resp1
 
         
           unfold (session_state_related (Initialized st) (G_Initialized rep));
-        
-        
-          admit()
+          
+          assert_ (C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some #perm 1.0R, tr0));
+          
+          assert_ (pure(c == Initialized st));
+          
+          rewrite (C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some #perm 1.0R, tr0)) as
+                   (C.ghost_pcm_pts_to (get_state_data c).g_trace_ref (Some #perm 1.0R, tr0));
+
+          let ret = no_sign_resp_aux ctx req_size req c st rep res #tr0 #b_resp #b_req #p_req #p_resp;
+          
+          assert_ (pure(current_state tr0 == G_Initialized rep));
+
+          ret
         }
          Recv_no_sign_resp st ->{
           intro_session_state_tag_related (Recv_no_sign_resp st ) (current_state tr0);
@@ -526,7 +523,18 @@ fn no_sign_resp1
           
           unfold (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep));
         
-          admit()
+          assert_ (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp st )).g_trace_ref (Some #perm 1.0R, tr0));
+          
+          assert_ (pure(c == Recv_no_sign_resp st ));
+          
+          rewrite (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp st )).g_trace_ref (Some #perm 1.0R, tr0)) as
+                   (C.ghost_pcm_pts_to (get_state_data c).g_trace_ref (Some #perm 1.0R, tr0));
+
+          let ret = no_sign_resp_aux ctx req_size req c st rep res #tr0 #b_resp #b_req #p_req #p_resp;
+          
+          assert_ (pure(current_state tr0 == G_Recv_no_sign_resp rep));
+
+          ret
           
          }
       }
@@ -535,7 +543,7 @@ fn no_sign_resp1
 }
 
 
-fn no_sign_resp1
+fn no_sign_resp2
   (ctx:parser_context)
   (req_size: u32{u32_v req_size > 0})
   (req:V.vec u8 { V.length req == u32_v req_size })
