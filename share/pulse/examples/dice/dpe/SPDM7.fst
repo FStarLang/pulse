@@ -595,7 +595,7 @@ fn reset
     unfold (session_state_related c (current_state tr0));
     
     let rep = get_gstate_data (current_state tr0);
-
+    
     match c {
         Initialized st -> {
          intro_session_state_tag_related (Initialized st) (current_state tr0);
@@ -604,39 +604,40 @@ fn reset
          unreachable()
         }
         Recv_no_sign_resp st -> {
-          intro_session_state_tag_related (Recv_no_sign_resp st ) (current_state tr0);
-           assert_ (pure (session_state_tag_related (Recv_no_sign_resp st) (current_state tr0)));
-           rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
+        intro_session_state_tag_related (Recv_no_sign_resp st ) (current_state tr0);
+        assert_ (pure (session_state_tag_related (Recv_no_sign_resp st) (current_state tr0)));
+        rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
                  (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep));
-           unfold (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep));
-           rewrite (V.pts_to st.session_transcript rep.transcript) as
+        unfold (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep));
+        rewrite (V.pts_to st.session_transcript rep.transcript) as
                    (V.pts_to curr_state_transcript rep.transcript);
 
-           rewrite (V.pts_to curr_state_transcript rep.transcript) as
+        rewrite (V.pts_to curr_state_transcript rep.transcript) as
                    (V.pts_to curr_state_transcript curr_g_transcript);
+
+        zeroize_vector curr_state_transcript;
+        
+        assert_ (pure(current_state tr0 == G_Recv_no_sign_resp rep));
           
-          let new_transcript = V.alloc 0uy (SZ.uint_to_t hash_size);
-          assert_ (pure(current_state tr0 == G_Recv_no_sign_resp rep));
-          
-          assert_ (pure (rep_new.signing_pub_key_repr == rep.signing_pub_key_repr)); 
-          assert_ (pure(rep_new.key_size_repr == rep.key_size_repr));
+        assert_ (pure (rep_new.signing_pub_key_repr == rep.signing_pub_key_repr)); 
+        assert_ (pure(rep_new.key_size_repr == rep.key_size_repr));
 
-          assert_ (pure(next (current_state tr0) (G_Initialized rep_new)));
-          assert_ (pure (valid_transition tr0 (G_Initialized rep_new)));
+        assert_ (pure(next (current_state tr0) (G_Initialized rep_new)));
+        assert_ (pure (valid_transition tr0 (G_Initialized rep_new)));
+        
+        extend_trace ((get_state_data (Recv_no_sign_resp st)).g_trace_ref) tr0 (G_Initialized rep_new); 
 
-          extend_trace ((get_state_data (Recv_no_sign_resp st)).g_trace_ref) tr0 (G_Initialized rep_new); 
-
-          //----------------------------------------------------------------------------------------------------------------------------
-          let new_st = {key_size = curr_state_key_size; 
+        let new_st = {key_size = curr_state_key_size; 
                         signing_pub_key = curr_state_signing_pub_key; 
-                        session_transcript = new_transcript;
+                        session_transcript = curr_state_transcript;
                         g_trace_ref = curr_state_data.g_trace_ref};
           
-          let new_state = (Initialized new_st);
-          
-          let tr1 = next_trace tr0 (G_Initialized rep_new);
 
-          assert_ (pure (G_Initialized? (current_state tr1)));
+        let new_state = (Initialized new_st);
+          
+        let tr1 = next_trace tr0 (G_Initialized rep_new);
+
+        assert_ (pure (G_Initialized? (current_state tr1)));
           assert_ (pure(g_key_of_gst (current_state tr1) ==  (current_key tr0)));
 
           assert_ (pure (g_key_len_of_gst (current_state tr1) == (get_state_data c).key_size));
@@ -645,7 +646,7 @@ fn reset
            curr_state_signing_pub_key as new_st.signing_pub_key,
            curr_g_key as rep_new.signing_pub_key_repr;
 
-          with _v. rewrite (V.pts_to new_transcript _v) as
+          with _v. rewrite (V.pts_to curr_state_transcript _v) as
                            (V.pts_to new_st.session_transcript ts);
           
           assert_ (pure(st.signing_pub_key == new_st.signing_pub_key));
@@ -662,7 +663,7 @@ fn reset
           
           with _v. rewrite (C.ghost_pcm_pts_to #trace_pcm_t #trace_pcm _v (pcm_elt 1.0R tr1)) as
                            (C.ghost_pcm_pts_to (get_state_data (Initialized new_st)).g_trace_ref (pcm_elt 1.0R tr1));
-        
+
           fold (spdm_inv (Initialized new_st) (get_state_data (Initialized new_st)).g_trace_ref tr1);
           
           assert_ (spdm_inv (Initialized new_st) (get_state_data (Initialized new_st)).g_trace_ref tr1 ** 
@@ -675,16 +676,16 @@ fn reset
                     pure (G_Initialized? (current_state t) /\
                     g_key_of_gst (current_state t) ==  (current_key tr0) /\
                     g_key_len_of_gst (current_state t) == (get_state_data c).key_size));
-          
+
           fold (init_inv (get_state_data c).key_size (current_key tr0) (Initialized new_st));
 
           assert_ (init_inv (get_state_data c).key_size (current_key tr0) (Initialized new_st));
-
-          V.free curr_state_transcript;
+          
           new_state
         }
     }
   }
+
 
 let valid_signature (signature msg key:Seq.seq u8):prop = admit()
 
