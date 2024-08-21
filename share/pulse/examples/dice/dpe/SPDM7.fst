@@ -688,16 +688,6 @@ fn reset
 
 let valid_signature (signature msg key:Seq.seq u8):prop = admit()
 
-(*noeq
-type st = {
-  key_size : u32;
-  signing_pub_key : v:V.vec u8 { V.length v == U32.v key_size };
-  session_transcript : v:V.vec u8{V.is_full_vec v /\ V.length v == hash_size};
-  g_trace_ref:gref
-}*)
-
-
-
 fn 
  verify_sign 
          (ts_digest: V.vec u8{V.length ts_digest == hash_size})
@@ -714,26 +704,6 @@ fn
              V.pts_to sg sg_seq **
              V.pts_to pub_key p_seq **
              pure( res == true ==> valid_signature sg_seq ts_seq p_seq))
-{
-  admit()
-}
-
-fn 
- verify_sign1 
-         (ts_digest: V.vec u8{V.length ts_digest == hash_size})
-         (sg: V.vec u8{V.length sg == signature_size})
-         (pub_key:V.vec u8)
-         (#ts_seq: (G.erased (Seq.seq u8)){Seq.length ts_seq == hash_size})
-         (*(#sg_seq:(G.erased (Seq.seq u8)){Seq.length sg_seq == signature_size})*)
-         (#p_seq:(G.erased (Seq.seq u8)))
-    requires (exists* ctx (resp_repr: resp_repr ctx). V.pts_to ts_digest ts_seq **
-             V.pts_to sg resp_repr.signature **
-             V.pts_to pub_key p_seq)
-    returns res: bool
-    ensures (exists* ctx (resp_repr: resp_repr ctx). V.pts_to ts_digest ts_seq **
-             V.pts_to sg resp_repr.signature **
-             V.pts_to pub_key p_seq **
-             pure( res == true ==> valid_signature resp_repr.signature ts_seq p_seq))
 {
   admit()
 }
