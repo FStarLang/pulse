@@ -851,14 +851,14 @@ sign_resp_aux
   (req_size: u32{u32_v req_size > 0})
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)
+  (st:st)
+  (rep:repr)
+  (res:spdm_measurement_result_t)
   (#tr0:trace {has_full_state_info (current_state tr0) })
   (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ Seq.length b_resp == u32_v ctx.resp_size /\
                        (UInt.fits (Seq.length b_resp) U32.n)})
   (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ Seq.length b_req == u32_v req_size /\
                       (UInt.fits (Seq.length b_req) U32.n)}) 
-  (st:st)
-  (rep:repr)
-  (res:spdm_measurement_result_t)
   (#p_req : perm)
   (#p_resp:perm)
   requires parser_post1 ctx res true **
@@ -1118,6 +1118,137 @@ sign_resp_aux
 
   }
 
+fn
+sign_resp1
+  (ctx:parser_context)
+  (req_size: u32{u32_v req_size > 0})
+  (req:V.vec u8 { V.length req == u32_v req_size })
+  (c:state)
+  (#tr0:trace {has_full_state_info (current_state tr0) })
+  (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ Seq.length b_resp == u32_v ctx.resp_size /\
+                       (UInt.fits (Seq.length b_resp) U32.n)})
+  (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ Seq.length b_req == u32_v req_size /\
+                      (UInt.fits (Seq.length b_req) U32.n)}) 
+  (#p_req : perm)
+  (#p_resp:perm)
+
+   requires (V.pts_to req #p_req b_req **
+             V.pts_to ctx.resp #p_resp b_resp) **
+             spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
+             pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
+   returns res: sign_resp_result
+   
+   ensures (V.pts_to req #p_req b_req **
+            V.pts_to ctx.resp #p_resp b_resp **
+            parser_post1 ctx res.parser_result true **
+            (exists* tr1.
+                  spdm_inv res.curr_state (get_state_data (res.curr_state)).g_trace_ref tr1 **
+                  pure (res.parser_result.status == Success ==>
+                                  state_change_success_sign1 tr1 /\ 
+                                  hash_result_success_sign1 tr0 tr1 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr1 /\
+                                  (res.sign_status == true ==> valid_signature_exists ctx tr1)
+              )))
+    {
+    let res = parser0 ctx #p_resp #b_resp true;
+    match res.status {
+      Parse_error -> {
+        let tr1 = tr0;
+        let r = (get_state_data c).g_trace_ref;
+        assert_ (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+        assert_ (spdm_inv c (get_state_data c).g_trace_ref tr1);
+       rewrite 
+        (spdm_inv c ((get_state_data c).g_trace_ref) tr0) as
+        (spdm_inv c (get_state_data c).g_trace_ref tr1);
+      
+       assert_ (V.pts_to req #p_req b_req **
+               V.pts_to ctx.resp #p_resp b_resp);
+
+       assert_ (parser_post1 ctx res true);
+
+       assert_ (V.pts_to req #p_req b_req **
+               V.pts_to ctx.resp #p_resp b_resp **
+               parser_post1 ctx res true);
+       let ret = {parser_result = res; curr_state = c; sign_status = true};
+       (*(res,c)*)
+       ret
+      }
+      Success -> {
+         //assert (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+         unfold (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      
+        //assert (session_state_related c (current_state tr0));
+        unfold (session_state_related c (current_state tr0));
+
+        let rep = get_gstate_data (current_state tr0);
+      
+        assert_ (pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0)));
+         match c {
+        Initialized st -> {
+           intro_session_state_tag_related (Initialized st) (current_state tr0);
+           rewrite (session_state_related (Initialized st) (current_state tr0)) as
+                   (session_state_related (Initialized st) (G_Initialized rep));
+           
+           unfold (session_state_related (Initialized st) (G_Initialized rep));
+           
+           assert_ (C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some #perm 1.0R, tr0));
+           
+           assert_ (pure(c == Initialized st));
+           rewrite (C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some #perm 1.0R, tr0)) as
+                   (C.ghost_pcm_pts_to (get_state_data c).g_trace_ref (Some #perm 1.0R, tr0));
+           
+           let ret = sign_resp_aux ctx req_size req c st rep res #tr0 #b_resp #b_req #p_req #p_resp;
+           
+           assert_ (pure(current_state tr0 == G_Initialized rep));
+           
+
+           assert_ ((V.pts_to req #p_req b_req **
+                     V.pts_to ctx.resp #p_resp b_resp **
+                     parser_post1 ctx ret.parser_result true **
+                     (exists* (tr1:trace).
+                           spdm_inv ret.curr_state (get_state_data (ret.curr_state)).g_trace_ref tr1 **
+                           pure (ret.parser_result.status == Success ==>
+                                  state_change_success_sign1 tr1 /\ 
+                                  hash_result_success_sign1 tr0 tr1 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr1 /\
+                                  (ret.sign_status == true ==> valid_signature_exists ctx tr1)
+              ))) );
+           ret
+      }
+      Recv_no_sign_resp st -> {
+          intro_session_state_tag_related (Recv_no_sign_resp st) (current_state tr0);
+           rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
+                   (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep));
+           
+           unfold (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep));
+
+           assert_ (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp st)).g_trace_ref (Some #perm 1.0R, tr0));
+           
+           assert_ (pure(c == Recv_no_sign_resp st));
+           rewrite (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp st)).g_trace_ref (Some #perm 1.0R, tr0)) as
+                   (C.ghost_pcm_pts_to (get_state_data c).g_trace_ref (Some #perm 1.0R, tr0));
+           let ret = sign_resp_aux ctx req_size req c st rep res #tr0 #b_resp #b_req #p_req #p_resp;
+           assert_ (pure(current_state tr0 == G_Recv_no_sign_resp rep));
+           
+
+           assert_ ((V.pts_to req #p_req b_req **
+                     V.pts_to ctx.resp #p_resp b_resp **
+                     parser_post1 ctx ret.parser_result true **
+                     (exists* (tr1:trace).
+                           spdm_inv ret.curr_state (get_state_data (ret.curr_state)).g_trace_ref tr1 **
+                           pure (ret.parser_result.status == Success ==>
+                                  state_change_success_sign1 tr1 /\ 
+                                  hash_result_success_sign1 tr0 tr1 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr1 /\
+                                  (ret.sign_status == true ==> valid_signature_exists ctx tr1)
+              ))) );
+           ret
+        }
+
+    }
+    }
+  }
+}
 
 fn
 sign_resp
@@ -1222,10 +1353,7 @@ sign_resp
                    (session_state_related (Initialized st) (G_Initialized rep));
            
            unfold (session_state_related (Initialized st) (G_Initialized rep));
-           
-           show_proof_state;
 
-        
            rewrite (V.pts_to st.session_transcript rep.transcript) as
                    (V.pts_to curr_state_transcript rep.transcript);
           
