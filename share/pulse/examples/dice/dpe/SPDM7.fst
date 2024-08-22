@@ -269,11 +269,29 @@ let valid_transition_lemma
                           (exists req_size req resp_size resp hash_algo. 
                              hash_of hash_algo rep.transcript req_size req resp_size resp rep_new.transcript)))
     )
-    (ensures valid_transition tr0 (G_Recv_no_sign_resp rep_new)) =
-    match (current_state tr0) with
-    | G_Initialized rep -> ()
-    | G_Recv_no_sign_resp rep -> ()
+    (ensures valid_transition tr0 (G_Recv_no_sign_resp rep_new)) = ()
 
+let valid_transition_lemma1
+  (tr0:trace{has_full_state_info (current_state tr0)})
+  (rep:repr)
+  (rep_new:repr{~(all_zeros_hash_transcript rep_new.transcript)})
+  : Lemma
+    (requires  (G_Initialized? (current_state tr0) \/ G_Recv_no_sign_resp? (current_state tr0)) /\
+               (G_Initialized? (current_state tr0) ==>
+                          (all_zeros_hash_transcript rep.transcript) /\
+                          (G_Initialized rep == current_state tr0) /\
+                          (rep.signing_pub_key_repr == rep_new.signing_pub_key_repr /\
+                           rep.key_size_repr = rep_new.key_size_repr )) /\
+                
+               (G_Recv_no_sign_resp? (current_state tr0) ==>
+                          ~(all_zeros_hash_transcript rep.transcript) /\
+                          (G_Recv_no_sign_resp rep == current_state tr0) /\
+                          (rep.signing_pub_key_repr == rep_new.signing_pub_key_repr /\
+                           rep.key_size_repr = rep_new.key_size_repr /\
+                          (exists req_size req resp_size resp hash_algo. 
+                             hash_of hash_algo rep.transcript req_size req resp_size resp rep_new.transcript)))
+    )
+    (ensures valid_transition tr0 (G_Recv_sign_resp rep_new)) = ()
 
 fn
 no_sign_resp_aux
@@ -820,6 +838,12 @@ sign_resp_aux
                 (rep.signing_pub_key_repr == (current_key tr0)) /\
                 (rep.key_size_repr == (current_key_size tr0)) /\
                 (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0)) /\
+                (G_Initialized? (current_state tr0) ==>
+                          (all_zeros_hash_transcript rep.transcript) /\
+                          (G_Initialized rep == current_state tr0)) /\
+                (G_Recv_no_sign_resp? (current_state tr0) ==>
+                          ~(all_zeros_hash_transcript rep.transcript) /\
+                          (G_Recv_no_sign_resp rep == current_state tr0)) /\
                 res.status == Success) **
            C.ghost_pcm_pts_to 
                   (get_state_data c).g_trace_ref
@@ -875,8 +899,30 @@ sign_resp_aux
     //
     //Do the changes required for transitioning to G_Sign state and extend the trace
     let rep_new = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = new_g_transcript};
-   
+    
+    assert_ (V.pts_to curr_state_transcript new_g_transcript);
+    assert_ (pure (Seq.equal new_g_transcript' (hash_seq hash_algo curr_g_transcript req_size b_req)));
+    assert_ (pure (Seq.equal new_g_transcript (hash_seq hash_algo new_g_transcript' ctx.resp_size b_resp)));
+
+    assert_ (pure (Seq.equal new_g_transcript (hash_seq hash_algo (hash_seq hash_algo curr_g_transcript req_size b_req) 
+                                                    ctx.resp_size b_resp)));
+    assert_ (pure (hash_of hash_algo curr_g_transcript req_size b_req ctx.resp_size b_resp new_g_transcript));
+
+    assert_ (pure (rep.transcript == curr_g_transcript));
+    
+    assert_ (pure (~(all_zeros_hash_transcript rep_new.transcript))); 
+    assert_ (pure (rep_new.transcript == new_g_transcript));
+    assert_ (pure ((rep.signing_pub_key_repr == rep_new.signing_pub_key_repr /\
+                    rep.key_size_repr = rep_new.key_size_repr )));
+    
+    
+    assert_ (pure (hash_of hash_algo rep.transcript req_size b_req ctx.resp_size b_resp rep_new.transcript));
+
+    assert_ (pure (exists req_size req resp_size resp hash_algo. 
+                             hash_of hash_algo rep.transcript req_size req resp_size resp rep_new.transcript));
     //bring in a lemma to prove this
+    //The above asserts are needed to typecheck the below lemma
+    valid_transition_lemma1 tr0 rep rep_new;
     assume_ (pure(valid_transition tr0 (G_Recv_sign_resp rep_new)));
     let tr1 = next_trace tr0 (G_Recv_sign_resp rep_new);
     assert_ (pure (valid_transition tr0 (G_Recv_sign_resp rep_new)));
