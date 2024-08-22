@@ -31,7 +31,6 @@
     "dice/external",
     "dice/external/hacl",
     "dice/external/l0",
-    "dice/cbor",
-    "dice/_output/cache"
+    "dice/cbor"
   ]
 }

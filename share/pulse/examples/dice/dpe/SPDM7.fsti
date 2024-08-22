@@ -18,7 +18,6 @@ module E = FStar.Endianness
 module O = Pulse.Lib.OnRange
 module R = Pulse.Lib.Reference
 
-
 type u8 = FStar.UInt8.t
 type u16 = FStar.UInt16.t
 type u32 = FStar.UInt32.t
@@ -65,9 +64,10 @@ let max_opaque_data_size = 1024
 let max_transcript_message_buffer_size = 
   63 + spdm_nonce_size  +  max_measurement_record_size  + max_asym_key_size + max_opaque_data_size
 
-let max_transcript_message_buffer_size_u32 = U32.uint_to_t max_transcript_message_buffer_size
+let max_transcript_message_buffer_size_u32 =
+  U32.uint_to_t max_transcript_message_buffer_size
 
-type g_transcript = Ghost.erased (Seq.seq u8)
+type g_transcript = G.erased (Seq.seq u8)
 
 // Ghost repr
 //
@@ -76,19 +76,31 @@ let hash_size = 256
 
 let hash_algo = 256ul
 
-let all_zeros_hash_transcript (t:g_transcript) : prop =
-    (forall i. i < Seq.length t ==> Seq.index t i == 0uy)
+//
+// AR: Why do we need the invariant that in the init state all bytes are zero?
+//     And in any other state they are non zero?
+//
+// let all_zeros_hash_transcript (t:g_transcript) : prop =
+//   forall i. i < Seq.length t ==> Seq.index t i == 0uy
+//
 
-let hash_seq (algo:u32)
+//
+// AR: We can keep it GTot, instead of making the seq erased,
+//     and having F* to insert reveals in the uses
+//
+let hash_spec
+  (algo:u32)
+  (ts_digest: Seq.seq u8{Seq.length ts_digest == hash_size})
+  (msg_size: u32{u32_v msg_size > 0})
+  (msg: Seq.seq u8{Seq.length msg == u32_v msg_size})
+  : GTot (t:(Seq.seq u8){Seq.length t== hash_size})  = admit()
 
-         (ts_digest: Seq.seq u8{Seq.length ts_digest == hash_size})
-         (msg_size: u32{u32_v msg_size > 0})
-         (msg: Seq.seq u8{Seq.length msg == u32_v msg_size})
-  : (t:(G.erased (Seq.seq u8)){Seq.length t== hash_size /\
-                  ~(all_zeros_hash_transcript t)})  = admit()
-        
-
-
+//
+// AR: If we know V.pts_to v s, then the fact that Seq.length s == V.length v
+//     is derivable. See V.pts_to_len lemma
+//
+//     Then, do we need the refinments on the sequences?
+//
 val hash (hash_algo: u32)
          (ts_digest: V.vec u8{V.length ts_digest == hash_size})
          (msg_size: u32{u32_v msg_size > 0})
@@ -96,13 +108,19 @@ val hash (hash_algo: u32)
          (#ts_seq: (G.erased (Seq.seq u8)){Seq.length ts_seq == hash_size})
          (#msg_seq: (G.erased (Seq.seq u8)){Seq.length msg_seq == u32_v msg_size})
          (#p_msg:perm)
+  : stt unit
+        (requires V.pts_to ts_digest ts_seq **
+                  V.pts_to msg #p_msg msg_seq)
+        (ensures fun _ -> V.pts_to msg #p_msg msg_seq **
+                          V.pts_to ts_digest (hash_spec hash_algo ts_seq msg_size msg_seq))
 
-     : stt unit
-    (requires V.pts_to ts_digest ts_seq **
-              V.pts_to msg #p_msg msg_seq)
-    (ensures fun _ -> (exists* new_ts_seq. V.pts_to ts_digest new_ts_seq **
-                                           V.pts_to msg #p_msg msg_seq **
-                                           pure (Seq.equal new_ts_seq (hash_seq hash_algo ts_seq msg_size msg_seq))))
+
+        //
+        // AR: Instead of using exists and Seq.equal, you can just inline the spec as above
+        // 
+        // (ensures fun _ -> exists* new_ts_seq. V.pts_to ts_digest new_ts_seq **
+        //                                       V.pts_to msg #p_msg msg_seq **
+        //                                       pure (Seq.equal new_ts_seq (hash_seq hash_algo ts_seq msg_size msg_seq))))
 
 let hash_of (hash_algo: u32)
             (s0:Seq.seq u8{Seq.length s0 == hash_size })
@@ -112,10 +130,7 @@ let hash_of (hash_algo: u32)
             (resp:Seq.seq u8{Seq.length resp == u32_v resp_size})
             (s1:Seq.seq u8{Seq.length s1 == hash_size})
                   : prop =
- Seq.equal s1 (hash_seq hash_algo (hash_seq hash_algo s0 req_size req) resp_size resp)
-
-
-
+ Seq.equal s1 (hash_spec hash_algo (hash_spec hash_algo s0 req_size req) resp_size resp)
 
 [@@ erasable]
 noeq
@@ -125,14 +140,24 @@ type repr = {
   transcript : g:g_transcript{Seq.length g == hash_size};
 }
 
-
+//
+// AR: We need more ghost state instrumentation to keep request and response msgs
+//     Earlier they were captured in the transcript,
+//     but now transcript being a hash, we need to keep them separately
+//
+//     One way is to add two more arguments to G_Recv_no_sign_resp and G_Recv_sign_resp
+//     that are the req and resp sequences, that caused the transition
+//
+//     So that in the next relation, we can precisely specify the transcript
+//     Also see comments in the next relation below
+//
 [@@ erasable]
 noeq
 type g_state : Type u#1 =
   | G_UnInitialized : g_state
-  | G_Initialized :  repr:repr{all_zeros_hash_transcript repr.transcript} -> g_state
-  | G_Recv_no_sign_resp : repr:repr{~(all_zeros_hash_transcript repr.transcript)} ->  g_state
-  | G_Recv_sign_resp : repr:repr{~(all_zeros_hash_transcript repr.transcript)} -> g_state
+  | G_Initialized :  repr -> g_state
+  | G_Recv_no_sign_resp : repr ->  g_state
+  | G_Recv_sign_resp : repr -> g_state
 
 //Transition function
 let next (s0 s1:g_state) : prop =
@@ -144,6 +169,11 @@ let next (s0 s1:g_state) : prop =
   | G_Initialized k , G_Recv_no_sign_resp r
   // initial ---> sign (upon sign call)
   | G_Initialized k, G_Recv_sign_resp r ->
+    //
+    // AR: This is saying nothing about the transcript in s1
+    //     If we keep req and resp also with the state (as in the comment above),
+    //     we should be able to say that s1.transcript = init_hash req resp
+    //
     k.signing_pub_key_repr == r.signing_pub_key_repr /\
     k.key_size_repr == r.key_size_repr
 
@@ -155,6 +185,10 @@ let next (s0 s1:g_state) : prop =
     r0.signing_pub_key_repr == r1.signing_pub_key_repr /\
     r0.key_size_repr = r1.key_size_repr /\
     (*is_prefix_of r0.transcript r1.transcript*)
+    //
+    // AR: Here also, instead of existentially quantifying over the req and resp,
+    //     we should be able to maintain the msg sequences and use them
+    //
     (exists req_size req resp_size resp hash_algo. 
          hash_of hash_algo r0.transcript req_size req resp_size resp r1.transcript)
         
@@ -301,8 +335,16 @@ let session_state_related (s:state) (gs:g_state) : slprop =
 //r is the ghost ptr to trace t with full permission.
 // state s and current state of trace t are session_state_related.
 
-let spdm_inv (s:state) (r:gref) (t:trace) : slprop =
-  ghost_pcm_pts_to r (Some 1.0R, t) **
+let get_state_data (c:state) : st =
+ match c with
+ | Initialized s -> s
+ |Recv_no_sign_resp s -> s
+
+//
+// AR: No need to take r separately as an argument, right? We can just get it from s?
+//
+let spdm_inv (s:state) (t:trace) : slprop =
+  ghost_pcm_pts_to (get_state_data s).g_trace_ref (Some 1.0R, t) **
   session_state_related s (current_state t)
 
 let has_full_state_info (s:g_state) :prop =
@@ -338,16 +380,9 @@ let current_key (t:trace { has_full_state_info (current_state t) }) : GTot (Ghos
 let current_key_size (t:trace { has_full_state_info (current_state t) }) : GTot (Ghost.erased u32) =
   g_key_len_of_gst (current_state t)
 
-
-
-let get_state_data (c:state) : st =
- match c with
- | Initialized s -> s
- |Recv_no_sign_resp s -> s
-
 let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) : slprop =
   exists* (t:trace).
-    spdm_inv s (get_state_data s).g_trace_ref t ** 
+    spdm_inv s t ** 
     pure (G_Initialized? (current_state t) /\
           g_key_of_gst (current_state t) == b /\
           g_key_len_of_gst (current_state t) == key_len)
