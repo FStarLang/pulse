@@ -35,8 +35,6 @@ module R = Pulse.Lib.Reference
 open PulseCore.Preorder
 open Pulse.Lib.OnRange
 
-
-
 fn 
 hash (hash_algo: u32)
          (ts_digest: V.vec u8{V.length ts_digest == hash_size})
@@ -135,25 +133,6 @@ let b_resp_resp_repr_relation (ctx:parser_context)
 
 admit()
 
-let valid_resp_bytes (ctx:parser_context)
-                     (b:Seq.seq u8) 
-                     (r:resp_repr ctx) =
-admit()
-
-fn parser0
-  (ctx:parser_context)
-  (#p:perm)
-  (#b_resp: G.erased (Seq.seq u8))
-  (with_sign: bool)
-
-requires V.pts_to ctx.resp #p b_resp
-returns res: spdm_measurement_result_t
-ensures 
-         V.pts_to ctx.resp #p b_resp **
-         parser_post1 ctx res with_sign
-{
-  admit()
-}
 
 let get_state_data_transcript (s_data:st) : V.vec u8 = s_data.session_transcript
 
@@ -227,27 +206,6 @@ fn extend_trace (gr: gref) (tr0: trace) (gs:g_state{valid_transition tr0 gs})
       (mk_frame_preserving_upd tr0 gs)
      
   }
-
-let state_change_success_no_sign (tr0:trace)
-                                 (tr1:trace)
-                     : prop =
-   (G_Recv_no_sign_resp? (current_state tr1)) /\
-   (valid_transition tr0 (current_state tr1)) /\ (tr1 == next_trace tr0 (current_state tr1)) /\
-   (G_Recv_no_sign_resp? (current_state tr1))
-
-let hash_result_success_no_sign (tr0:trace{has_full_state_info (current_state tr0)}) 
-                                (tr1:trace{has_full_state_info (current_state tr1) /\
-                                        has_full_state_info (previous_current_state tr1)})
-                                (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)})
-                                (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
-                     : prop =
-  (exists hash_algo. 
-                  hash_of hash_algo (current_transcript tr0 ) 
-                  (U32.uint_to_t(Seq.length b_req)) 
-                  b_req 
-                  (U32.uint_to_t (Seq.length b_resp)) 
-                  b_resp 
-                  (current_transcript tr1))
 
 let valid_transition_lemma
   (tr0:trace{has_full_state_info (current_state tr0)})
@@ -480,7 +438,7 @@ fn no_sign_resp1
              V.pts_to ctx.resp #p_resp b_resp) **
              spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
              pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
-    returns res: spdm_measurement_result_t & state
+    returns res: (spdm_measurement_result_t & state)
     
     ensures V.pts_to req #p_req b_req **
             V.pts_to ctx.resp #p_resp b_resp **
@@ -495,7 +453,7 @@ fn no_sign_resp1
                                       state_change_success_no_sign tr0 tr1 /\
                                       hash_result_success_no_sign tr0 tr1 #b_resp #b_req ))           
 {
-  let res = parser0 ctx #p_resp #b_resp false;
+  let res = parser ctx #p_resp #b_resp false;
   match res.status {
     Parse_error -> {
       let tr1 = tr0;
@@ -732,9 +690,6 @@ fn reset
     }
   }
 
-
-let valid_signature (signature msg key:Seq.seq u8):prop = admit()
-
 fn 
  verify_sign 
          (ts_digest: V.vec u8{V.length ts_digest == hash_size})
@@ -754,62 +709,6 @@ fn
 {
   admit()
 }
-
-noextract
-let next_next_trace (t:trace) 
-                    (s1:g_state { valid_transition t s1 }) 
-                    (s2:g_state { valid_transition ((next_trace t s1)) s2 }) : trace =
- next_trace (next_trace t s1) s2
-
-let g_seq_transcript : g_transcript =
-  Seq.create hash_size 0uy
-
-let hash_result_success_sign1 (tr0:trace{has_full_state_info (current_state tr0)}) 
-                             (tr1:trace{has_full_state_info (current_state tr1) /\
-                                        has_full_state_info (previous_current_state tr1)})
-                             (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)})
-                             (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
-                     : prop =
-  (exists hash_algo. 
-                hash_of hash_algo (current_transcript tr0 ) 
-                (U32.uint_to_t(Seq.length b_req)) 
-                 b_req 
-                (U32.uint_to_t (Seq.length b_resp)) 
-                 b_resp 
-                (g_transcript_of_gst (previous_current_state tr1))) 
-
-
-let transition_related_sign_success (tr0:trace{has_full_state_info (current_state tr0)}) 
-                                    (tr1:trace{has_full_state_info (current_state tr1)})
-                  : prop =
-  valid_transition tr0 (previous_current_state tr1 ) /\
-  tr1 == next_next_trace tr0 (previous_current_state tr1 ) (current_state tr1)
-
-
-#restart-solver
-
-noeq
-type sign_resp_result  = {
-  parser_result: spdm_measurement_result_t ;
-  curr_state : state;
-  sign_status : bool
-}
-
-let valid_signature_exists 
- (ctx:parser_context)
- (tr1:trace{has_full_state_info (current_state tr1) /\
-            has_full_state_info (previous_current_state tr1)}) : prop =
-    (exists (resp_rep:resp_repr ctx).
-        valid_signature resp_rep.signature 
-        (g_transcript_of_gst (previous_current_state tr1)) 
-        (g_key_of_gst (previous_current_state tr1)))
-
-let state_change_success_sign1 (tr1:trace)
-                     : prop =
-   ((G_Initialized? (current_state tr1)) /\
-    (current_transcript tr1 == g_seq_transcript) /\
-    G_Recv_sign_resp?(previous_current_state tr1))
-
 
 fn
 sign_resp_aux
@@ -937,7 +836,7 @@ sign_resp_aux
     assert_ (parser_post1 ctx res true);
     unfold (parser_post1 ctx res true);
     unfold (parser_success_post ctx res true);
-    assert_ (exists* resp_repr. valid_resp0 ctx resp_repr **
+    assert_ (exists* resp_repr. valid_resp ctx resp_repr **
                          valid_measurement_blocks ctx 
                          res.measurement_block_vector 
                          resp_repr.measurement_record **
@@ -1144,7 +1043,7 @@ sign_resp1
                                   (res.sign_status == true ==> valid_signature_exists ctx tr1)
               )))
     {
-    let res = parser0 ctx #p_resp #b_resp true;
+    let res = parser ctx #p_resp #b_resp true;
     match res.status {
       Parse_error -> {
         let tr1 = tr0;
