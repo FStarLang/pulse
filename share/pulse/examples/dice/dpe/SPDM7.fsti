@@ -1,5 +1,7 @@
 module SPDM7
 
+#lang-pulse
+
 open Pulse.Lib.Pervasives
 open PulseCore.Preorder
 
@@ -639,7 +641,7 @@ let hash_result_success_no_sign (tr0:trace{has_full_state_info (current_state tr
                   b_resp 
                   (current_transcript tr1))
 
-(*val no_sign_resp1
+fn no_sign_resp1
   (ctx:parser_context)
   (req_size: u32{u32_v req_size > 0})
   (req:V.vec u8 { V.length req == u32_v req_size })
@@ -649,13 +651,15 @@ let hash_result_success_no_sign (tr0:trace{has_full_state_info (current_state tr
   (#b_req: G.erased (Seq.seq u8){Seq.length b_req == u32_v req_size})
   (#p_req : perm)
   (#p_resp:perm)
-    : stt (spdm_measurement_result_t & state)
-   (requires (V.pts_to req #p_req b_req **
+  
+  requires (V.pts_to req #p_req b_req **
              V.pts_to ctx.resp #p_resp b_resp) **
              spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
-             pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0)))
+             pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
    
-   (ensures fun res-> V.pts_to req #p_req b_req **
+   returns res: (spdm_measurement_result_t & state)
+
+   ensures V.pts_to req #p_req b_req **
             V.pts_to ctx.resp #p_resp b_resp **
 
             //parser related post-conditions
@@ -666,7 +670,7 @@ let hash_result_success_no_sign (tr0:trace{has_full_state_info (current_state tr
                   spdm_inv (snd res) (get_state_data (snd res)).g_trace_ref tr1 **
                   pure ((fst res).status == Success ==>
                                       state_change_success_no_sign tr0 tr1 /\
-                                      hash_result_success_no_sign tr0 tr1 #b_resp #b_req )))*)           
+                                      hash_result_success_no_sign tr0 tr1 #b_resp #b_req ))
 
 
 val reset
