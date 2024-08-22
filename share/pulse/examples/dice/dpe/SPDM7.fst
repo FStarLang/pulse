@@ -923,7 +923,7 @@ sign_resp_aux
     //bring in a lemma to prove this
     //The above asserts are needed to typecheck the below lemma
     valid_transition_lemma1 tr0 rep rep_new;
-    assume_ (pure(valid_transition tr0 (G_Recv_sign_resp rep_new)));
+    assert_ (pure(valid_transition tr0 (G_Recv_sign_resp rep_new)));
     let tr1 = next_trace tr0 (G_Recv_sign_resp rep_new);
     assert_ (pure (valid_transition tr0 (G_Recv_sign_resp rep_new)));
     extend_trace ((get_state_data c).g_trace_ref) tr0 ((G_Recv_sign_resp rep_new));
