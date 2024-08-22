@@ -51,9 +51,6 @@ let signature_size = 256
 // the current memory state and returns a state of the state machine.
 //
 
-(*#define LIBSPDM_MAX_MESSAGE_M_BUFFER_SIZE (63 + SPDM_NONCE_SIZE + \
-                                           LIBSPDM_MAX_MEASUREMENT_RECORD_SIZE + \
-                                           LIBSPDM_MAX_ASYM_KEY_SIZE + SPDM_MAX_OPAQUE_DATA_SIZE)*)
 
 let spdm_nonce_size = 32
 
@@ -72,16 +69,6 @@ type g_transcript = Ghost.erased (Seq.seq u8)
 
 // Ghost repr
 //
-
-(*When a new req and resp comes,
-  the transcript is maintained as a hash always
-  1. Req message hashed with hash of transcript ---> new hash
-  2. new hash hashed with resp ---> new hash'
-  3. new hash' final transcript*)
-
-(*libspdm_hash_update (spdm_context->connection_info.algorithm.base_hash_algo,
-                                          spdm_context->transcript.digest_context_l1l2, message,
-                                          message_size);*)
 
 let hash_size = 256
 
@@ -136,27 +123,7 @@ type repr = {
   transcript : g:g_transcript{Seq.length g == hash_size};
 }
 
-//let g_transcript_non_empty (t:g_transcript) : prop =
-  //Seq.length t > 0
 
-//let g_transcript_empty (t:g_transcript) : prop =
-  //Seq.length t == 0
-
-(*let g_sign_non_empty (s:Seq.seq u8) : prop =
-  Seq.length s > 0
-
-let g_sign_empty (s:Seq.seq u8) : prop =
-  Seq.length s == 0*)
-
-//let is_initialized_transcript (t:g_transcript) : prop =
-  //Seq.equal t Seq.empty
-
-//let is_initialized_sign (s:Seq.seq u8) : prop =
-  //Seq.equal s Seq.empty
-
-//
-// Corresponding ghost states
-//
 [@@ erasable]
 noeq
 type g_state : Type u#1 =
@@ -165,16 +132,7 @@ type g_state : Type u#1 =
   | G_Recv_no_sign_resp : repr:repr{~(all_zeros_hash_transcript repr.transcript)} ->  g_state
   | G_Recv_sign_resp : repr:repr{~(all_zeros_hash_transcript repr.transcript)} -> g_state
 
-(*let is_prefix_of (#a:Type) (s0 s1:Seq.seq a) : prop =
-  Seq.length s0 < Seq.length s1 /\
-  s0 == Seq.slice s1 0 (Seq.length s0)*)
-
-//
-// The transition function
-// sign data is associated with G_Recv_sign_resp _ only. Therefore, sign data has no connection between different states.
-// Therefore, sign data is not stated in the next relation.
-//
-
+//Transition function
 let next (s0 s1:g_state) : prop =
   match s0, s1 with
   //Uninit ---> initial (upon init call)
@@ -278,17 +236,6 @@ let next_trace (t:trace) (s:g_state { valid_transition t s }) : trace =
     | [] -> [s]::t
     | l -> (s::l)::t //t == l::tl
 
-//previous_trace should remove the current_state from trace. Current state is the head of the head of the trace.
-//head of the trace is list g_state. So head of the head of the trace is g_state
-noextract
-let previous_trace (t:trace): trace =
-  match t with
-  | [] -> []
-  | hd::tl -> tl
-    // match hd with
-    // | [] -> tl
-    // | l -> admit()
-
 noextract
 let emp_trace : trace = []
 
@@ -306,13 +253,6 @@ let mk_frame_preserving_upd
   (s:g_state { valid_transition t s})
   : FStar.PCM.frame_preserving_upd trace_pcm (Some 1.0R, t) (Some 1.0R, next_trace t s) =
   fun _ -> Some 1.0R, next_trace t s
-
-
-//The vector append or vector reallocation issues can be resolved if we can keep the transcript as a hash
-//The req message should be hashed with the digset context
-//The resp message - signature field should be hashed with the digest context
-//session_transcript is a fixed length buffer to hold the hash
-//The length of the session_trasncript is determined by the hash algorithm.
 
 noeq
 type st = {
@@ -363,12 +303,6 @@ let spdm_inv (s:state) (r:gref) (t:trace) : slprop =
   ghost_pcm_pts_to r (Some 1.0R, t) **
   session_state_related s (current_state t)
 
-//trace_ref should create a gref and return it.
-//val trace_ref : gref
-
-(*let has_transcript (s:g_state) :prop =
-  G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s \/ G_Initialized?s*)
-
 let has_full_state_info (s:g_state) :prop =
   G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s \/ G_Initialized?s
 
@@ -402,12 +336,7 @@ let current_key (t:trace { has_full_state_info (current_state t) }) : GTot (Ghos
 let current_key_size (t:trace { has_full_state_info (current_state t) }) : GTot (Ghost.erased u32) =
   g_key_len_of_gst (current_state t)
 
-(*let init_client_perm (s:state) (b:Seq.seq u8) (key_len:u32): slprop =
-  exists* (t:trace). spdm_inv s trace_ref t ** 
-                                   pure (G_Initialized? (current_state t) /\
-                                        g_key_of_gst (current_state t) == b /\
-                                        g_key_len_of_gst (current_state t) == key_len
-                                        )*)
+
 
 let get_state_data (c:state) : st =
  match c with
@@ -425,20 +354,6 @@ let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) : slprop =
    : stt (state)
     (requires V.pts_to signing_pub_key s)
     (ensures fun res -> init_inv key_size s res)
-
-//
-// TODO: think about how you want to state this relation. Because state will be abstract to the client
-// If the state info details are abstracted behind init_client_perm, will that be sufficient?
-//
-(*val init (key_len:u32) (signing_key:V.vec u8 { V.length signing_key == U32.v key_len })
-  : stt state (requires exists* p b. V.pts_to signing_key #p b)
-              (ensures fun s -> exists* p b. V.pts_to signing_key #p b ** 
-                                        init_client_perm s b key_len
-                                       )*)
-
-//
-// TODO: add DMTF and other structure in it - Added
-//
 
 noeq
 type parser_context = {
@@ -557,7 +472,7 @@ let valid_resp (ctx:parser_context)
 type result =
   | Success
   | Parse_error
-  //| Signature_verification_error
+  
 
 //
 //Measurement block structure
@@ -567,7 +482,7 @@ let res_err_no_measurement (count:u8) (status:result) =
   match status with
   | Success -> true
   | Parse_error -> u8_v count = 0
-  //| Signature_verification_error -> u8_v count = 0
+  
 
 //
 //result structure
@@ -683,7 +598,7 @@ let parser_parse_error_post (ctx:parser_context) (res:spdm_measurement_result_t)
 let parser_post1 (ctx:parser_context) (res:spdm_measurement_result_t)
                  (is_sign_resp:bool) =
   match res.status with
-  | Parse_error -> pure True//parser_parse_error_post ctx res is_sign_resp
+  | Parse_error -> pure True
   
   | Success ->     parser_success_post ctx res is_sign_resp                 
                                
@@ -703,37 +618,3 @@ val parser
     (ensures fun res -> V.pts_to ctx.resp #p b_resp **
                         parser_post1 ctx res with_sign)
 
-//
-//Signature of get_measurement_blocks_without_signature
-//
-(*let g_transcript_current_session_grows (t0 t1:g_transcript) : prop =
-  is_prefix_of t0 t1 
-
-let g_append (t0:g_transcript) (s:Seq.seq u8) : g_transcript =
- Seq.append t0 s
-
-let g_slice (t0:g_transcript) (s:Seq.seq u8) : (G.erased (Seq.seq u8)) = 
-  Seq.slice (g_append t0 s) 0 (Seq.length t0)
-   
-
-let slice_append (s1: Seq.seq u8) (s2: Seq.seq u8) 
-     : Lemma
-       (ensures s1 == Seq.slice (Seq.append s1 s2) 0 (Seq.length s1)) =
-  assert (Seq.length s1 == Seq.length (Seq.slice (Seq.append s1 s2) 0 (Seq.length s1)));
-  assume (forall i. i < Seq.length s1 ==> 
-            Seq.index s1 i == Seq.index (Seq.slice (Seq.append s1 s2) 0 (Seq.length s1)) i);
-  admit()
-
-let g_append_lemma (t0:g_transcript) (s:Seq.seq u8)
-      : Lemma
-        (ensures t0 == g_slice t0 s) =
-  slice_append t0 s;
-  ()
-
-let g_transcript_current_session_grows_by (t0 t1:g_transcript) (s:Seq.seq u8) : prop =
-   t1 == g_append t0 s
-  
-let g_seq_empty : g_transcript =
- Seq.empty
-
-*)
