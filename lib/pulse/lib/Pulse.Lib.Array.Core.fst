@@ -141,6 +141,16 @@ ensures
   H.free a;
 }
 
+inline_for_extraction
+fn drop_array #elt (a: array elt { is_full_array a }) s ()
+  requires pts_to a s
+  ensures emp
+{
+  free a;
+}
+
+inline_for_extraction let droppable_array a s = { drop_f = drop_array a s }
+
 
 let share #a arr #s #p = H.share arr #(raise_seq s) #p
 

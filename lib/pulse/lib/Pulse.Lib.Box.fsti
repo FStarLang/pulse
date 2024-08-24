@@ -20,6 +20,7 @@ open FStar.Ghost
 open PulseCore.FractionalPermission
 
 open Pulse.Lib.Core
+open Pulse.Class.Droppable
 
 module U32 = FStar.UInt32
 module T = FStar.Tactics.V2
@@ -52,6 +53,9 @@ val ( := ) (#a:Type0) (b:box a) (x:a) (#v:erased a)
 
 val free (#a:Type0) (b:box a) (#v:erased a)
   : stt unit (pts_to b v) (fun _ -> emp)
+
+inline_for_extraction instance droppable_box b v : droppable (pts_to b v) =
+  { drop_f = fun _ -> free b }
 
 val share (#a:Type) (r:box a) (#v:erased a) (#p:perm)
   : stt_ghost unit emp_inames

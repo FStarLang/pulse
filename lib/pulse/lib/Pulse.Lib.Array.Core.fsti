@@ -18,6 +18,7 @@ module Pulse.Lib.Array.Core
 open FStar.Tactics.V2
 open Pulse.Lib.Core
 open PulseCore.FractionalPermission
+open Pulse.Class.Droppable
 open FStar.Ghost
 module SZ = FStar.SizeT
 module Seq = FStar.Seq
@@ -92,6 +93,10 @@ val free
             pure (is_full_array a))
         (ensures fun _ ->
             emp)
+
+inline_for_extraction instance val droppable_array
+    #elt (a: array elt {is_full_array a}) s :
+  droppable (pts_to a s)
 
 val share
   (#a:Type)
