@@ -1,4 +1,4 @@
-module SPDM7
+module SPDM
 
 #lang-pulse
 
@@ -40,20 +40,6 @@ let signature_size = 256
 // TODO: A configurable parameter that initializes the state machine without signature and transcript and key.
 //
 
-//
-// Setu
-// We will call a (possible empty) sequence of no_sign_resp messages, followed by a
-//   sign_resp_message as a session
-//
-
-//
-// Concrete state
-// Only maintains the current session transcript
-// This is the memory state associated with a state of the state machine. A state of the state machine takes
-// the current memory state and returns a state of the state machine.
-//
-
-
 let spdm_nonce_size = 32
 
 let max_measurement_record_size = 0x1000
@@ -65,10 +51,9 @@ let max_opaque_data_size = 1024
 let max_transcript_message_buffer_size = 
   63 + spdm_nonce_size  +  max_measurement_record_size  + max_asym_key_size + max_opaque_data_size
 
-let max_transcript_message_buffer_size_u32 = 
- U32.uint_to_t max_transcript_message_buffer_size
+let max_transcript_message_buffer_size_u32 = U32.uint_to_t max_transcript_message_buffer_size
 
-type g_transcript = G.erased (Seq.seq u8)
+type g_transcript = Ghost.erased (Seq.seq u8)
 
 // Ghost repr
 //
@@ -77,46 +62,32 @@ let hash_size = 256
 
 let hash_algo = 256ul
 
-let all_zeros_hash_transcript (t:g_transcript) : prop =
-    (forall i. i < Seq.length t ==> Seq.index t i == 0uy)
+let hash_spec
+  (algo:u32)
+  (ts_digest: Seq.seq u8{Seq.length ts_digest == hash_size})
+  (msg: Seq.seq u8)
+  : GTot (t:(Seq.seq u8){Seq.length t== hash_size})  = admit()
 
-let hash_seq (algo:u32)
-
-         (ts_digest: Seq.seq u8{Seq.length ts_digest == hash_size})
-         (msg_size: u32{u32_v msg_size > 0})
-         (msg: Seq.seq u8{Seq.length msg == u32_v msg_size})
-  : (t:(G.erased (Seq.seq u8)){Seq.length t== hash_size /\
-                  ~(all_zeros_hash_transcript t)})  = admit()
-        
-
-
-val hash (hash_algo: u32)
+  val hash (hash_algo: u32)
          (ts_digest: V.vec u8{V.length ts_digest == hash_size})
          (msg_size: u32{u32_v msg_size > 0})
          (msg: V.vec u8{V.length msg == u32_v msg_size})
          (#ts_seq: (G.erased (Seq.seq u8)){Seq.length ts_seq == hash_size})
-         (#msg_seq: (G.erased (Seq.seq u8)){Seq.length msg_seq == u32_v msg_size})
+         (#msg_seq: (G.erased (Seq.seq u8)))
          (#p_msg:perm)
-
-     : stt unit
-    (requires V.pts_to ts_digest ts_seq **
-              V.pts_to msg #p_msg msg_seq)
-    (ensures fun _ -> (exists* new_ts_seq. V.pts_to ts_digest new_ts_seq **
-                                           V.pts_to msg #p_msg msg_seq **
-                                           pure (Seq.equal new_ts_seq (hash_seq hash_algo ts_seq msg_size msg_seq))))
+  : stt unit
+        (requires V.pts_to ts_digest ts_seq **
+                  V.pts_to msg #p_msg msg_seq)
+        (ensures fun _ -> V.pts_to msg #p_msg msg_seq **
+                          V.pts_to ts_digest (hash_spec hash_algo ts_seq msg_seq))
 
 let hash_of (hash_algo: u32)
             (s0:Seq.seq u8{Seq.length s0 == hash_size })
-            (req_size:u32{u32_v req_size > 0})
-            (req:Seq.seq u8{Seq.length req == u32_v req_size})
-            (resp_size:u32{u32_v resp_size > 0})
-            (resp:Seq.seq u8{Seq.length resp == u32_v resp_size})
+            (req:Seq.seq u8)
+            (resp:Seq.seq u8)
             (s1:Seq.seq u8{Seq.length s1 == hash_size})
                   : prop =
- Seq.equal s1 (hash_seq hash_algo (hash_seq hash_algo s0 req_size req) resp_size resp)
-
-
-
+  Seq.equal s1 (hash_spec hash_algo (hash_spec hash_algo s0 req)  resp)
 
 [@@ erasable]
 noeq
@@ -126,14 +97,16 @@ type repr = {
   transcript : g:g_transcript{Seq.length g == hash_size};
 }
 
+let byte_seq = Seq.seq u8
+
 
 [@@ erasable]
 noeq
 type g_state : Type u#1 =
   | G_UnInitialized : g_state
-  | G_Initialized :  repr:repr{all_zeros_hash_transcript repr.transcript} -> g_state
-  | G_Recv_no_sign_resp : repr:repr{~(all_zeros_hash_transcript repr.transcript)} ->  g_state
-  | G_Recv_sign_resp : repr:repr{~(all_zeros_hash_transcript repr.transcript)} -> g_state
+  | G_Initialized :  repr:repr -> g_state
+  | G_Recv_no_sign_resp : repr:repr -> byte_seq -> byte_seq -> g_state
+  | G_Recv_sign_resp : repr:repr -> byte_seq -> byte_seq -> g_state
 
 //Transition function
 let next (s0 s1:g_state) : prop =
@@ -142,33 +115,30 @@ let next (s0 s1:g_state) : prop =
   | G_UnInitialized, G_Initialized _ -> True
 
   //initial ---> no_sign (upon no_sign call)
-  | G_Initialized k , G_Recv_no_sign_resp r
+  | G_Initialized k , G_Recv_no_sign_resp r req resp
   // initial ---> sign (upon sign call)
-  | G_Initialized k, G_Recv_sign_resp r ->
+  | G_Initialized k, G_Recv_sign_resp r req resp->
     k.signing_pub_key_repr == r.signing_pub_key_repr /\
-    k.key_size_repr == r.key_size_repr
+    k.key_size_repr == r.key_size_repr /\
+     hash_of hash_algo k.transcript req resp r.transcript
 
 
   // no_sign --> no_sign (upon no_sign call)
-  | G_Recv_no_sign_resp r0,  G_Recv_no_sign_resp r1
+  | G_Recv_no_sign_resp r0 req0 resp0,  G_Recv_no_sign_resp r1 req1 resp1
   //no_sign ---> sign (upon sign call)
-  | G_Recv_no_sign_resp r0, G_Recv_sign_resp r1  ->
+  | G_Recv_no_sign_resp r0 req0 resp0, G_Recv_sign_resp r1 req1 resp1  ->
     r0.signing_pub_key_repr == r1.signing_pub_key_repr /\
     r0.key_size_repr = r1.key_size_repr /\
-    (*is_prefix_of r0.transcript r1.transcript*)
-    (exists req_size req resp_size resp hash_algo. 
-         hash_of hash_algo r0.transcript req_size req resp_size resp r1.transcript)
+    hash_of hash_algo r0.transcript req1 resp1 r1.transcript
         
   //sign ---> initial (no call is needed)
-  | G_Recv_sign_resp r, G_Initialized k
+  | G_Recv_sign_resp r req resp, G_Initialized k
   //no_sign --> initial (upon reset call)
-  | G_Recv_no_sign_resp r, G_Initialized k ->
+  | G_Recv_no_sign_resp r req resp, G_Initialized k ->
     r.signing_pub_key_repr == k.signing_pub_key_repr /\
     r.key_size_repr == k.key_size_repr 
 
   | _ -> False
-
-
 //
 // Until gref, this is setting up the trace PCM
 //
@@ -225,8 +195,7 @@ let previous_current_state (t:trace) : g_state =
   | [_]::_ -> G_UnInitialized 
   | (_::t::_)::_ -> t
 
-
-noextract
+  noextract
 let valid_transition (t:trace) (s:g_state) : prop =
   next (current_state t) s
 
@@ -257,7 +226,7 @@ let mk_frame_preserving_upd
   : FStar.PCM.frame_preserving_upd trace_pcm (Some 1.0R, t) (Some 1.0R, next_trace t s) =
   fun _ -> Some 1.0R, next_trace t s
 
-noeq
+  noeq
 type st = {
   key_size : u32;
   signing_pub_key : v:V.vec u8 { V.length v == U32.v key_size };
@@ -268,10 +237,13 @@ type st = {
 //
 // States of the state machine
 //
+
+let byte_vec = V.vec u8
+
 noeq
 type state =
   | Initialized : st -> state
-  | Recv_no_sign_resp : st -> state
+  | Recv_no_sign_resp : st -> byte_vec -> byte_vec -> state
 
 
 
@@ -286,10 +258,12 @@ let session_state_related (s:state) (gs:g_state) : slprop =
     V.pts_to st.session_transcript repr.transcript **
     pure (st.key_size == repr.key_size_repr)
 
-  | Recv_no_sign_resp st, G_Recv_no_sign_resp repr ->
+  | Recv_no_sign_resp st vreq vresp, G_Recv_no_sign_resp repr sreq sresp ->
     V.pts_to st.signing_pub_key repr.signing_pub_key_repr **
     V.pts_to st.session_transcript repr.transcript **
-    pure (st.key_size == repr.key_size_repr)
+    V.pts_to vreq sreq **
+    V.pts_to vresp sresp **
+    pure (st.key_size == repr.key_size_repr) 
 
   | _ -> pure False
 
@@ -309,26 +283,26 @@ let spdm_inv (s:state) (r:gref) (t:trace) : slprop =
 let has_full_state_info (s:g_state) :prop =
   G_Recv_no_sign_resp? s \/ G_Recv_sign_resp? s \/ G_Initialized?s
 
-let g_transcript_of_gst (s:g_state {has_full_state_info s})
+  let g_transcript_of_gst (s:g_state {has_full_state_info s})
   : GTot g_transcript =
   match s with
   | G_Initialized r
-  | G_Recv_no_sign_resp r
-  | G_Recv_sign_resp r -> r.transcript
+  | G_Recv_no_sign_resp r _ _
+  | G_Recv_sign_resp r _ _ -> r.transcript
 
-let g_key_of_gst (s:g_state {has_full_state_info s})
+  let g_key_of_gst (s:g_state {has_full_state_info s})
   : GTot (Seq.seq u8) =
   match s with
   | G_Initialized r
-  | G_Recv_no_sign_resp r
-  | G_Recv_sign_resp r -> r.signing_pub_key_repr
+  | G_Recv_no_sign_resp r _ _
+  | G_Recv_sign_resp r _ _ -> r.signing_pub_key_repr
 
 let g_key_len_of_gst (s:g_state {has_full_state_info s})
   : GTot u32 =
   match s with
   | G_Initialized r
-  | G_Recv_no_sign_resp r
-  | G_Recv_sign_resp r -> r.key_size_repr
+  | G_Recv_no_sign_resp r _ _
+  | G_Recv_sign_resp r _ _ -> r.key_size_repr
 
 let current_transcript (t:trace {has_full_state_info (current_state t) }) : GTot g_transcript =
   g_transcript_of_gst (current_state t)
@@ -339,12 +313,10 @@ let current_key (t:trace { has_full_state_info (current_state t) }) : GTot (Ghos
 let current_key_size (t:trace { has_full_state_info (current_state t) }) : GTot (Ghost.erased u32) =
   g_key_len_of_gst (current_state t)
 
-
-
 let get_state_data (c:state) : st =
  match c with
  | Initialized s -> s
- |Recv_no_sign_resp s -> s
+ | Recv_no_sign_resp s _ _ -> s
 
 let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) : slprop =
   exists* (t:trace).
@@ -357,7 +329,6 @@ let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) : slprop =
    : stt (state)
     (requires V.pts_to signing_pub_key s)
     (ensures fun res -> init_inv key_size s res)
-
 noeq
 type parser_context = {
   req_param1 : u8;
@@ -376,7 +347,7 @@ let measurement_size_select (measurement_specification:u8) (measurement_size:u16
   else
     measurement_size
 
-noeq
+    noeq
 type spdm_measurement_block_t  = {
   index : u8 ;
   measurement_specification : u8;
@@ -550,12 +521,6 @@ module C = Pulse.Lib.Core
 //Signature for parser
 //
 
-(*let valid_resp0 (ctx:parser_context)
-                (repr:resp_repr ctx)  : slprop =
- exists* p_resp b_resp.
-   V.pts_to ctx.resp #p_resp b_resp **
-   pure (b_resp_resp_repr_relation ctx repr b_resp)*) 
-
 let parser_post (ctx:parser_context) (res:spdm_measurement_result_t)
                  (#b_resp: G.erased (Seq.seq u8)) =
   match res.status with
@@ -583,21 +548,6 @@ let parser_success_post (ctx:parser_context) (res:spdm_measurement_result_t)
                          valid_measurement_blocks ctx (res.measurement_block_vector) (resp_repr.measurement_record)
     )
 
-(*let parser_parse_error_post (ctx:parser_context) (res:spdm_measurement_result_t)
-                       (is_sign_resp:bool) =
-   if is_sign_resp then 
-    (
-      exists* s_sign. 
-              V.pts_to res.sign s_sign **
-              pure (V.length res.sign == signature_size /\
-                     V.length res.sign <> 0) 
-                                                           
-    )
-    else
-    (
-      pure True
-    )*)
-
 let parser_post1 (ctx:parser_context) (res:spdm_measurement_result_t)
                  (is_sign_resp:bool) =
   match res.status with
@@ -605,12 +555,6 @@ let parser_post1 (ctx:parser_context) (res:spdm_measurement_result_t)
   
   | Success ->     parser_success_post ctx res is_sign_resp                 
                                
-
-
-(*val valid_resp_bytes  (ctx:parser_context)
-                      (b:Seq.seq u8) 
-                      (r:resp_repr ctx) : slprop*)
-
 val parser 
 (ctx:parser_context)
 (#p:perm)
@@ -635,10 +579,8 @@ let hash_result_success_no_sign (tr0:trace{has_full_state_info (current_state tr
                                 (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
                      : prop =
   (exists hash_algo. 
-                  hash_of hash_algo (current_transcript tr0 ) 
-                  (U32.uint_to_t(Seq.length b_req)) 
+                  hash_of hash_algo (current_transcript tr0)  
                   b_req 
-                  (U32.uint_to_t (Seq.length b_resp)) 
                   b_resp 
                   (current_transcript tr1))
 
@@ -719,10 +661,8 @@ let hash_result_success_sign1 (tr0:trace{has_full_state_info (current_state tr0)
                              (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
                      : prop =
   (exists hash_algo. 
-                hash_of hash_algo (current_transcript tr0 ) 
-                (U32.uint_to_t(Seq.length b_req)) 
+                hash_of hash_algo (current_transcript tr0) 
                  b_req 
-                (U32.uint_to_t (Seq.length b_resp)) 
                  b_resp 
                 (g_transcript_of_gst (previous_current_state tr1))) 
 
@@ -757,3 +697,35 @@ let state_change_success_sign1 (tr1:trace)
    ((G_Initialized? (current_state tr1)) /\
     (current_transcript tr1 == g_seq_transcript) /\
     G_Recv_sign_resp?(previous_current_state tr1))
+
+fn
+sign_resp1
+  (ctx:parser_context)
+  (req_size: u32{u32_v req_size > 0})
+  (req:V.vec u8 { V.length req == u32_v req_size })
+  (c:state)
+  (#tr0:trace {has_full_state_info (current_state tr0) })
+  (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ Seq.length b_resp == u32_v ctx.resp_size /\
+                       (UInt.fits (Seq.length b_resp) U32.n)})
+  (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ Seq.length b_req == u32_v req_size /\
+                      (UInt.fits (Seq.length b_req) U32.n)}) 
+  (#p_req : perm)
+  (#p_resp:perm)
+
+   requires (V.pts_to req #p_req b_req **
+             V.pts_to ctx.resp #p_resp b_resp) **
+             spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
+             pure (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0))
+   returns res: sign_resp_result
+   
+   ensures (V.pts_to req #p_req b_req **
+            V.pts_to ctx.resp #p_resp b_resp **
+            parser_post1 ctx res.parser_result true **
+            (exists* tr1.
+                  spdm_inv res.curr_state (get_state_data (res.curr_state)).g_trace_ref tr1 **
+                  pure (res.parser_result.status == Success ==>
+                                  state_change_success_sign1 tr1 /\ 
+                                  hash_result_success_sign1 tr0 tr1 #b_resp #b_req /\
+                                  transition_related_sign_success tr0 tr1 /\
+                                  (res.sign_status == true ==> valid_signature_exists ctx tr1)
+              )))
