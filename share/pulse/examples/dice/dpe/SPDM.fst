@@ -181,7 +181,7 @@ fn extend_trace (gr: gref) (tr0: trace) (gs:g_state{valid_transition tr0 gs})
 let valid_transition_lemma
   (tr0:trace{has_full_state_info (current_state tr0)})
   (rep:repr)
-  (rep_new:repr{~(all_zeros_hash_transcript rep_new.transcript)})
+  (rep_new:repr)
   : Lemma
     (requires  (G_Initialized? (current_state tr0) \/ G_Recv_no_sign_resp? (current_state tr0)) /\
                (G_Initialized? (current_state tr0) ==>
