@@ -657,8 +657,8 @@ let g_seq_transcript : g_transcript =
 let hash_result_success_sign1 (tr0:trace{has_full_state_info (current_state tr0)}) 
                              (tr1:trace{has_full_state_info (current_state tr1) /\
                                         has_full_state_info (previous_current_state tr1)})
-                             (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)})
-                             (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
+                             (#b_resp: Seq.seq u8)
+                             (#b_req: Seq.seq u8) 
                      : prop =
   (exists hash_algo. 
                 hash_of hash_algo (current_transcript tr0) 
@@ -700,15 +700,13 @@ let state_change_success_sign1 (tr1:trace)
 
 fn
 sign_resp1
-  (ctx:parser_context)
+  (ctx:parser_context{u32_v ctx.resp_size > 0})
   (req_size: u32{u32_v req_size > 0})
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)
   (#tr0:trace {has_full_state_info (current_state tr0) })
-  (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ Seq.length b_resp == u32_v ctx.resp_size /\
-                       (UInt.fits (Seq.length b_resp) U32.n)})
-  (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ Seq.length b_req == u32_v req_size /\
-                      (UInt.fits (Seq.length b_req) U32.n)}) 
+  (#b_req: Seq.seq u8) 
+  (#b_resp: Seq.seq u8)
   (#p_req : perm)
   (#p_resp:perm)
 
@@ -725,7 +723,7 @@ sign_resp1
                   spdm_inv res.curr_state (get_state_data (res.curr_state)).g_trace_ref tr1 **
                   pure (res.parser_result.status == Success ==>
                                   state_change_success_sign1 tr1 /\ 
-                                  hash_result_success_sign1 tr0 tr1 #b_resp #b_req /\
+                                  hash_result_success_sign1 tr0 tr1 #b_req #b_resp/\
                                   transition_related_sign_success tr0 tr1 /\
                                   (res.sign_status == true ==> valid_signature_exists ctx tr1)
               )))
