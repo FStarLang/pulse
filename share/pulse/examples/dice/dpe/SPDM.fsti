@@ -64,15 +64,15 @@ let hash_algo = 256ul
 
 let hash_spec
   (algo:u32)
-  (ts_digest: Seq.seq u8{Seq.length ts_digest == hash_size})
+  (ts_digest: Seq.seq u8(*{Seq.length ts_digest == hash_size}*))
   (msg: Seq.seq u8)
-  : GTot (t:(Seq.seq u8){Seq.length t== hash_size})  = admit()
+  : (*GTot*) (t:G.erased(Seq.seq u8){Seq.length t== hash_size})  = admit()
 
   val hash (hash_algo: u32)
          (ts_digest: V.vec u8{V.length ts_digest == hash_size})
          (msg_size: u32{u32_v msg_size > 0})
          (msg: V.vec u8{V.length msg == u32_v msg_size})
-         (#ts_seq: (G.erased (Seq.seq u8)){Seq.length ts_seq == hash_size})
+         (#ts_seq: (G.erased (Seq.seq u8))(*{Seq.length ts_seq == hash_size}*))
          (#msg_seq: (G.erased (Seq.seq u8)))
          (#p_msg:perm)
   : stt unit
@@ -243,7 +243,7 @@ let byte_vec = V.vec u8
 noeq
 type state =
   | Initialized : st -> state
-  | Recv_no_sign_resp : st -> byte_vec -> byte_vec -> state
+  | Recv_no_sign_resp : st  -> state
 
 
 
@@ -258,11 +258,9 @@ let session_state_related (s:state) (gs:g_state) : slprop =
     V.pts_to st.session_transcript repr.transcript **
     pure (st.key_size == repr.key_size_repr)
 
-  | Recv_no_sign_resp st vreq vresp, G_Recv_no_sign_resp repr sreq sresp ->
+  | Recv_no_sign_resp st, G_Recv_no_sign_resp repr sreq sresp ->
     V.pts_to st.signing_pub_key repr.signing_pub_key_repr **
     V.pts_to st.session_transcript repr.transcript **
-    V.pts_to vreq sreq **
-    V.pts_to vresp sresp **
     pure (st.key_size == repr.key_size_repr) 
 
   | _ -> pure False
@@ -316,7 +314,7 @@ let current_key_size (t:trace { has_full_state_info (current_state t) }) : GTot 
 let get_state_data (c:state) : st =
  match c with
  | Initialized s -> s
- | Recv_no_sign_resp s _ _ -> s
+ | Recv_no_sign_resp s -> s
 
 let init_inv (key_len:u32) (b:Seq.seq u8) (s:state) : slprop =
   exists* (t:trace).
@@ -575,8 +573,8 @@ let state_change_success_no_sign (tr0:trace)
 let hash_result_success_no_sign (tr0:trace{has_full_state_info (current_state tr0)}) 
                                 (tr1:trace{has_full_state_info (current_state tr1) /\
                                         has_full_state_info (previous_current_state tr1)})
-                                (#b_resp: Seq.seq u8{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)})
-                                (#b_req: Seq.seq u8{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}) 
+                                (#b_resp: Seq.seq u8(*{Seq.length b_resp > 0 /\ (UInt.fits (Seq.length b_resp) U32.n)}*))
+                                (#b_req: Seq.seq u8(*{Seq.length b_req > 0 /\ (UInt.fits (Seq.length b_req) U32.n)}*)) 
                      : prop =
   (exists hash_algo. 
                   hash_of hash_algo (current_transcript tr0)  
@@ -590,8 +588,8 @@ fn no_sign_resp1
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)
   (#tr0:trace{has_full_state_info (current_state tr0)})
-  (#b_resp: G.erased (Seq.seq u8){u32_v ctx.resp_size > 0 /\ Seq.length b_resp == u32_v ctx.resp_size})
-  (#b_req: G.erased (Seq.seq u8){Seq.length b_req == u32_v req_size})
+  (#b_resp: G.erased (Seq.seq u8)(*{u32_v ctx.resp_size > 0 /\ Seq.length b_resp == u32_v ctx.resp_size}*))
+  (#b_req: G.erased (Seq.seq u8)(*{Seq.length b_req == u32_v req_size}*))
   (#p_req : perm)
   (#p_resp:perm)
   
