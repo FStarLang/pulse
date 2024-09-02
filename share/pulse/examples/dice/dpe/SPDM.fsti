@@ -705,8 +705,8 @@ sign_resp1
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)
   (#tr0:trace {has_full_state_info (current_state tr0) })
-  (#b_req: Seq.seq u8) 
-  (#b_resp: Seq.seq u8)
+  (#b_req: G.erased (Seq.seq u8)) 
+  (#b_resp: G.erased (Seq.seq u8))
   (#p_req : perm)
   (#p_resp:perm)
 

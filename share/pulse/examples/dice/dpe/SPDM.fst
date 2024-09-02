@@ -610,8 +610,8 @@ sign_resp_aux
   (rep:repr)
   (res:spdm_measurement_result_t)
   (#tr0:trace {has_full_state_info (current_state tr0) })
-  (#b_req: Seq.seq u8) 
-  (#b_resp: Seq.seq u8)
+  (#b_req: G.erased (Seq.seq u8)) 
+  (#b_resp: G.erased (Seq.seq u8))
   (#p_req : perm)
   (#p_resp:perm)
   requires parser_post1 ctx res true **
@@ -629,8 +629,7 @@ sign_resp_aux
                           
                           (G_Initialized rep == current_state tr0)) /\
                 (G_Recv_no_sign_resp? (current_state tr0) ==>
-                          
-                          (G_Recv_no_sign_resp rep b_req b_resp  == current_state tr0)) /\
+                          (exists b_req' b_resp'. G_Recv_no_sign_resp rep b_req' b_resp' == current_state tr0)) /\
                 res.status == Success) **
            C.ghost_pcm_pts_to 
                   (get_state_data c).g_trace_ref
@@ -759,8 +758,8 @@ sign_resp1
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)
   (#tr0:trace {has_full_state_info (current_state tr0) })
-  (#b_req: Seq.seq u8) 
-  (#b_resp: Seq.seq u8)
+  (#b_req: G.erased (Seq.seq u8)) 
+  (#b_resp: G.erased (Seq.seq u8))
   (#p_req : perm)
   (#p_resp:perm)
 
@@ -821,8 +820,14 @@ sign_resp1
         }
         Recv_no_sign_resp st -> {
           intro_session_state_tag_related (Recv_no_sign_resp st) (current_state tr0);
-           rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
+          assert_ (pure (session_state_tag_related (Recv_no_sign_resp st) (current_state tr0)));
+
+          //If the assume cannot be asserted, then how rewrite works?
+          
+          rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
                    (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep b_req b_resp));
+
+          assume_ (pure(current_state tr0 == G_Recv_no_sign_resp rep b_req b_resp));
            
            unfold (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep b_req b_resp));
 
@@ -832,10 +837,13 @@ sign_resp1
            rewrite (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp st)).g_trace_ref (Some #perm 1.0R, tr0)) as
                    (C.ghost_pcm_pts_to (get_state_data c).g_trace_ref (Some #perm 1.0R, tr0));
           
+           
+           
            let ret = sign_resp_aux ctx req_size req c st rep res #tr0 #b_req #b_resp #p_req #p_resp;
-          admit()
+           ret
         }
         }
       }
     }
 }
+
