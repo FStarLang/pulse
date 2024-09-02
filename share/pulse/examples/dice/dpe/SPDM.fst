@@ -465,34 +465,138 @@ fn no_sign_resp1
   }
 }
 
-(*(ctx:parser_context{u32_v ctx.resp_size > 0})
-  (req_size: u32{u32_v req_size > 0})
-  (req:V.vec u8 { V.length req == u32_v req_size })
+module US = FStar.SizeT
+
+fn
+zeroize_vector
+(v:V.vec u8{V.length v == hash_size})
+requires V.pts_to v 's
+ensures exists* (s:Seq.seq U8.t).
+        V.pts_to v s **
+        pure (Seq.length s == hash_size /\ (s `Seq.equal` Seq.create (Seq.length s) 0uy))
+{
+  assert_ (pure(US.fits hash_size));
+  let l = US.uint_to_t hash_size;
+  V.to_array_pts_to v;
+  A.zeroize l (V.vec_to_array v);
+  V.to_vec_pts_to v;
+  assert_ (exists* (s:Seq.seq U8.t).
+           V.pts_to v s **
+          pure (Seq.length s == hash_size /\ (s `Seq.equal` Seq.create (Seq.length s) 0uy)));
+  ()
+}
+
+fn reset
   (c:state)
-  (st:st)
-  (rep:repr)
-  (res:spdm_measurement_result_t)
-  (#tr0:trace{has_full_state_info (current_state tr0)})
+  (#tr0:trace {has_full_state_info(current_state tr0) })
   (#b_req: G.erased (Seq.seq u8))
   (#b_resp: G.erased (Seq.seq u8))
-  (#p_req : perm)
-  (#p_resp:perm)
-  requires parser_post1 ctx res false **
-           V.pts_to req #p_req b_req **
-           V.pts_to ctx.resp #p_resp b_resp **
-           V.pts_to st.session_transcript rep.transcript **
-           V.pts_to st.signing_pub_key rep.signing_pub_key_repr **
-           pure (st.key_size == rep.key_size_repr /\
-                (c == Initialized st \/ c == Recv_no_sign_resp st) /\
-                (rep.transcript == (current_transcript tr0)) /\
-                (rep.signing_pub_key_repr == (current_key tr0)) /\
-                (rep.key_size_repr == (current_key_size tr0)) /\
-                (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0)) /\
-                (G_Initialized? (current_state tr0) ==>
-                          (G_Initialized rep == current_state tr0)) /\
-                (G_Recv_no_sign_resp? (current_state tr0) ==>
-                          (exists b_req' b_resp'. G_Recv_no_sign_resp rep b_req' b_resp' == current_state tr0)) /\
-                res.status == Success) **
-           C.ghost_pcm_pts_to 
-                  (get_state_data c).g_trace_ref
-                  (Some #perm 1.0R, tr0)*)
+  requires (spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
+           pure (G_Recv_no_sign_resp? (current_state tr0))
+                          )
+  returns r:state
+  ensures init_inv (get_state_data c).key_size (current_key tr0) r
+  {
+    //get the ghost transcript
+      
+      let curr_g_key = current_key tr0;
+      let curr_g_key_size = current_key_size tr0;
+      let curr_g_transcript = current_transcript tr0;
+      
+      let ts = Seq.create hash_size 0uy;
+      //creation of the ghost session data storage
+     let rep_new = {key_size_repr = curr_g_key_size; signing_pub_key_repr = curr_g_key; transcript = ts};
+     
+     let curr_state_data = get_state_data c;
+     let curr_state_transcript:V.vec u8 = curr_state_data.session_transcript;
+     let curr_state_signing_pub_key = curr_state_data.signing_pub_key;
+     let curr_state_key_size = curr_state_data.key_size;
+    
+     let curr_state_gref = curr_state_data.g_trace_ref;
+
+     assert_ (pure (valid_transition tr0 (G_Initialized rep_new)));
+     unfold (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+     //assert (session_state_related c (current_state tr0));
+    unfold (session_state_related c (current_state tr0));
+    
+    let rep = get_gstate_data (current_state tr0);
+
+    match c {
+        Initialized st -> {
+         intro_session_state_tag_related (Initialized st) (current_state tr0);
+         assert_ (pure (session_state_tag_related (Initialized st) (current_state tr0)));
+         assert_ (pure false);
+         unreachable()
+        }
+        Recv_no_sign_resp st -> {
+        
+        intro_session_state_tag_related (Recv_no_sign_resp st ) (current_state tr0);
+        //assert_ (pure (session_state_tag_related (Recv_no_sign_resp st) (current_state tr0)));
+        rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
+                (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep b_req b_resp));
+        unfold (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep b_req b_resp));
+
+        rewrite (V.pts_to st.session_transcript rep.transcript) as
+                (V.pts_to curr_state_transcript rep.transcript);
+
+        rewrite (V.pts_to curr_state_transcript rep.transcript) as
+                (V.pts_to curr_state_transcript curr_g_transcript);
+        
+        zeroize_vector curr_state_transcript;
+
+        extend_trace ((get_state_data (Recv_no_sign_resp st)).g_trace_ref) tr0 (G_Initialized rep_new); 
+
+        let new_st = {key_size = curr_state_key_size; 
+                        signing_pub_key = curr_state_signing_pub_key; 
+                        session_transcript = curr_state_transcript;
+                        g_trace_ref = curr_state_data.g_trace_ref};
+          
+
+        let new_state = (Initialized new_st);
+
+        let tr1 = next_trace tr0 (G_Initialized rep_new);
+
+        rewrite each
+           curr_state_signing_pub_key as new_st.signing_pub_key,
+           curr_g_key as rep_new.signing_pub_key_repr;
+        
+        with _v. rewrite (V.pts_to curr_state_transcript _v) as
+                         (V.pts_to new_st.session_transcript ts);
+
+        rewrite (V.pts_to st.signing_pub_key rep.signing_pub_key_repr) as
+                (V.pts_to new_st.signing_pub_key rep_new.signing_pub_key_repr);
+
+        fold (session_state_related (Initialized new_st) (G_Initialized rep_new));
+
+        with _v. rewrite (C.ghost_pcm_pts_to #trace_pcm_t #trace_pcm _v (pcm_elt 1.0R tr1)) as
+                         (C.ghost_pcm_pts_to (get_state_data (Initialized new_st)).g_trace_ref (pcm_elt 1.0R tr1));
+
+        fold (spdm_inv (Initialized new_st) (get_state_data (Initialized new_st)).g_trace_ref tr1);
+
+        fold (init_inv (get_state_data c).key_size (current_key tr0) (Initialized new_st));
+        
+        new_state
+        }
+    }
+  }
+
+fn 
+ verify_sign 
+         (ts_digest: V.vec u8{V.length ts_digest == hash_size})
+         (sg: V.vec u8{V.length sg == signature_size})
+         (pub_key:V.vec u8)
+         (#ts_seq: (G.erased (Seq.seq u8)){Seq.length ts_seq == hash_size})
+         (#sg_seq:(G.erased (Seq.seq u8)){Seq.length sg_seq == signature_size})
+         (#p_seq:(G.erased (Seq.seq u8)))
+    requires V.pts_to ts_digest ts_seq **
+             V.pts_to sg sg_seq **
+             V.pts_to pub_key p_seq
+    returns res: bool
+    ensures (V.pts_to ts_digest ts_seq **
+             V.pts_to sg sg_seq **
+             V.pts_to pub_key p_seq **
+             pure( res == true ==> valid_signature sg_seq ts_seq p_seq))
+{
+  admit()
+}
+

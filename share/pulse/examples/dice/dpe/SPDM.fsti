@@ -617,6 +617,8 @@ fn no_sign_resp1
 val reset
   (c:state)
   (#tr0:trace {has_full_state_info(current_state tr0) })
+  (#b_req: G.erased (Seq.seq u8))
+  (#b_resp: G.erased (Seq.seq u8))
    : stt state
   (requires (spdm_inv c ((get_state_data c).g_trace_ref) tr0 **
            pure (G_Recv_no_sign_resp? (current_state tr0))))
