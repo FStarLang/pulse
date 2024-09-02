@@ -583,7 +583,7 @@ let hash_result_success_no_sign (tr0:trace{has_full_state_info (current_state tr
                   (current_transcript tr1))
 
 fn no_sign_resp1
-  (ctx:parser_context)
+  (ctx:parser_context{u32_v ctx.resp_size > 0})
   (req_size: u32{u32_v req_size > 0})
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)

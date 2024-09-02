@@ -359,7 +359,7 @@ no_sign_resp_aux
 
 
 fn no_sign_resp1
-  (ctx:parser_context)
+  (ctx:parser_context{u32_v ctx.resp_size > 0})
   (req_size: u32{u32_v req_size > 0})
   (req:V.vec u8 { V.length req == u32_v req_size })
   (c:state)
@@ -385,7 +385,114 @@ fn no_sign_resp1
                   spdm_inv (snd res) (get_state_data (snd res)).g_trace_ref tr1 **
                   pure ((fst res).status == Success ==>
                                       state_change_success_no_sign tr0 tr1 /\
-                                      hash_result_success_no_sign tr0 tr1 #b_resp #b_req ))  
+                                      hash_result_success_no_sign tr0 tr1 #b_req #b_resp ))  
 {
-  admit()
+  let res = parser ctx #p_resp #b_resp false;
+  match res.status {
+    Parse_error -> {
+      let tr1 = tr0;
+      let r = (get_state_data c).g_trace_ref;
+      assert (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      assert (spdm_inv c (get_state_data c).g_trace_ref tr1);
+
+      rewrite 
+        (spdm_inv c ((get_state_data c).g_trace_ref) tr0) as
+        (spdm_inv c (get_state_data c).g_trace_ref tr1);
+       (res,c)
+    }
+    Success -> {
+      //current state transcript
+      let curr_state_data = get_state_data c;
+      let curr_state_transcript:V.vec u8 = curr_state_data.session_transcript;
+      let curr_state_signing_pub_key = curr_state_data.signing_pub_key;
+      let curr_state_key_size = curr_state_data.key_size;
+      //get the ghost transcript
+      let curr_g_transcript = current_transcript tr0;
+      
+      let curr_g_key = current_key tr0;
+      let curr_g_key_size = current_key_size tr0;
+      
+      //assert (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+      unfold (spdm_inv c ((get_state_data c).g_trace_ref) tr0);
+
+      //assert (session_state_related c (current_state tr0));
+      unfold (session_state_related c (current_state tr0));
+      
+      let rep = get_gstate_data (current_state tr0);
+
+      match c {
+        Initialized st -> {
+          intro_session_state_tag_related (Initialized st) (current_state tr0);
+          rewrite (session_state_related (Initialized st) (current_state tr0)) as
+                 (session_state_related (Initialized st) (G_Initialized rep));
+
+        
+          unfold (session_state_related (Initialized st) (G_Initialized rep));
+          
+          assert_ (C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some #perm 1.0R, tr0));
+          
+          assert_ (pure(c == Initialized st));
+          
+          rewrite (C.ghost_pcm_pts_to (get_state_data (Initialized st)).g_trace_ref (Some #perm 1.0R, tr0)) as
+                   (C.ghost_pcm_pts_to (get_state_data c).g_trace_ref (Some #perm 1.0R, tr0));
+          
+
+          let ret = no_sign_resp_aux ctx req_size req c st rep res #tr0 #b_req #b_resp #p_req #p_resp;
+          assert_ (pure(current_state tr0 == G_Initialized rep));
+
+          ret
+        }
+        Recv_no_sign_resp st ->{
+          intro_session_state_tag_related (Recv_no_sign_resp st ) (current_state tr0);
+          rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
+                 (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep b_req b_resp));
+          
+          unfold (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep b_req b_resp));
+        
+          assert_ (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp st )).g_trace_ref (Some #perm 1.0R, tr0));
+          
+          assert_ (pure(c == Recv_no_sign_resp st ));
+          
+          rewrite (C.ghost_pcm_pts_to (get_state_data (Recv_no_sign_resp st )).g_trace_ref (Some #perm 1.0R, tr0)) as
+                   (C.ghost_pcm_pts_to (get_state_data c).g_trace_ref (Some #perm 1.0R, tr0));
+          
+          let ret = no_sign_resp_aux ctx req_size req c st rep res #tr0 #b_req #b_resp #p_req #p_resp;
+
+          ret
+        }
+      }
+    }
+  }
 }
+
+(*(ctx:parser_context{u32_v ctx.resp_size > 0})
+  (req_size: u32{u32_v req_size > 0})
+  (req:V.vec u8 { V.length req == u32_v req_size })
+  (c:state)
+  (st:st)
+  (rep:repr)
+  (res:spdm_measurement_result_t)
+  (#tr0:trace{has_full_state_info (current_state tr0)})
+  (#b_req: G.erased (Seq.seq u8))
+  (#b_resp: G.erased (Seq.seq u8))
+  (#p_req : perm)
+  (#p_resp:perm)
+  requires parser_post1 ctx res false **
+           V.pts_to req #p_req b_req **
+           V.pts_to ctx.resp #p_resp b_resp **
+           V.pts_to st.session_transcript rep.transcript **
+           V.pts_to st.signing_pub_key rep.signing_pub_key_repr **
+           pure (st.key_size == rep.key_size_repr /\
+                (c == Initialized st \/ c == Recv_no_sign_resp st) /\
+                (rep.transcript == (current_transcript tr0)) /\
+                (rep.signing_pub_key_repr == (current_key tr0)) /\
+                (rep.key_size_repr == (current_key_size tr0)) /\
+                (G_Recv_no_sign_resp? (current_state tr0) \/ G_Initialized? (current_state tr0)) /\
+                (G_Initialized? (current_state tr0) ==>
+                          (G_Initialized rep == current_state tr0)) /\
+                (G_Recv_no_sign_resp? (current_state tr0) ==>
+                          (exists b_req' b_resp'. G_Recv_no_sign_resp rep b_req' b_resp' == current_state tr0)) /\
+                res.status == Success) **
+           C.ghost_pcm_pts_to 
+                  (get_state_data c).g_trace_ref
+                  (Some #perm 1.0R, tr0)*)
