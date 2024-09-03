@@ -751,6 +751,17 @@ sign_resp_aux
            }
 }
 
+let intro_session_state_tag_related_lemma 
+  (s:state)  
+  (#tr0:trace {has_full_state_info (current_state tr0) })
+   
+       : Lemma
+         (requires (exists st. s == Recv_no_sign_resp st /\
+                    (session_state_tag_related (Recv_no_sign_resp st) (current_state tr0))))
+         (ensures exists repr req resp. current_state tr0 == G_Recv_no_sign_resp repr req resp ) =
+  ()
+
+
 fn
 sign_resp1
   (ctx:parser_context{u32_v ctx.resp_size > 0})
@@ -821,8 +832,6 @@ sign_resp1
         Recv_no_sign_resp st -> {
           intro_session_state_tag_related (Recv_no_sign_resp st) (current_state tr0);
           assert_ (pure (session_state_tag_related (Recv_no_sign_resp st) (current_state tr0)));
-
-          //If the assume cannot be asserted, then how rewrite works?
           
           rewrite (session_state_related (Recv_no_sign_resp st) (current_state tr0)) as
                    (session_state_related (Recv_no_sign_resp st) (G_Recv_no_sign_resp rep b_req b_resp));
