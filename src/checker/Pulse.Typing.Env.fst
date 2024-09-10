@@ -373,13 +373,25 @@ let rec separate_map (sep: document) (f : 'a -> T.Tac document) (l : list 'a) : 
   | x::xs -> f x ^^ sep ^/^ separate_map sep f xs
 
 let env_to_doc (e:env) : T.Tac document =
+  let erase_units = not (Pulse.Config.debug_flag "no_filter_env") in
   let pp1 : ((var & typ) & ppname) -> T.Tac document =
     fun ((n, t), x) ->
       infix 2 1 colon
         (doc_of_string (T.unseal x.name ^ "#" ^ string_of_int n))
         (align (Pulse.Syntax.Printer.term_to_doc t))
   in
-  brackets (separate_map comma pp1 (T.zip e.bs e.names))
+  let maybe_filter vtns =
+    if erase_units then
+      vtns |> T.filter (fun ((n, t), x) ->
+        let is_unit = FStar.Reflection.TermEq.term_eq t (`unit) in
+        let x : ppname = x in
+        let is_wild = T.unseal x.name = "_" in
+        not (is_unit && is_wild)
+      )
+    else
+      vtns
+  in
+  T.zip e.bs e.names |> maybe_filter |> separate_map comma pp1 |> brackets
 
 let get_range (g:env) (r:option range) : T.Tac range =
     match r with
