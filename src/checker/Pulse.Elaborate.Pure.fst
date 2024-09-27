@@ -85,13 +85,13 @@ let elab_stt_equiv (g:R.env) (c:comp{C_ST? c}) (pre:R.term) (post:R.term)
   (eq_pre:RT.equiv g pre (comp_pre c))
   (eq_post:RT.equiv g post
                       (mk_abs (comp_res c) R.Q_Explicit (comp_post c)))
-  : RT.equiv g
+  : GTot (RT.equiv g
       (let C_ST {u;res} = c in
        mk_stt_comp u
                    res
                    pre
                    post)
-      (elab_comp c) =
+      (elab_comp c)) =
   
   mk_stt_comp_equiv _
     (comp_u c)
@@ -101,14 +101,14 @@ let elab_statomic_equiv (g:R.env) (c:comp{C_STAtomic? c}) (pre:R.term) (post:R.t
   (eq_pre:RT.equiv g pre (comp_pre c))
   (eq_post:RT.equiv g post
                     (mk_abs (comp_res c) R.Q_Explicit (comp_post c)))
-  : RT.equiv g
+  : GTot (RT.equiv g
       (let C_STAtomic inames obs {u;res} = c in
        mk_stt_atomic_comp (elab_observability obs) u
                           res
                           inames
                           pre
                           post)
-      (elab_comp c) =
+      (elab_comp c)) =
   
   let C_STAtomic inames obs {u;res} = c in
   let c' =
@@ -128,14 +128,14 @@ let elab_stghost_equiv (g:R.env) (c:comp{C_STGhost? c}) (pre:R.term) (post:R.ter
   (eq_pre:RT.equiv g pre (comp_pre c))
   (eq_post:RT.equiv g post
                     (mk_abs (comp_res c) R.Q_Explicit (comp_post c)))
-  : RT.equiv g
+  : GTot (RT.equiv g
       (let C_STGhost inames {u;res} = c in
        mk_stt_ghost_comp u
                          res
                          inames
                          pre
                          post)
-      (elab_comp c) =
+      (elab_comp c)) =
   
   let C_STGhost inames _ = c in
   mk_stt_ghost_comp_equiv _

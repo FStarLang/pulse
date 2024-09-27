@@ -460,45 +460,6 @@ let (mk_stt_ghost_comp :
             FStar_Reflection_V2_Builtins.pack_ln
               (FStar_Reflection_V2_Data.Tv_App
                  (t3, (post, FStar_Reflection_V2_Data.Q_Explicit)))
-let (mk_stt_ghost_comp_post_equiv :
-  FStar_Reflection_Types.env ->
-    FStar_Reflection_Types.universe ->
-      FStar_Reflection_Types.term ->
-        FStar_Reflection_Types.term ->
-          FStar_Reflection_Types.term ->
-            FStar_Reflection_Types.term ->
-              FStar_Reflection_Types.term ->
-                (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                  (unit, unit, unit) FStar_Reflection_Typing.equiv)
-  =
-  fun g ->
-    fun u ->
-      fun a ->
-        fun inames ->
-          fun pre ->
-            fun post1 ->
-              fun post2 ->
-                fun posts_equiv ->
-                  let t =
-                    FStar_Reflection_V2_Builtins.pack_ln
-                      (FStar_Reflection_V2_Data.Tv_UInst (stt_ghost_fv, [u])) in
-                  let t1 =
-                    FStar_Reflection_V2_Builtins.pack_ln
-                      (FStar_Reflection_V2_Data.Tv_App
-                         (t, (a, FStar_Reflection_V2_Data.Q_Explicit))) in
-                  let t2 =
-                    FStar_Reflection_V2_Builtins.pack_ln
-                      (FStar_Reflection_V2_Data.Tv_App
-                         (t1, (inames, FStar_Reflection_V2_Data.Q_Explicit))) in
-                  let t3 =
-                    FStar_Reflection_V2_Builtins.pack_ln
-                      (FStar_Reflection_V2_Data.Tv_App
-                         (t2, (pre, FStar_Reflection_V2_Data.Q_Explicit))) in
-                  FStar_Reflection_Typing.Rel_ctxt
-                    (g, post1, post2,
-                      (FStar_Reflection_Typing.Ctxt_app_arg
-                         (t3, FStar_Reflection_V2_Data.Q_Explicit,
-                           FStar_Reflection_Typing.Ctxt_hole)), posts_equiv)
 let (mk_total :
   FStar_Reflection_Types.typ -> FStar_Reflection_V2_Data.comp_view) =
   fun t -> FStar_Reflection_V2_Data.C_Total t
@@ -1800,86 +1761,6 @@ let (mk_withlocal :
                 FStar_Reflection_V2_Builtins.pack_ln
                   (FStar_Reflection_V2_Data.Tv_App
                      (t5, (body, FStar_Reflection_V2_Data.Q_Explicit)))
-let (mk_star_equiv :
-  FStar_Reflection_Types.env ->
-    FStar_Reflection_Types.term ->
-      FStar_Reflection_Types.term ->
-        FStar_Reflection_Types.term ->
-          FStar_Reflection_Types.term ->
-            (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-              (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                (unit, unit, unit) FStar_Reflection_Typing.equiv)
-  =
-  fun g ->
-    fun t1 ->
-      fun t2 -> fun t3 -> fun t4 -> fun eq1 -> fun eq2 -> Prims.admit ()
-let (mk_stt_comp_equiv :
-  FStar_Reflection_Types.env ->
-    FStar_Reflection_Types.universe ->
-      FStar_Reflection_Types.term ->
-        FStar_Reflection_Types.term ->
-          FStar_Reflection_Types.term ->
-            FStar_Reflection_Types.term ->
-              FStar_Reflection_Types.term ->
-                FStar_Reflection_Types.term ->
-                  (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                    (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                      (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                        (unit, unit, unit) FStar_Reflection_Typing.equiv)
-  =
-  fun g ->
-    fun u ->
-      fun res1 ->
-        fun pre1 ->
-          fun post1 ->
-            fun res2 ->
-              fun pre2 ->
-                fun post2 ->
-                  fun res_eq -> fun pre_eq -> fun post_eq -> Prims.admit ()
-let (mk_stt_atomic_comp_equiv :
-  FStar_Reflection_Types.env ->
-    FStar_Reflection_Types.term ->
-      FStar_Reflection_Types.universe ->
-        FStar_Reflection_Types.term ->
-          FStar_Reflection_Types.term ->
-            FStar_Reflection_Types.term ->
-              FStar_Reflection_Types.term ->
-                FStar_Reflection_Types.term ->
-                  FStar_Reflection_Types.term ->
-                    (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                      (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                        (unit, unit, unit) FStar_Reflection_Typing.equiv)
-  =
-  fun g ->
-    fun obs ->
-      fun u ->
-        fun res ->
-          fun inames ->
-            fun pre1 ->
-              fun post1 ->
-                fun pre2 ->
-                  fun post2 -> fun pre_eq -> fun post_eq -> Prims.admit ()
-let (mk_stt_ghost_comp_equiv :
-  FStar_Reflection_Types.env ->
-    FStar_Reflection_Types.universe ->
-      FStar_Reflection_Types.term ->
-        FStar_Reflection_Types.term ->
-          FStar_Reflection_Types.term ->
-            FStar_Reflection_Types.term ->
-              FStar_Reflection_Types.term ->
-                FStar_Reflection_Types.term ->
-                  (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                    (unit, unit, unit) FStar_Reflection_Typing.equiv ->
-                      (unit, unit, unit) FStar_Reflection_Typing.equiv)
-  =
-  fun g ->
-    fun u ->
-      fun res ->
-        fun inames ->
-          fun pre1 ->
-            fun post1 ->
-              fun pre2 ->
-                fun post2 -> fun pre_eq -> fun post_eq -> Prims.admit ()
 let (ref_lid : Prims.string Prims.list) = mk_pulse_lib_reference_lid "ref"
 let (pts_to_lid : Prims.string Prims.list) =
   mk_pulse_lib_reference_lid "pts_to"

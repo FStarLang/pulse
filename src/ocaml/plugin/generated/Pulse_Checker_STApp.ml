@@ -24,16 +24,6 @@ let (canon_comp : Pulse_Syntax_Base.comp_st -> Pulse_Syntax_Base.comp_st) =
     | FStar_Pervasives_Native.None -> c
     | FStar_Pervasives_Native.Some (Pulse_Syntax_Base.C_Tot uu___) -> c
     | FStar_Pervasives_Native.Some c' -> c'
-let (canon_comp_eq_res :
-  Pulse_Typing_Env.env ->
-    Pulse_Syntax_Base.comp_st ->
-      (unit, unit, unit) FStar_Reflection_Typing.equiv)
-  =
-  fun g ->
-    fun c ->
-      FStar_Reflection_Typing.Rel_refl
-        ((Pulse_Typing.elab_env g), (Pulse_Syntax_Base.comp_res c),
-          FStar_Reflection_Typing.R_Eq)
 let (canonicalize_st_typing :
   Pulse_Typing_Env.env ->
     Pulse_Syntax_Base.st_term ->
@@ -48,8 +38,7 @@ let (canonicalize_st_typing :
           let c' = canon_comp c in
           let x = Pulse_Typing_Env.fresh g in
           let st_eq =
-            Pulse_Typing.ST_SLPropEquiv
-              (g, c, c', x, (), (), (), (canon_comp_eq_res g c), (), ()) in
+            Pulse_Typing.ST_SLPropEquiv (g, c, c', x, (), (), (), (), (), ()) in
           Pulse_Typing.T_Equiv (g, t, c, c', d, st_eq)
 let coerce_eq : 'a 'b . 'a -> unit -> 'b =
   fun uu___1 -> fun uu___ -> (fun x -> fun uu___ -> Obj.magic x) uu___1 uu___

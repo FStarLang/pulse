@@ -882,7 +882,7 @@ type ('g, 't) prop_validity = unit
 type ('dummyV0, 'dummyV1, 'dummyV2) st_equiv =
   | ST_SLPropEquiv of Pulse_Typing_Env.env * Pulse_Syntax_Base.comp_st *
   Pulse_Syntax_Base.comp_st * Pulse_Syntax_Base.var * unit * unit * unit *
-  (unit, unit, unit) FStar_Reflection_Typing.equiv * unit * unit 
+  unit * unit * unit 
   | ST_TotEquiv of Pulse_Typing_Env.env * Pulse_Syntax_Base.term *
   Pulse_Syntax_Base.term * Pulse_Syntax_Base.universe * unit * unit 
 let uu___is_ST_SLPropEquiv uu___2 uu___1 uu___ uu___3 =
@@ -1004,8 +1004,7 @@ let uu___is_CT_STAtomic uu___2 uu___1 uu___ uu___3 =
 let uu___is_CT_STGhost uu___2 uu___1 uu___ uu___3 =
   match uu___3 with | CT_STGhost _ -> true | _ -> false
 type ('e, 'c) comp_typing_u = (unit, unit, unit) comp_typing
-type ('g, 't1, 't2) subtyping_token =
-  (unit, unit, unit) FStar_Tactics_Types.subtyping_token
+type ('g, 't1, 't2) subtyping_token = unit
 let (readback_binding :
   FStar_Reflection_V2_Data.binding -> Pulse_Typing_Env.binding) =
   fun b ->
@@ -1112,8 +1111,7 @@ type ('dummyV0, 'dummyV1, 'dummyV2) st_typing =
 and ('dummyV0, 'dummyV1, 'dummyV2, 'dummyV3) pats_complete =
   | PC_Elab of Pulse_Typing_Env.env * Pulse_Syntax_Base.term *
   Pulse_Syntax_Base.typ * FStar_Reflection_V2_Data.pattern Prims.list *
-  FStar_Reflection_V2_Data.binding Prims.list Prims.list * (unit, unit, 
-  unit, unit, unit) FStar_Reflection_Typing.match_is_complete 
+  FStar_Reflection_V2_Data.binding Prims.list Prims.list * unit 
 and ('g, 'scuu, 'scuty, 'sc, 'dummyV0, 'dummyV1) brs_typing =
   | TBRS_0 of Pulse_Syntax_Base.comp_st 
   | TBRS_1 of Pulse_Syntax_Base.comp_st * Pulse_Syntax_Base.pattern *

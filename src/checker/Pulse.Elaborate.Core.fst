@@ -176,7 +176,7 @@ let rec elab_st_typing (#g:env)
     | T_Abs _ x qual b _u body _c ty_typing body_typing ->
       let ty = b.binder_ty in
       let ppname = b.binder_ppname.name in
-      let body = elab_st_typing body_typing in
+      let body = elab_st_typing #g  body_typing in
       mk_abs_with_name ppname ty (elab_qual qual) (RT.close_term body x) //this closure should be provably redundant by strengthening the conditions on x
 
 
@@ -312,6 +312,7 @@ let rec elab_st_typing (#g:env)
 
     | T_WithInv _ _ _ _ _ _ _ _ _ ->
       `("IOU: elab_st_typing of T_WithInv")
+    | _ -> admit ()
 
 and elab_br (#g:env)
             (#c:comp_st)

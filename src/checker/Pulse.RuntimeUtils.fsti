@@ -62,6 +62,7 @@ val deep_compress (t:T.term) : r:T.term { t == r }
    nodes. If and when that is fixed, we should remove this function *)
 val deep_transform_to_unary_applications (t:T.term) : r:T.term { t == r }
 val map_seal (s:FStar.Sealed.sealed 't) (f: 't -> 'u) : FStar.Sealed.sealed 'u
+val map_seal_ghost (s:FStar.Sealed.sealed 't) (f: 't -> GTot 'u) : GTot (FStar.Sealed.sealed 'u)
 val float_one : FStar.Float.float
 val lax_check_term_with_unknown_universes (g:env) (t:T.term) : option T.term
 val whnf_lax (g:env) (t:T.term) : T.term

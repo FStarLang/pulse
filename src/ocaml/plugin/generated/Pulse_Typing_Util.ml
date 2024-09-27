@@ -3,8 +3,7 @@ let (check_equiv_now :
   FStar_Reflection_Types.env ->
     FStar_Tactics_NamedView.term ->
       FStar_Tactics_NamedView.term ->
-        (((unit, unit, unit) FStar_Tactics_Types.equiv_token
-           FStar_Pervasives_Native.option * FStar_Issue.issue Prims.list),
+        ((unit FStar_Pervasives_Native.option * FStar_Issue.issue Prims.list),
           unit) FStar_Tactics_Effect.tac_repr)
   =
   fun tcenv ->
@@ -20,8 +19,7 @@ let (check_equiv_now_nosmt :
   FStar_Reflection_Types.env ->
     FStar_Tactics_NamedView.term ->
       FStar_Tactics_NamedView.term ->
-        (((unit, unit, unit) FStar_Tactics_Types.equiv_token
-           FStar_Pervasives_Native.option * FStar_Issue.issue Prims.list),
+        ((unit FStar_Pervasives_Native.option * FStar_Issue.issue Prims.list),
           unit) FStar_Tactics_Effect.tac_repr)
   =
   fun tcenv ->

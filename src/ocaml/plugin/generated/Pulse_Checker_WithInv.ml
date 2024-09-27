@@ -3315,26 +3315,7 @@ let (check0 :
                                                                     post_frame)),
                                                                     c_out, x,
                                                                     (), (),
-                                                                    (),
-                                                                    (FStar_Reflection_Typing.Rel_refl
-                                                                    ((Pulse_Typing.elab_env
-                                                                    g),
-                                                                    (Pulse_Syntax_Base.comp_res
-                                                                    (atomic_or_ghost_with_inames_and_pre_post
-                                                                    c_body
-                                                                    (Pulse_Syntax_Pure.tm_add_inv
-                                                                    (Pulse_Syntax_Base.comp_inames
-                                                                    c_body)
-                                                                    i1)
-                                                                    (Pulse_Syntax_Pure.tm_star
-                                                                    (Pulse_Syntax_Pure.tm_inv
-                                                                    i1 p)
-                                                                    pre_frame)
-                                                                    (Pulse_Syntax_Pure.tm_star
-                                                                    (Pulse_Syntax_Pure.tm_inv
-                                                                    i1 p)
-                                                                    post_frame))),
-                                                                    FStar_Reflection_Typing.R_Eq)),
+                                                                    (), (),
                                                                     (), ()))))) in
                                                                     Obj.magic
                                                                     (FStar_Tactics_Effect.tac_bind

@@ -29,14 +29,14 @@ module RU = Pulse.RuntimeUtils
 module U = Pulse.Syntax.Pure
 module E = Pulse.Elaborate.Pure
 
-let freevars (t:term) : Set.set var = RT.freevars t
+let freevars (t:term) : GTot (Set.set var) = RT.freevars t
 
-let freevars_st_comp (s:st_comp) : Set.set var =
+let freevars_st_comp (s:st_comp) : GTot (Set.set var) =
   freevars s.res `Set.union`
   freevars s.pre `Set.union`
   freevars s.post
 
-let freevars_comp (c:comp) : Tot (Set.set var) (decreases c) =
+let freevars_comp (c:comp) : GTot (Set.set var) (decreases c) =
   match c with
   | C_Tot t -> freevars t
   | C_ST s -> freevars_st_comp s
@@ -44,25 +44,25 @@ let freevars_comp (c:comp) : Tot (Set.set var) (decreases c) =
   | C_STAtomic inames _ s ->
     freevars inames `Set.union` freevars_st_comp s
 
-let freevars_opt (f: 'a -> Set.set var) (x:option 'a) : Set.set var =
+let freevars_opt (f: 'a -> GTot (Set.set var)) (x:option 'a) : GTot (Set.set var) =
   match x with
   | None -> Set.empty
   | Some x -> f x
 
-let freevars_term_opt (t:option term) : Set.set var =
+let freevars_term_opt (t:option term) : GTot (Set.set var) =
   freevars_opt freevars t
 
-let rec freevars_list (t:list term) : Set.set var =
+let rec freevars_list (t:list term) : GTot (Set.set var) =
   match t with
   | [] -> Set.empty
   | hd::tl -> freevars hd `Set.union` freevars_list tl
 
-let rec freevars_pairs (pairs:list (term & term)) : Set.set var =
+let rec freevars_pairs (pairs:list (term & term)) : GTot (Set.set var) =
   match pairs with
   | [] -> Set.empty
   | (t1, t2)::tl -> Set.union (freevars t1) (freevars t2) `Set.union` freevars_pairs tl
 
-let freevars_proof_hint (ht:proof_hint_type) : Set.set var = 
+let freevars_proof_hint (ht:proof_hint_type) : GTot (Set.set var) = 
   match ht with
   | ASSERT { p }
   | FOLD { p }
@@ -77,12 +77,12 @@ let freevars_proof_hint (ht:proof_hint_type) : Set.set var =
   | SHOW_PROOF_STATE _ -> Set.empty
 
 let freevars_ascription (c:comp_ascription) 
-  : Set.set var
+  : GTot (Set.set var)
   = Set.union (freevars_opt freevars_comp c.elaborated)
               (freevars_opt freevars_comp c.annotated)
 
 let rec freevars_st (t:st_term)
-  : Set.set var
+  : GTot (Set.set var)
   = match t.term with
     | Tm_Return { expected_type; term } ->
       Set.union (freevars expected_type) (freevars term)
@@ -165,22 +165,22 @@ let rec freevars_st (t:st_term)
                                           (freevars is))))
                   returns_inv)
 
-and freevars_branches (t:list (pattern & st_term)) : Set.set var =
+and freevars_branches (t:list (pattern & st_term)) : GTot (Set.set var) =
   match t with
   | [] -> Set.empty
   | (_, b)::tl -> freevars_st b `Set.union` freevars_branches tl
 
 
-let ln' (t:term) (i:int) : bool = RT.ln' t i
+let ln' (t:term) (i:int) : GTot bool = RT.ln' t i
 
-let ln_st_comp (s:st_comp) (i:int) : bool =
+let ln_st_comp (s:st_comp) (i:int) : GTot bool =
   ln' s.res i &&
   ln' s.pre i &&
   ln' s.post (i + 1) (* post has 1 impliict abstraction *)
 
 
 let ln_c' (c:comp) (i:int)
-  : bool
+  : GTot bool
   = match c with
     | C_Tot t -> ln' t i
     | C_ST s -> ln_st_comp s i
@@ -189,22 +189,22 @@ let ln_c' (c:comp) (i:int)
       ln' inames i &&
       ln_st_comp s i
 
-let ln_opt' (f: ('a -> int -> bool)) (t:option 'a) (i:int) : bool =
+let ln_opt' (f: ('a -> int -> GTot bool)) (t:option 'a) (i:int) : GTot bool =
   match t with
   | None -> true
   | Some t -> f t i
 
-let rec ln_list' (t:list term) (i:int) : bool =
+let rec ln_list' (t:list term) (i:int) : GTot bool =
   match t with
   | [] -> true
   | hd::tl -> ln' hd i && ln_list' tl i
 
-let rec ln_terms' (t:list (term & term)) (i:int) : bool =
+let rec ln_terms' (t:list (term & term)) (i:int) : GTot bool =
   match t with
   | [] -> true
   | (t1, t2)::tl -> ln' t1 i && ln' t2 i && ln_terms' tl i
 
-let ln_proof_hint' (ht:proof_hint_type) (i:int) : bool =
+let ln_proof_hint' (ht:proof_hint_type) (i:int) : GTot bool =
   match ht with
   | ASSERT { p }
   | UNFOLD { p }
@@ -236,7 +236,7 @@ and pattern_args_shift_n (ps:list (pattern & bool))
       pattern_shift_n p + pattern_args_shift_n tl
 
 let rec ln_pattern' (p : pattern) (i:int)
-  : Tot bool (decreases p)
+  : GTot bool (decreases p)
   = match p with
     | Pat_Constant _ 
     | Pat_Var _ _ 
@@ -248,7 +248,7 @@ let rec ln_pattern' (p : pattern) (i:int)
       ln_pattern_args' l i
  
 and ln_pattern_args' (p:list (pattern & bool)) (i:int)
-  : Tot bool (decreases p)
+  : GTot bool (decreases p)
   = match p with
     | [] ->
       true
@@ -257,12 +257,12 @@ and ln_pattern_args' (p:list (pattern & bool)) (i:int)
       ln_pattern_args' tl (i + pattern_shift_n p)
 
 let ln_ascription' (c:comp_ascription) (i:int)
-  : bool
+  : GTot bool
   = ln_opt' ln_c' c.elaborated i &&
     ln_opt' ln_c' c.annotated i
 
 let rec ln_st' (t:st_term) (i:int)
-  : Tot bool (decreases t)
+  : GTot bool (decreases t)
   = match t.term with
     | Tm_Return { expected_type; term } ->
       ln' expected_type i &&
@@ -356,13 +356,15 @@ let rec ln_st' (t:st_term) (i:int)
           ln' is i)
         returns_inv i
 
-and ln_branch' (b : pattern & st_term) (i:int) : Tot bool (decreases b) =
+and ln_branch' (b : pattern & st_term) (i:int) : GTot bool (decreases b) =
   let (p, e) = b in
   ln_pattern' p i &&
   ln_st' e (i + pattern_shift_n p)
   
-and ln_branches' (t:st_term) (brs : list branch{brs << t}) (i:int) : Tot bool (decreases brs) =
-  for_all_dec t brs (fun b -> ln_branch' b i)
+and ln_branches' (t:st_term) (brs : list branch{brs << t}) (i:int) : GTot bool (decreases brs) =
+  match brs with
+  | [] -> true
+  | br::brs -> ln_branch' br i && ln_branches' t brs i
 
 let ln (t:term) = ln' t (-1)
 let ln_st (t:st_term) = ln_st' t (-1)
@@ -476,13 +478,13 @@ let close_proof_hint' (ht:proof_hint_type) (x:var) (i:index) =
   subst_proof_hint ht [RT.ND x i]
 
 let rec subst_pat (p:pattern) (ss:subst)
-  : Tot pattern (decreases p)
+  : GTot pattern (decreases p)
   = match p with
     | Pat_Constant _
     | Pat_Dot_Term None ->
       p
     | Pat_Var n t -> 
-      let t = RU.map_seal t (fun t -> RT.subst_term t ss) in
+      let t = RU.map_seal_ghost t (fun t -> RT.subst_term t ss) in
       Pat_Var n t
     | Pat_Dot_Term (Some e) ->
       Pat_Dot_Term (Some (subst_term e ss))
@@ -490,7 +492,7 @@ let rec subst_pat (p:pattern) (ss:subst)
       let args = subst_pat_args args ss in
       Pat_Cons d args
 and subst_pat_args (args:list (pattern & bool)) (ss:subst)
-  : Tot (list (pattern & bool)) (decreases args)
+  : GTot (list (pattern & bool)) (decreases args)
   = match args with
     | [] -> []
     | (arg, b)::tl ->
@@ -510,7 +512,7 @@ let subst_ascription (c:comp_ascription) (ss:subst)
        annotated = map2_opt subst_comp c.annotated ss }
 
 let rec subst_st_term (t:st_term) (ss:subst)
-  : Tot st_term (decreases t)
+  : GTot st_term (decreases t)
   = let t' =
     match t.term with
     | Tm_Return { expected_type; insert_eq; term } ->
@@ -622,17 +624,19 @@ let rec subst_st_term (t:st_term) (ss:subst)
     { t with term = t' }
 
 and subst_branches (t:st_term) (ss:subst) (brs : list branch{brs << t})
-: Tot (list branch) (decreases brs)
-= map_dec t brs (fun br -> subst_branch ss br)
+: GTot (list branch) (decreases brs)
+= match brs with
+  | [] -> []
+  | br::brs -> subst_branch ss br :: subst_branches t ss brs
 
-and subst_branch (ss:subst) (b : pattern & st_term) : Tot (pattern & st_term) (decreases b) =
+and subst_branch (ss:subst) (b : pattern & st_term) : GTot (pattern & st_term) (decreases b) =
   let (p, e) = b in
   let p = subst_pat p ss in
   let ss = shift_subst_n (pattern_shift_n p) ss in
   p, subst_st_term e ss
 
 
-let open_st_term' (t:st_term) (v:term) (i:index) : st_term =
+let open_st_term' (t:st_term) (v:term) (i:index) : GTot st_term =
   subst_st_term t [ RT.DT i v ]
 
 let open_term_nv t nv =
@@ -672,7 +676,7 @@ let close_term_list' (t:list term) (v:var) (i:index) : list term =
 let close_binder b v i =
   subst_binder b [ RT.ND v i ]
              
-let close_st_term' (t:st_term) (v:var) (i:index) : st_term =
+let close_st_term' (t:st_term) (v:var) (i:index) : GTot st_term =
   subst_st_term t [ RT.ND v i ]
       
 let close_term t v = close_term' t v 0
@@ -687,8 +691,11 @@ let close_n (x:'a) (f:'a -> var -> index -> 'a) (vs:list var) : 'a =
   in
   aux 0 (List.rev vs) x
 
+let close_n_ghost (x:'a) (f:'a -> var -> index -> GTot 'a) (vs:list var) : GTot 'a =
+  close_n (Ghost.hide x) (fun acc x i -> Ghost.hide (f (Ghost.reveal acc) x i)) vs
+
 let close_term_n t vs = close_n t close_term' vs
-let close_st_term_n t vs = close_n t close_st_term' vs
+let close_st_term_n t vs = close_n_ghost t close_st_term' vs
 let close_comp_n (c:comp) vs : comp = close_n c close_comp' vs
 
 val close_open_inverse' (t:term) 

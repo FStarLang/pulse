@@ -566,7 +566,7 @@ type st_equiv : env -> comp -> comp -> Type =
       tot_typing g (comp_pre c1) tm_slprop ->
       tot_typing g (comp_res c1) (tm_type (comp_u c1)) ->
       tot_typing (push_binding g x ppname_default (comp_res c1)) (open_term (comp_post c1) x) tm_slprop ->
-      RT.equiv (elab_env g) (comp_res c1) (comp_res c2) ->
+      Ghost.erased (RT.equiv (elab_env g) (comp_res c1) (comp_res c2)) ->
       slprop_equiv g (comp_pre c1) (comp_pre c2) ->
       slprop_equiv (push_binding g x ppname_default (comp_res c1))
                   (open_term (comp_post c1) x)

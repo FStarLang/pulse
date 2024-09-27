@@ -63,7 +63,7 @@ let return_soundness
       RT.Rel_beta (elab_env g) t R.Q_Explicit post e in
   
   let comp_equiv_noeq (_:unit{use_eq == false})
-    : (match ctag with
+    : GTot (match ctag with
        | STT -> RT.equiv (elab_env g)
                          (WT.return_stt_noeq_comp u t e rpost_abs)
                          (elab_comp c)
@@ -84,7 +84,7 @@ let return_soundness
     | STT_Ghost -> elab_stghost_equiv _ c _ _ pre_eq (RT.Rel_refl _ _ _)  in
 
   let comp_equiv_eq (_:unit{use_eq == true})
-    : (match ctag with
+    : GTot (match ctag with
        | STT -> RT.equiv (elab_env g)
                          (WT.return_stt_comp u t e rpost_abs x)
                          (elab_comp c)

@@ -623,22 +623,22 @@ let mk_stt_comp_equiv (g:R.env) (u:R.universe) (res1 pre1 post1 res2 pre2 post2:
   (res_eq: RT.equiv g res1 res2)
   (pre_eq:RT.equiv g pre1 pre2)
   (post_eq:RT.equiv g post1 post2)
-  : RT.equiv g (mk_stt_comp u res1 pre1 post1)
-               (mk_stt_comp u res2 pre2 post2)
+  : GTot (RT.equiv g (mk_stt_comp u res1 pre1 post1)
+                     (mk_stt_comp u res2 pre2 post2))
   = admit ()
 
 let mk_stt_atomic_comp_equiv (g:R.env) obs (u:R.universe) (res inames pre1 post1 pre2 post2:R.term)
   (pre_eq:RT.equiv g pre1 pre2)
   (post_eq:RT.equiv g post1 post2)
-  : RT.equiv g (mk_stt_atomic_comp obs u res inames pre1 post1)
-               (mk_stt_atomic_comp obs u res inames pre2 post2)
+  : GTot (RT.equiv g (mk_stt_atomic_comp obs u res inames pre1 post1)
+                     (mk_stt_atomic_comp obs u res inames pre2 post2))
   = admit ()
 
 let mk_stt_ghost_comp_equiv (g:R.env) (u:R.universe) (res inames pre1 post1 pre2 post2:R.term)
   (pre_eq:RT.equiv g pre1 pre2)
   (post_eq:RT.equiv g post1 post2)
-  : RT.equiv g (mk_stt_ghost_comp u res inames pre1 post1)
-               (mk_stt_ghost_comp u res inames pre2 post2)
+  : GTot (RT.equiv g (mk_stt_ghost_comp u res inames pre1 post1)
+                     (mk_stt_ghost_comp u res inames pre2 post2))
   = admit ()
 
 let ref_lid = mk_pulse_lib_reference_lid "ref"

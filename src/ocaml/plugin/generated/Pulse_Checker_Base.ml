@@ -1181,14 +1181,7 @@ let (st_equiv_trans :
                        then
                          FStar_Pervasives_Native.Some
                            (Pulse_Typing.ST_SLPropEquiv
-                              (g, c0, c2, x, (), (), (),
-                                (FStar_Reflection_Typing.Rel_trans
-                                   ((Pulse_Typing.elab_env _f),
-                                     (Pulse_Syntax_Base.comp_res _c0),
-                                     (Pulse_Syntax_Base.comp_res _c1),
-                                     (Pulse_Syntax_Base.comp_res _c2),
-                                     FStar_Reflection_Typing.R_Eq, eq_res_01,
-                                     eq_res_12)), (), ()))
+                              (g, c0, c2, x, (), (), (), (), (), ()))
                        else FStar_Pervasives_Native.None)
               | Pulse_Typing.ST_TotEquiv (g1, t1, t2, u, typing, eq) ->
                   let uu___ = d12 in
@@ -1253,11 +1246,7 @@ let (st_equiv_post :
                      (u_of, pre_typing, x, post_typing) ->
                      let st_equiv =
                        Pulse_Typing.ST_SLPropEquiv
-                         (g, c, c', x, (), (), (),
-                           (FStar_Reflection_Typing.Rel_refl
-                              ((Pulse_Typing.elab_env g),
-                                (Pulse_Syntax_Base.comp_res c),
-                                FStar_Reflection_Typing.R_Eq)), (), ()) in
+                         (g, c, c', x, (), (), (), (), (), ()) in
                      t_equiv g t c d c' st_equiv)
 let (simplify_post :
   Pulse_Typing_Env.env ->
@@ -1333,11 +1322,7 @@ let (st_equiv_pre :
                      (u_of, pre_typing, x, post_typing) ->
                      let st_equiv =
                        Pulse_Typing.ST_SLPropEquiv
-                         (g, c, c', x, (), (), (),
-                           (FStar_Reflection_Typing.Rel_refl
-                              ((Pulse_Typing.elab_env g),
-                                (Pulse_Syntax_Base.comp_res c),
-                                FStar_Reflection_Typing.R_Eq)), (), ()) in
+                         (g, c, c', x, (), (), (), (), (), ()) in
                      t_equiv g t c d c' st_equiv)
 let (k_elab_equiv_continuation :
   Pulse_Typing_Env.env ->
@@ -2775,13 +2760,8 @@ let (match_comp_res_with_post_hint :
                                                                     c).Pulse_Syntax_Base.post)
                                                                     }), x,
                                                                     (), (),
-                                                                    (),
-                                                                    (FStar_Reflection_Typing.Rel_eq_token
-                                                                    ((Pulse_Typing.elab_env
-                                                                    g), cres,
-                                                                    ret_ty,
-                                                                    ())), (),
-                                                                    ())))))))))
+                                                                    (), (),
+                                                                    (), ())))))))))
                                                         uu___12)))) uu___10))))
               uu___4 uu___3 uu___2 uu___1 uu___
 let (apply_checker_result_k :
