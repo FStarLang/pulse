@@ -313,7 +313,7 @@ let rec st_term_to_doc (t:st_term)
     | Tm_Admit { ctag; u; typ; post } ->
       doc_of_string "admit ()" // FIXME
 
-    | Tm_Unreachable -> doc_of_string "unreachable ()"
+    | Tm_Unreachable _ -> doc_of_string "unreachable ()"
 
     | Tm_ProofHintWithBinders { binders; hint_type; t} ->
       let with_prefix =
