@@ -171,7 +171,7 @@ let maybe_trace (t:st_term) (g:env) (pre:term) (rng:range) : T.Tac unit =
     trace t g pre rng
     
 let dataset_print (g: env) (pre: term) (res_ppname: ppname) (t: st_term) : T.Tac unit =
-  if RU.debug_at_level (fstar_env g) "pulse.dataset" then
+  if T.ext_getv "pulse:dataset" = "1" then 
     T.print (Printf.sprintf "DATASET %s" (let open Pulse.Json in
       let res = Syntax.Pure.slprop_as_list pre in
       string_of_json (JsonAssoc ([
@@ -336,3 +336,4 @@ let rec check
     let (| x, g1, t, pre', k |) = r in
     (| x, g1, t, pre', k_elab_trans k_elim_pure k |)
   )
+#pop-options
