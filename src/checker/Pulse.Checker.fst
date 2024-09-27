@@ -169,6 +169,16 @@ let maybe_trace (t:st_term) (g:env) (pre:term) (rng:range) : T.Tac unit =
      || trace_full_opt
   then
     trace t g pre rng
+    
+let dataset_print (g: env) (pre: term) (res_ppname: ppname) (t: st_term) : T.Tac unit =
+  if RU.debug_at_level (fstar_env g) "pulse.dataset" then
+    T.print (Printf.sprintf "DATASET %s" (let open Pulse.Json in
+      let res = Syntax.Pure.slprop_as_list pre in
+      string_of_json (JsonAssoc ([
+        "range", JsonStr (T.range_to_string t.range);
+        "statement", JsonStr (Stubs.Pprint.render (Syntax.Printer.st_term_to_doc t));
+        "resources", JsonList (Tactics.Util.map (fun pre -> JsonStr (Stubs.Pprint.render (Syntax.Printer.term_to_doc pre))) (Syntax.Pure.slprop_as_list pre));
+      ]))))
 
 #push-options "--z3rlimit_factor 4 --fuel 0 --ifuel 1"
 let rec check
@@ -196,6 +206,8 @@ let rec check
                 (Pulse.Typing.Env.env_to_string g)
                 (Pulse.Syntax.Printer.term_to_string pre)
                 (Pulse.Syntax.Printer.st_term_to_string t));
+
+    dataset_print g pre res_ppname t;
 
     let r : checker_result_t g pre post_hint =
       let g = push_context (P.tag_of_st_term t) t.range g in
