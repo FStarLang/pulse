@@ -170,13 +170,51 @@ let maybe_trace (t:st_term) (g:env) (pre:term) (rng:range) : T.Tac unit =
   then
     trace t g pre rng
     
-let dataset_print (g: env) (pre: term) (res_ppname: ppname) (t: st_term) : T.Tac unit =
+(*
+ fn foo (x:t) 
+ requires p0
+ ensures q
+ {
+  {p0}
+    let y : s = ...;
+  {p1}
+
+    bar x y; <--- (range: "foo.fst:...") (env: x:t; y:s), (resources: {p1}), (statement: bar x y)
+   {p2}
+     
+     ...
+
+
+}
+*)
+let env_bindings_to_string (g:env) : T.Tac string =
+  String.concat "; " <| 
+  T.map (fun (x, n, t) ->
+            Printf.sprintf "%s @ %d : %s"
+                (T.unseal (x <: ppname).name)
+                (n <: var)
+                (Stubs.Pprint.render (Syntax.Printer.term_to_doc t)))
+        (Pulse.Typing.Env.bindings_with_ppname g)
+
+let print_post_hint (g:env) (p:post_hint_opt g) : T.Tac string = 
+  match p with
+  | None -> "no goal set"
+  | Some p -> 
+    // print p.post
+    //use term_to_doc as above
+    ""
+  
+//add post_hint as an argument to dataset_print
+let dataset_print (g: env) (pre: term) (res_ppname: ppname) (t: st_term) (post_hint:post_hint_opt g) : T.Tac unit =
   if T.ext_getv "pulse:dataset" = "1" then 
     T.print (Printf.sprintf "DATASET %s" (let open Pulse.Json in
-      let res = Syntax.Pure.slprop_as_list pre in
+      let res = Syntax.Pure.slprop_as_list pre in 
       string_of_json (JsonAssoc ([
         "range", JsonStr (T.range_to_string t.range);
         "statement", JsonStr (Stubs.Pprint.render (Syntax.Printer.st_term_to_doc t));
+        "environment", JsonStr (env_bindings_to_string g);
+        //add a field called, say, "goal"
+        //and set its value to JsonStr of print_post_hint
         "resources", JsonList (Tactics.Util.map (fun pre -> JsonStr (Stubs.Pprint.render (Syntax.Printer.term_to_doc pre))) (Syntax.Pure.slprop_as_list pre));
       ]))))
 
@@ -185,7 +223,7 @@ let rec check
   (g0:env)
   (pre0:term)
   (pre0_typing: tot_typing g0 pre0 tm_slprop)
-  (post_hint:post_hint_opt g0)
+  (post_hint:post_hint_opt g0) // post_hint contains the final goal to be proven, if any; it would be nice to print this in the dataset dump
   (res_ppname:ppname)
   (t:st_term)
 : T.Tac (checker_result_t g0 pre0 post_hint)
@@ -207,7 +245,7 @@ let rec check
                 (Pulse.Syntax.Printer.term_to_string pre)
                 (Pulse.Syntax.Printer.st_term_to_string t));
 
-    dataset_print g pre res_ppname t;
+    dataset_print g pre res_ppname t post_hint;
 
     let r : checker_result_t g pre post_hint =
       let g = push_context (P.tag_of_st_term t) t.range g in
