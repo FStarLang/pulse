@@ -8,8 +8,8 @@
     "_output/cache",
     "--warn_error", 
     "-249",
-    "--ext",
-    "context_pruning"
+    "--ext", "__unrefine",
+    "--ext", "context_pruning"
   ],
   "include_dirs": [
     "../../../lib/pulse",
