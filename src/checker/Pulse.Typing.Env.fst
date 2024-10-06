@@ -158,7 +158,7 @@ let rec remove_binding_aux (g:env)
     let m = Map.restrict (Set.complement (Set.singleton x)) (Map.upd g.m x tm_unknown) in
     // we need uniqueness invariant in the representation
     assume (forall (b:var & typ). List.Tot.memP b prefix <==> (List.Tot.memP b g.bs /\
-                                                               fst b =!= x));
+                                                               fst b =!= (x <: var)));
     let g' = {g with bs = prefix; names=prefix_names; m} in
     assert (equal g (push_env (push_binding (mk_env (fstar_env g)) x ppname_default t) g'));
     x, t, g'

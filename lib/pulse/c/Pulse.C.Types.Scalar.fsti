@@ -134,7 +134,7 @@ let read_prf
     p' == p
   ))
 = 
-  let prf v0' p' : Lemma
+  let prf v0' (p':perm) : Lemma
     (requires (mk_fraction (scalar t) (mk_scalar v0') p' == mk_fraction (scalar t) (mk_scalar v0) p))
     (ensures (v0' == Ghost.reveal v0 /\ p' == Ghost.reveal p))
   = mk_scalar_inj (Ghost.reveal v0) v0' p p'

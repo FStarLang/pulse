@@ -538,7 +538,7 @@ fn pts_to_range_prop'
   (#s: Seq.seq elt)
 requires pts_to_range a i j #p s
 ensures pts_to_range a i j #p s ** pure (
-      (i <= j /\ j <= length a /\ Seq.length s == j - i)
+      (i <= j /\ j <= length a /\ eq2 #nat (Seq.length s) (j - i))
     )
 {
   unfold pts_to_range a i j #p s;
@@ -549,7 +549,6 @@ ensures pts_to_range a i j #p s ** pure (
 }
 
 let pts_to_range_prop = pts_to_range_prop'
-
 
 ghost
 fn pts_to_range_intro'
