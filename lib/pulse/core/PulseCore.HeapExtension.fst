@@ -1897,7 +1897,7 @@ let distinct_invariants_have_distinct_names
 let invariant_name_identifies_invariant
       (#h:heap_sig u#a)
       (e:inames (extend h))
-      (p q:ext_slprop h)
+      (p q:(extend h).slprop)
       (i:iiref h)
       (j:iiref h{ i == j } )
 : ghost_action_except (extend h)

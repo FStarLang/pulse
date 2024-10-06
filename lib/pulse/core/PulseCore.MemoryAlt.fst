@@ -617,7 +617,7 @@ let distinct_invariants_have_distinct_names_alt
       (q:slprop u#m { p =!= q })
       (i j:iref)
 : pst_ghost_action_except u#0 u#m 
-    (squash (~(eq2 #(E.iiref sig_1) (reveal_iref i) (reveal_iref j))))
+    (squash (reveal_iref i =!= reveal_iref j))
     e 
     (inv i p `star` inv j q)
     (fun _ -> inv i p `star` inv j q)
@@ -640,7 +640,7 @@ let distinct_invariants_have_distinct_names
       (q:slprop u#m { p =!= q })
       (i j:iref)
 : pst_ghost_action_except u#0 u#m 
-    (squash (~(eq2 #iref i j)))
+    (squash (i =!= j))
     e 
     (inv i p `star` inv j q)
     (fun _ -> inv i p `star` inv j q)

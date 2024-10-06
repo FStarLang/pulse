@@ -4,8 +4,8 @@
     "--query_cache",
     "--load_cmxs",
     "pulse",
-    "--ext",
-    "context_pruning"
+    "--ext", "__unrefine",
+    "--ext", "context_pruning"
   ],
   "include_dirs": [
     "lib/pulse",

@@ -289,7 +289,7 @@ let head_is_uvar (uvs:env) (t:term) : T.Tac bool =
   let hd, _ = T.collect_app t in
   match T.inspect hd with
   | T.Tv_Var v ->
-    List.existsb (fun (x, _) -> x = v.uniq) (bindings uvs)
+    List.existsb (fun (x, _) -> (x <: var) = v.uniq) (bindings uvs)
   | _ -> false
 
 (**************** The actual matchers *)

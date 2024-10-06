@@ -3,6 +3,7 @@
 	"options": [
 		"--query_cache",
 		"--load_cmxs", "pulse",
+		"--ext", "__unrefine",
 		"--ext", "context_pruning"
 	],
 	"include_dirs": [
