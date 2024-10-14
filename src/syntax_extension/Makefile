@@ -1,21 +1,24 @@
+FSTAR_EXE   ?= $(shell which fstar.exe)
+FSTAR_STAGE ?= $(abspath $(shell $(FSTAR_EXE) --locate)/../..)
+FSTAR_HOME  ?= $(abspath $(shell $(FSTAR_EXE) --locate)/../../..)
+include $(FSTAR_HOME)/mk/common.mk
+.DEFAULT_GOAL := all
+
 all: extract
 
-FSTAR_HOME ?= $(realpath $(dir $(shell which fstar.exe))/..)
-FSTAR_EXE = $(FSTAR_HOME)/bin/fstar.exe
+_: $(shell echo FSTAR_EXE = $(FSTAR_EXE) > /dev/tty)
+_: $(shell echo FSTAR_STAGE = $(FSTAR_STAGE) > /dev/tty)
+_: $(shell echo FSTAR_HOME = $(FSTAR_HOME) > /dev/tty)
 
 # Assume FSTAR_HOME points to the F* source tree
-include $(FSTAR_HOME)/.common.mk
-include $(FSTAR_HOME)/ulib/gmake/z3.mk    # This pins $(Z3) ...
-include $(FSTAR_HOME)/ulib/gmake/fstar.mk # and $(FSTAR) for all sub-make calls
-include $(FSTAR_HOME)/src/Makefile.boot.common
+include $(FSTAR_HOME)/gmake/fstar.mk # and $(FSTAR) for all sub-make calls
 
 OUTPUT_DIRECTORY = $(CURDIR)/../ocaml/plugin/generated
-ADDITIONAL_INCLUDES=$(FSTAR_HOME)/src/.cache.boot
+ADDITIONAL_INCLUDES=$(FSTAR_STAGE)/fstarc.checked $(FSTAR_HOME)/src
 
 FSTAR_OPTIONS= \
 	$(OTHERFLAGS) --lax --MLish --MLish_effect FStarC.Compiler.Effect \
 	--no_location_info --warn_error -271-272-241-319-274 \
-	$(addprefix --include , $(addprefix $(FSTAR_HOME)/src/,$(INCLUDE_PATHS))) \
 	$(addprefix --include , $(ADDITIONAL_INCLUDES)) \
 	--include . \
 	--odir "$(OUTPUT_DIRECTORY)" \
@@ -23,12 +26,13 @@ FSTAR_OPTIONS= \
 
 FSTAR_C=$(RUNLIM) $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 
-FSTAR_FILES=$(wildcard *.fst)
+FSTAR_FILES=$(wildcard *.fst *.fsti)
 
 all: extract
 
 .depend: $(FSTAR_FILES)
-	$(FSTAR_C) --warn_error -321 --dep full --extract PulseSyntaxExtension --output_deps_to $@ $^
+	$(FSTAR_C) --warn_error -321 \
+	  --dep full --extract PulseSyntaxExtension --output_deps_to $@ $^
 
 depend: .depend
 include .depend
@@ -47,7 +51,7 @@ $(OUTPUT_DIRECTORY)/%.ml:
 	$(Q)$(BENCHMARK_PRE) $(FSTAR_C) $(notdir $(subst .checked.lax,, $<)) \
 		--extract $(basename $(notdir $(subst .checked.lax,, $<))) \
 		--already_cached '*' \
-		--codegen OCaml
+		--codegen PluginNoLib
 	chmod -x $@
 
 extract: $(ALL_ML_FILES)

@@ -4,7 +4,9 @@
  (public_name pulse)
  (libraries
     batteries
-    fstar.lib
+    fstar_lib
+    fstar_plugin_lib
+    fstar-guts
     menhirLib
  )
  (modes native)

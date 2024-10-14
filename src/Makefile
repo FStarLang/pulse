@@ -25,7 +25,7 @@ build:
 
 .PHONY: build-ocaml
 build-ocaml:
-	cd ocaml && dune build && dune install --prefix=$(PULSE_HOME)
+	cd ocaml && eval $$($(FSTAR_EXE) --ocamlenv) dune build && dune install --prefix=$(PULSE_HOME)
 
 # this file cannot be copied to `generated` because of a bug with
 # Dune's `menhir` stanza

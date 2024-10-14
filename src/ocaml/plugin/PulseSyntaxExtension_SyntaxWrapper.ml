@@ -1,3 +1,5 @@
+open Fstar_guts
+open Fstar_plugin_lib
 open Prims
 open FStarC_Ident
 open Pulse_Syntax_Base
