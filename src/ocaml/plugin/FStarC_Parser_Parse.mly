@@ -88,7 +88,8 @@ let parse_use_lang_blob (extension_name:string)
 %token <string> UINT64
 %token <string> SIZET
 %token <string> REAL
-%token <FStar_Char.char> CHAR
+%token <Fstar_guts.FStar_Char.char> CHAR
+(* ^ Need the explicit Fstar_guts here, regardless of open at the top of the file *)
 %token <bool> LET
 %token <string> LET_OP
 %token <string> AND_OP
