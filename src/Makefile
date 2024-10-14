@@ -3,7 +3,7 @@
 # end-user shouldn't need to do that explicitly, and the
 # main ../Makefile should be enough for them.
 
-all: boot
+all: build
 
 ifeq (,$(PULSE_HOME))
   PULSE_HOME := ..
@@ -17,14 +17,8 @@ endif
 
 include $(PULSE_HOME)/share/pulse/Makefile.locate-fstar
 
-.PHONY: all
-
 .PHONY: build
-build:
-	+$(MAKE) -C .. all
-
-.PHONY: build-ocaml
-build-ocaml:
+build: extract
 	cd ocaml && eval $$($(FSTAR_EXE) --ocamlenv) dune build && dune install --prefix=$(PULSE_HOME)
 
 # this file cannot be copied to `generated` because of a bug with
@@ -66,7 +60,7 @@ boot:
 
 .PHONY: boot-checker
 boot-checker: extract-ocaml
-	+$(MAKE) build-ocaml
+	+$(MAKE) build
 
 .PHONY: clean-snapshot
 clean-snapshot:
@@ -100,7 +94,7 @@ ci-post-verify: extract test
 
 .PHONY: ci
 ci:
-	+$(MAKE) build-ocaml
+	+$(MAKE) build
 	+$(MAKE) clean-snapshot
 	+$(MAKE) verify
 	+$(MAKE) ci-post-verify

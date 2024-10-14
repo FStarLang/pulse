@@ -6,10 +6,6 @@ include $(FSTAR_HOME)/mk/common.mk
 
 all: extract
 
-_: $(shell echo FSTAR_EXE = $(FSTAR_EXE) > /dev/tty)
-_: $(shell echo FSTAR_STAGE = $(FSTAR_STAGE) > /dev/tty)
-_: $(shell echo FSTAR_HOME = $(FSTAR_HOME) > /dev/tty)
-
 # Assume FSTAR_HOME points to the F* source tree
 include $(FSTAR_HOME)/gmake/fstar.mk # and $(FSTAR) for all sub-make calls
 

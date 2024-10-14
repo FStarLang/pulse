@@ -19,6 +19,8 @@ else
 USE_HINTS:=
 endif
 
+FSTAR_DEP_OPTIONS += --extract '-FStar'
+
 FSTAR_OPTIONS += $(USE_HINTS) --ext context_pruning
 
 # A place to put all build artifacts

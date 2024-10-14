@@ -6,7 +6,7 @@ ifeq (3.81,$(MAKE_VERSION))
     install make, then invoke gmake instead of make)
 endif
 
-all: build
+all: plugin lib
 
 # Define the Pulse root directory. We need to fix it to use the Windows path convention on Windows+Cygwin.
 ifeq ($(OS),Windows_NT)
@@ -17,16 +17,22 @@ endif
 
 include $(PULSE_HOME)/share/pulse/Makefile.locate-fstar
 
-.PHONY: build
-build:
-	+$(MAKE) -C src build-ocaml
+.PHONY: plugin
+plugin:
+	+$(MAKE) -C src build
+
+# Note: this includes pulsecore which
+# 1- Is wasteful if we just wanna get going with some Pulse code
+# 2- Does not depend on the plugin
+.PHONY: lib
+lib: plugin
 	+$(MAKE) -C lib/pulse
 
 clean:
 	+$(MAKE) -C lib/pulse clean ; true
 
 .PHONY: test
-test: all
+test: plugin lib
 	+$(MAKE) -C share/pulse
 
 ifeq (,$(PREFIX))
@@ -56,20 +62,8 @@ install-share:
 install: install-lib install-share
 
 .PHONY: pulse2rust
-pulse2rust:
+pulse2rust: lib plugin
 	+$(MAKE) -C pulse2rust
-
-.PHONY: boot
-boot:
-	+$(MAKE) -C src boot
-
-.PHONY: boot-checker
-boot-checker:
-	+$(MAKE) -C src boot-checker
-
-.PHONY: full-boot
-full-boot:
-	+$(MAKE) -C src full-boot
 
 .PHONY: ci
 ci:
