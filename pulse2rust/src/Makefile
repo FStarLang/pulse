@@ -1,47 +1,64 @@
+FSTAR_EXE   ?= $(shell which fstar.exe)
+FSTAR_STAGE ?= $(abspath $(shell $(FSTAR_EXE) --locate)/../..)
+FSTAR_HOME  ?= $(abspath $(shell $(FSTAR_EXE) --locate)/../../..)
+include $(FSTAR_HOME)/mk/common.mk
+.DEFAULT_GOAL := all
+
 all: extract
 
-FSTAR_HOME ?= $(realpath $(dir $(shell which fstar.exe))/..)
-FSTAR_EXE = $(FSTAR_HOME)/bin/fstar.exe
+_: $(shell echo FSTAR_EXE = $(FSTAR_EXE) > /dev/tty)
+_: $(shell echo FSTAR_STAGE = $(FSTAR_STAGE) > /dev/tty)
+_: $(shell echo FSTAR_HOME = $(FSTAR_HOME) > /dev/tty)
 
 # Assume FSTAR_HOME points to the F* source tree
-include $(FSTAR_HOME)/.common.mk
-include $(FSTAR_HOME)/ulib/gmake/z3.mk    # This pins $(Z3) ...
-include $(FSTAR_HOME)/ulib/gmake/fstar.mk # and $(FSTAR) for all sub-make calls
-include $(FSTAR_HOME)/src/Makefile.boot.common
+include $(FSTAR_HOME)/gmake/fstar.mk # and $(FSTAR) for all sub-make calls
 
-CACHE_DIR = $(CURDIR)
 OUTPUT_DIRECTORY = $(CURDIR)/ocaml/generated
-FSTAR_BOOT_OPTIONS += --MLish_effect FStarC.Compiler.Effect
-FSTAR_C=$(RUNLIM) $(FSTAR_EXE) $(SIL) $(FSTAR_BOOT_OPTIONS) --include $(FSTAR_HOME)/src/.cache.boot --cache_checked_modules
+ADDITIONAL_INCLUDES=$(FSTAR_STAGE)/fstarc.checked $(FSTAR_HOME)/src
 
-# Would be nice to add --already_cached 'Prims FStar'
-# but it currently fails
-# --warn_error -321 is suppressing related warnings on unexpected checked files
+FSTAR_OPTIONS= \
+	$(OTHERFLAGS) --lax --MLish --MLish_effect FStarC.Compiler.Effect \
+	--no_location_info --warn_error -271-272-241-319-274 \
+	$(addprefix --include , $(ADDITIONAL_INCLUDES)) \
+	--include . \
+	--odir "$(OUTPUT_DIRECTORY)" \
+	--cache_checked_modules
 
-.depend:
-	$(call msg, "DEPEND")
-	$(Q)$(FSTAR_C) --dep full --warn_error -321  \
-		Pulse2Rust.fst                   \
-		--odir $(OUTPUT_DIRECTORY)	     \
-		--extract_namespace 'Pulse2Rust' \
-		--output_deps_to .depend
+FSTAR_C=$(RUNLIM) $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
+
+FSTAR_FILES=$(wildcard *.fst *.fsti)
+
+all: extract
+
+.depend: $(FSTAR_FILES)
+	$(FSTAR_C) --warn_error -321 \
+	  --dep full --extract Pulse2Rust --output_deps_to $@ $^
 
 depend: .depend
-
 include .depend
 
-%.checked.lax:
-	$(call msg, "LAXCHECK", $(basename $(basename $(notdir $@))))
-	$(Q)$(BENCHMARK_PRE) $(FSTAR_C) $< --already_cached '*,'-$(basename $(notdir $<)) \
-	  $(if $(findstring /ulib/,$<),,--MLish) \
-		$<
-	$(Q)@touch -c $@
 
-%.ml:
+%.checked.lax:
+	$(call msg, "CHECK", $(notdir $@))
+	$(Q)$(BENCHMARK_PRE) $(FSTAR_C) $< --already_cached 'Prims,FStar'
+	$(Q)touch $@
+
+# And then, in a separate invocation, from each .checked.lax we
+# extract an .ml file
+$(OUTPUT_DIRECTORY)/%.ml: 
+	mkdir -p $(OUTPUT_DIRECTORY)
 	$(call msg, "EXTRACT", $(notdir $@))
-	$(Q)$(BENCHMARK_PRE) $(FSTAR_C) $(notdir $(subst .checked.lax,,$<)) \
-	--odir $(OUTPUT_DIRECTORY) \
-	--codegen OCaml --MLish \
-	--extract_module $(basename $(notdir $(subst .checked.lax,,$<)))
+	$(Q)$(BENCHMARK_PRE) $(FSTAR_C) $(notdir $(subst .checked.lax,, $<)) \
+		--extract $(basename $(notdir $(subst .checked.lax,, $<))) \
+		--already_cached '*' \
+		--codegen PluginNoLib
+	chmod -x $@
 
 extract: $(ALL_ML_FILES)
+
+clean:
+	rm -rf $(addprefix $(OUTPUT_DIRECTORY)/, $(ALL_ML_FILES))
+	rm *.checked.lax
+	rm -f .depend
+
+.PHONY: all extract clean depend
