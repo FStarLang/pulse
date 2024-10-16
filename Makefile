@@ -45,13 +45,14 @@ extraction.src: .force
 syntax_extension.src: .force
 	$(MAKE) -f mk/syntax_extension.mk
 
-.PHONY: lib
-lib: plugin .force
-	$(MAKE) -f mk/lib.mk
+lib-pulse: plugin lib-common .force
+	$(MAKE) -f mk/lib-pulse.mk
 
-.PHONY: core
-core: .force
-	$(MAKE) -f mk/core.mk
+lib-core: lib-common .force
+	$(MAKE) -f mk/lib-core.mk
+
+lib-common: .force
+	$(MAKE) -f mk/lib-common.mk
 
 clean:
 	$(MAKE) -f mk/checker.mk clean
