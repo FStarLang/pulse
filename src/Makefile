@@ -19,7 +19,7 @@ include $(PULSE_HOME)/share/pulse/Makefile.locate-fstar
 
 .PHONY: build
 build: extract
-	cd ocaml && eval $$($(FSTAR_EXE) --ocamlenv) dune build && dune install --prefix=$(PULSE_HOME)
+	cd ocaml && $(FSTAR_EXE) --ocamlenv dune build && dune install --prefix=$(PULSE_HOME)
 
 # this file cannot be copied to `generated` because of a bug with
 # Dune's `menhir` stanza
