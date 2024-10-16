@@ -9,6 +9,9 @@ $(call need_dir, SRC, source directory)
 $(call need, TAG, a tag for the .depend; to prevent clashes. Sorry.)
 $(call need, ROOTS, a list of roots for the dependency analysis)
 
+# This is to support both --lax and non --lax clients.
+EXTENSION := $(if $(findstring --lax,$(FSTAR_OPTIONS)),.checked.lax,.checked)
+
 .PHONY: clean
 clean:
 	rm -rf $(CACHE_DIR)
@@ -35,13 +38,13 @@ endif
 
 FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 
-%.checked: LBL=$(basename $(notdir $@))
-%.checked:
-	$(call msg, "CHECK", $(LBL))
+%$(EXTENSION): FF=$(notdir $(subst $(EXTENSION),,$@))
+%$(EXTENSION):
+	$(call msg, "CHECK", $(FF))
 	$(FSTAR) --already_cached '*' $<
 	@touch -c $@  ## SHOULD NOT BE NEEDED
 
-%.ml: FF=$(notdir $(subst .checked,,$<))
+%.ml: FF=$(notdir $(subst $(EXTENSION),,$<))
 %.ml: MM=$(basename $(FF))
 %.ml: LBL=$(notdir $@)
 # ^ HACK we use notdir to get the module name since we need to pass in

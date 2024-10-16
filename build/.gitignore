@@ -1,5 +1,5 @@
-src.checked
-src.ml
+checker.checked
+checker.ml
 extraction.checked
 extraction.ml
 syntax_extension.checked
