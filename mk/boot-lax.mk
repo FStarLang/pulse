@@ -39,8 +39,7 @@ FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 %.checked.lax: LBL=$(basename $(basename $(notdir $@)))
 %.checked.lax:
 	$(call msg, "CHECK", $(LBL))
-	$(FSTAR) $<
-	@# HACK: finding FStarC modules
+	$(FSTAR) --already_cached '*' $<
 	touch -c $@  ## SHOULD NOT BE NEEDED
 
 %.ml: FF=$(notdir $(subst .checked.lax,,$<))
@@ -51,7 +50,7 @@ FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 # is relying on F* looking in its include path.
 %.ml:
 	$(call msg, "EXTRACT", $(LBL))
-	$(FSTAR) $(FF) --codegen $(CODEGEN) --extract_module $(MM)
+	$(FSTAR) $(FF) --already_cached '*' --codegen $(CODEGEN) --extract_module $(MM)
 	touch -c $@  ## SHOULD NOT BE NEEDED
 
 $(CACHE_DIR)/.depend$(TAG):

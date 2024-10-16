@@ -38,7 +38,7 @@ FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 %.checked: LBL=$(basename $(notdir $@))
 %.checked:
 	$(call msg, "CHECK", $(LBL))
-	$(FSTAR) $<
+	$(FSTAR) --already_cached '*' $<
 	@# HACK: finding FStarC modules
 	@touch -c $@  ## SHOULD NOT BE NEEDED
 
@@ -50,7 +50,7 @@ FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 # is relying on F* looking in its include path.
 %.ml:
 	$(call msg, "EXTRACT", $(LBL))
-	$(FSTAR) $(FF) $(if $(findstring FStarC,$<),--MLish,) --codegen $(CODEGEN) --extract_module $(MM)
+	$(FSTAR) $(FF) --already_cached '*' --codegen $(CODEGEN) --extract_module $(MM)
 	@touch -c $@  ## SHOULD NOT BE NEEDED
 
 $(CACHE_DIR)/.depend$(TAG):
