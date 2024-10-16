@@ -13,4 +13,5 @@ EXTRACT += --extract '-*,+ExtractPulse,+ExtractPulseC'
 FSTAR_OPTIONS += --lax --MLish --MLish_effect FStarC.Compiler.Effect
 DEPFLAGS += --already_cached 'Prims,FStarC'
 
-include mk/boot.mk
+PULSE_ROOT ?= .
+include $(PULSE_ROOT)/mk/boot.mk

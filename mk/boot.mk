@@ -1,4 +1,4 @@
-include mk/common.mk
+include $(PULSE_ROOT)/mk/common.mk
 
 .DEFAULT_GOAL := ocaml
 $(call need_exe, FSTAR_EXE, fstar.exe to be used)

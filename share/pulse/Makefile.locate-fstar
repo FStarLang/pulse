@@ -1,3 +1,0 @@
-FSTAR_EXE?=$(shell which fstar.exe)
-OCAMLPATH := $(shell $(FSTAR_EXE) --locate_ocaml):$(OCAMLPATH)
-export OCAMLPATH

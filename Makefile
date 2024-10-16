@@ -10,7 +10,7 @@ ifeq (3.81,$(MAKE_VERSION))
 endif
 
 .DEFAULT_GOAL := all
-all: plugin lib
+all: plugin lib pulse2rust
 
 .PHONY: .force
 .force:
@@ -26,6 +26,7 @@ FSTAR_EXE ?= $(shell which fstar.exe)
 ifeq ($(FSTAR_EXE),)
 _ := $(error I need F*: please put it in your PATH or set FSTAR_EXE)
 endif
+export FSTAR_EXE
 
 plugin: plugin.src .force
 	$(FSTAR_EXE) --ocamlenv \

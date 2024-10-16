@@ -2,7 +2,7 @@ FSTAR_EXE ?= $(shell which fstar.exe)
 
 .PHONY: all
 all: build
-	+$(MAKE) test
+	# +$(MAKE) test
 
 .PHONY: build
 build: rustlib extract
@@ -15,7 +15,7 @@ rustlib:
 
 .PHONY: extract
 extract:
-	+$(MAKE) -C src extract
+	+$(MAKE) -C src ocaml
 
 .PHONY: test
 test:

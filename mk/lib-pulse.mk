@@ -7,5 +7,6 @@ FSTAR_OPTIONS += --include lib/common
 ROOTS := $(shell find $(SRC) -name '*.fst' -o -name '*.fsti')
 DEPFLAGS += --already_cached 'Prims,FStar'
 TAG=pulse
-include mk/boot.mk
+PULSE_ROOT ?= .
+include $(PULSE_ROOT)/mk/boot.mk
 .DEFAULT_GOAL := verify # no extraction
