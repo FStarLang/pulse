@@ -5,7 +5,6 @@
  (libraries
     batteries
     fstar_plugin_lib
-    fstar-guts
     menhirLib
  )
  (modes native)
