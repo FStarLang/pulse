@@ -46,12 +46,12 @@ syntax_extension.src: .force
 	$(MAKE) -f mk/syntax_extension.mk
 
 .PHONY: lib
-lib: plugin
-	$(MAKE) -C lib/pulse
+lib: plugin .force
+	$(MAKE) -f mk/lib.mk
 
 .PHONY: core
-core:
-	$(MAKE) -C lib/core
+core: .force
+	$(MAKE) -f mk/core.mk
 
 clean:
 	$(MAKE) -f mk/checker.mk clean

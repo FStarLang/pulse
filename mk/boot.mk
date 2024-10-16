@@ -8,6 +8,7 @@ $(call need, CODEGEN, backend (OCaml / Plugin))
 $(call need_dir, SRC, source directory)
 $(call need, TAG, a tag for the .depend; to prevent clashes. Sorry.)
 $(call need, ROOTS, a list of roots for the dependency analysis)
+# Optional: EXTRACT, DEPFLAGS
 
 # This is to support both --lax and non --lax clients.
 EXTENSION := $(if $(findstring --lax,$(FSTAR_OPTIONS)),.checked.lax,.checked)
