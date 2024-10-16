@@ -39,7 +39,6 @@ FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 %.checked:
 	$(call msg, "CHECK", $(LBL))
 	$(FSTAR) --already_cached '*' $<
-	@# HACK: finding FStarC modules
 	@touch -c $@  ## SHOULD NOT BE NEEDED
 
 %.ml: FF=$(notdir $(subst .checked,,$<))

@@ -1,15 +1,20 @@
+include mk/common.mk
+
 # Pulse's `Makefile`s rely on recent GNU Make's "shortest stem" rule,
 # so we need to rule out older `make`s.
-
-# ifeq? That sounds oddly specific?
+# GM: ifeq? That sounds oddly specific?
+# Also is this still true?
 ifeq (3.81,$(MAKE_VERSION))
   $(error You seem to be using the OSX antiquated Make version. Hint: brew \
     install make, then invoke gmake instead of make)
 endif
 
+.DEFAULT_GOAL := all
 all: plugin lib
 
-include mk/common.mk
+.PHONY: .force
+.force:
+
 # Define the Pulse root directory. We need to fix it to use the Windows path convention on Windows+Cygwin.
 ifeq ($(OS),Windows_NT)
   PULSE_HOME := $(shell cygpath -m $(CURDIR))
@@ -22,23 +27,22 @@ ifeq ($(FSTAR_EXE),)
 _ := $(error I need F*: please put it in your PATH or set FSTAR_EXE)
 endif
 
-.PHONY: plugin
-plugin: plugin.src
-	dune --root ....
+plugin: plugin.src .force
+	$(FSTAR_EXE) --ocamlenv \
+	  dune build --root=build/ocaml
+	mkdir -p out
+	$(FSTAR_EXE) --ocamlenv \
+	  dune install --root=build/ocaml --prefix=$(abspath out)
 
-.PHONY: plugin.src
 plugin.src: checker.src extraction.src syntax_extension.src
 
-.PHONY: checker.src
-checker.src:
+checker.src: .force
 	$(MAKE) -f mk/checker.mk
 	
-.PHONY: extraction.src
-extraction.src:
+extraction.src: .force
 	$(MAKE) -f mk/extraction.mk
 
-.PHONY: syntax_extension.src
-syntax_extension.src:
+syntax_extension.src: .force
 	$(MAKE) -f mk/syntax_extension.mk
 
 # Note: this includes pulsecore which
