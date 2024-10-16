@@ -23,6 +23,7 @@ ocaml: all-ml
 .PHONY: verify
 verify: all-checked
 
+FSTAR_OPTIONS += --lax --MLish --MLish_effect FStarC.Compiler.Effect
 FSTAR_OPTIONS += $(OTHERFLAGS)
 FSTAR_OPTIONS += --odir "$(OUTPUT_DIR)"
 FSTAR_OPTIONS += --cache_dir "$(CACHE_DIR)"
@@ -35,14 +36,14 @@ endif
 
 FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 
-%.checked: LBL=$(basename $(notdir $@))
-%.checked:
+%.checked.lax: LBL=$(basename $(basename $(notdir $@)))
+%.checked.lax:
 	$(call msg, "CHECK", $(LBL))
 	$(FSTAR) $<
 	@# HACK: finding FStarC modules
-	@touch -c $@  ## SHOULD NOT BE NEEDED
+	touch -c $@  ## SHOULD NOT BE NEEDED
 
-%.ml: FF=$(notdir $(subst .checked,,$<))
+%.ml: FF=$(notdir $(subst .checked.lax,,$<))
 %.ml: MM=$(basename $(FF))
 %.ml: LBL=$(notdir $@)
 # ^ HACK we use notdir to get the module name since we need to pass in
@@ -50,8 +51,8 @@ FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 # is relying on F* looking in its include path.
 %.ml:
 	$(call msg, "EXTRACT", $(LBL))
-	$(FSTAR) $(FF) $(if $(findstring FStarC,$<),--MLish,) --codegen $(CODEGEN) --extract_module $(MM)
-	@touch -c $@  ## SHOULD NOT BE NEEDED
+	$(FSTAR) $(FF) --codegen $(CODEGEN) --extract_module $(MM)
+	touch -c $@  ## SHOULD NOT BE NEEDED
 
 $(CACHE_DIR)/.depend$(TAG):
 	$(call msg, "DEPEND", $(SRC))
