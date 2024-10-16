@@ -10,7 +10,7 @@ ifeq (3.81,$(MAKE_VERSION))
 endif
 
 .DEFAULT_GOAL := all
-all: plugin lib
+all: plugin lib core
 
 .PHONY: .force
 .force:
@@ -45,12 +45,13 @@ extraction.src: .force
 syntax_extension.src: .force
 	$(MAKE) -f mk/syntax_extension.mk
 
-# Note: this includes pulsecore which
-# 1- Is wasteful if we just wanna get going with some Pulse code
-# 2- Does not depend on the plugin
 .PHONY: lib
 lib: plugin
 	$(MAKE) -C lib/pulse
+
+.PHONY: core
+core:
+	$(MAKE) -C lib/core
 
 clean:
 	$(MAKE) -f mk/checker.mk clean
