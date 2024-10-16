@@ -8,5 +8,4 @@ ROOTS := $(shell find $(SRC) -name '*.fst' -o -name '*.fsti')
 DEPFLAGS += --already_cached 'Prims,FStar'
 TAG=core
 include mk/boot.mk
-all: verify-all
-.DEFAULT_GOAL := all
+.DEFAULT_GOAL := verify # no extraction

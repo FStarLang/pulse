@@ -10,7 +10,7 @@ ifeq (3.81,$(MAKE_VERSION))
 endif
 
 .DEFAULT_GOAL := all
-all: plugin lib core
+all: plugin lib
 
 .PHONY: .force
 .force:
@@ -45,6 +45,8 @@ extraction.src: .force
 syntax_extension.src: .force
 	$(MAKE) -f mk/syntax_extension.mk
 
+lib: lib-pulse lib-core
+
 lib-pulse: plugin lib-common .force
 	$(MAKE) -f mk/lib-pulse.mk
 
@@ -58,7 +60,9 @@ clean:
 	$(MAKE) -f mk/checker.mk clean
 	$(MAKE) -f mk/extraction.mk clean
 	$(MAKE) -f mk/syntax_extension.mk clean
-	$(MAKE) -C lib/pulse clean
+	$(MAKE) -f mk/lib-pulse.mk clean
+	$(MAKE) -f mk/lib-core.mk clean
+	$(MAKE) -f mk/lib-common.mk clean
 
 .PHONY: test
 test: plugin lib
