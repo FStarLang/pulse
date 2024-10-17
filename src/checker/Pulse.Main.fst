@@ -15,21 +15,369 @@
 *)
 
 module Pulse.Main
-
-module T = FStar.Tactics.V2
-module R = FStar.Reflection.V2
-module RT = FStar.Reflection.Typing
 open FStar.Tactics.V2
-
 open Pulse.Syntax
 open Pulse.Typing
 open Pulse.Checker
 open Pulse.Elaborate
 open Pulse.Soundness
+module T = FStar.Tactics.V2
+module R = FStar.Reflection.V2
+module RT = FStar.Reflection.Typing
 module Cfg = Pulse.Config
 module RU = Pulse.RuntimeUtils
 module P = Pulse.Syntax.Printer
 module Rec = Pulse.Recursion
+open Pulse.Json 
+
+let env_bindings_to_json (g:env) : T.Tac Pulse.Json.json =
+  JsonList (
+    T.map 
+      (fun (x, n, t) ->
+        JsonAssoc ([
+          "name", JsonStr (T.unseal (x <: ppname).name);
+          "index", JsonInt (n <: var);
+          "type", JsonStr (Stubs.Pprint.render (Syntax.Printer.term_to_doc t))
+        ]))
+      (Pulse.Typing.Env.bindings_with_ppname g)
+  )
+
+let qualifier_to_json (q: option qualifier) : T.Tac Pulse.Json.json =
+  JsonStr(Pulse.Syntax.Printer.qual_to_string q)
+
+let binder_to_json (b: binder) : T.Tac Pulse.Json.json =
+  JsonAssoc ([
+    "type", JsonStr "";
+    "name", JsonStr (T.unseal (b.binder_ppname <: ppname).name);
+    "attributes", JsonList (
+      T.map (fun t -> JsonStr (Pulse.Syntax.Printer.term_to_string t)) (T.unseal b.binder_attrs)
+    )
+  ])
+
+#push-options "--z3rlimit_factor 4"
+let rec jsonize_st_typing #g #t #c (d:st_typing g t c) : T.Tac Pulse.Json.json =
+  let open Pulse.Json in
+  match d with
+    | T_Abs g x q b u body c total_typing body_typing ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Abs");
+        // "environment", env_bindings_to_json g;
+        // "x", JsonInt (x <: var);
+        // "q", qualifier_to_json q;
+        "b", binder_to_json b;
+        // "universe", JsonStr (Pulse.Syntax.Printer.univ_to_string u);
+        // "body", JsonStr(Pulse.Syntax.Printer.st_term_to_string body);
+        // "body_range", JsonStr (T.range_to_string body.range);
+        // "comp", JsonStr(Pulse.Syntax.Printer.comp_to_string c); 
+        "body", jsonize_st_typing body_typing;
+      ])
+    | T_STApp g head ty q res arg tot_typing_head tot_typing_arg ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_STApp");
+        // "environment", env_bindings_to_json g;
+        // "head", JsonStr(Pulse.Syntax.Printer.term_to_string head);
+        // "ty", JsonStr(Pulse.Syntax.Printer.term_to_string ty);
+        // "q", qualifier_to_json q;
+        // "res", JsonStr(Pulse.Syntax.Printer.comp_to_string res);
+        // "arg", JsonStr(Pulse.Syntax.Printer.term_to_string arg);
+        // "tot_typing_head", jsonize_st_typing tot_typing_head;
+        // "tot_typing_arg", jsonize_st_typing tot_typing_arg;
+        "stmt", JsonStr (Pulse.Syntax.Printer.st_term_to_string (t));
+        "comp", JsonStr (Pulse.Syntax.Printer.comp_to_string (c));
+      ])
+    | T_STGhostApp g head ty q res arg x ghost_typing_head non_informative ghost_typing_arg ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_STGhostApp");
+        "stmt", JsonStr (Pulse.Syntax.Printer.st_term_to_string (t));
+        "comp", JsonStr (Pulse.Syntax.Printer.comp_to_string (c));
+        // "environment", env_bindings_to_json g;
+        // "head", JsonStr(Pulse.Syntax.Printer.term_to_string head);
+        // "ty", JsonStr(Pulse.Syntax.Printer.term_to_string ty);
+        // "q", qualifier_to_json q;
+        // "res", JsonStr(Pulse.Syntax.Printer.comp_to_string res);
+        // "arg", JsonStr(Pulse.Syntax.Printer.term_to_string arg);
+        // "x", JsonInt (x <: var);
+        // "ghost_typing_head", jsonize_st_typing ghost_typing_head;
+        // "non_informative", jsonize_st_typing non_informative;
+        // "ghost_typing_arg", jsonize_st_typing ghost_typing_arg;
+      ])
+    | T_Return g c use_eq u t e post x tot_typing_e tot_typing_post tot_typing_x ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Return");
+        // "environment", env_bindings_to_json g;
+        // "ctag", JsonStr(Pulse.Syntax.Printer.ctag_to_string c);
+        // "use_eq", JsonBool use_eq;
+        // "universe", JsonStr (Pulse.Syntax.Printer.univ_to_string u);
+        // "type", JsonStr(Pulse.Syntax.Printer.term_to_string t);
+        "e", JsonStr(Pulse.Syntax.Printer.term_to_string e);
+        "post", JsonStr(Pulse.Syntax.Printer.term_to_string post);
+        // "x", JsonInt (x <: var);
+        // "tot_typing_e", jsonize_st_typing tot_typing_e;
+        // "tot_typing_post", jsonize_st_typing tot_typing_post;
+        // "tot_typing_x", jsonize_st_typing tot_typing_x;
+      ])
+    | T_Lift g e c1 c2 d1 comp  ->
+      // JsonAssoc ([
+      //   "stmt_type", JsonStr ("T_Lift");
+      //   // "environment", env_bindings_to_json g;
+      //   // "e", JsonStr(Pulse.Syntax.Printer.st_term_to_string e);
+      //   // "e_range", JsonStr (T.range_to_string e.range);
+      //   // "c1", JsonStr(Pulse.Syntax.Printer.comp_to_string c1);
+      //   // "c2", JsonStr(Pulse.Syntax.Printer.comp_to_string c2);
+      //   "d1", jsonize_st_typing d1;
+      //   // "d2", jsonize_st_typing comp;
+      // ])
+      jsonize_st_typing d1
+    | T_Bind g e1 e2 c1 c2 b x c d1 total_typing d2 bind_comp ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Bind");
+        // "environment", env_bindings_to_json g;
+        // "e1", JsonStr(Pulse.Syntax.Printer.st_term_to_string e1);
+        // "e1_range", JsonStr (T.range_to_string e1.range);
+        // "e2", JsonStr(Pulse.Syntax.Printer.st_term_to_string e2);
+        // "e2_range", JsonStr (T.range_to_string e2.range);
+        // "c1", JsonStr(Pulse.Syntax.Printer.comp_to_string c1);
+        // "c2", JsonStr(Pulse.Syntax.Printer.comp_to_string c2);
+        // "b", binder_to_json b;
+        // "x", JsonInt (x <: var);
+        // "c", JsonStr(Pulse.Syntax.Printer.comp_to_string c);
+        "d1", jsonize_st_typing d1;
+        // "total_typing", jsonize_st_typing total_typing;
+        "d2", jsonize_st_typing d2;
+        // "bind_comp", jsonize_st_typing bind_comp;
+      ])
+    | T_BindFn g e1 e2 c1 c2 b x d1 ghost_erased_universe total_typing d2 bind_comp ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_BindFn");
+        // "environment", env_bindings_to_json g;
+        // "e1", JsonStr(Pulse.Syntax.Printer.st_term_to_string e1);
+        // "e1_range", JsonStr (T.range_to_string e1.range);
+        // "e2", JsonStr(Pulse.Syntax.Printer.st_term_to_string e2);
+        // "e2_range", JsonStr (T.range_to_string e2.range);
+        // "c1", JsonStr(Pulse.Syntax.Printer.comp_to_string c1);
+        // "c2", JsonStr(Pulse.Syntax.Printer.comp_to_string c2);
+        // "b", binder_to_json b;
+        // "x", JsonInt (x <: var);
+        "d1", jsonize_st_typing d1;
+        // "universe", JsonStr (Pulse.Syntax.Printer.univ_to_string ghost_erased_universe);
+        // "total_typing", TODO
+        "d2", jsonize_st_typing d2;
+        // "bind_comp", JsonStr (Pulse.Syntax.Printer.comp_to_string bind_comp);
+      ])
+    | T_If g b e1 e2 c hyp total_typing e1_st_typing e2_st_typing erased_comp ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_If");
+        // "environment", env_bindings_to_json g;
+        "b", JsonStr(Pulse.Syntax.Printer.term_to_string b);
+        // "e1", JsonStr(Pulse.Syntax.Printer.st_term_to_string e1);
+        // "e1_range", JsonStr (T.range_to_string e1.range);
+        // "e2", JsonStr(Pulse.Syntax.Printer.st_term_to_string e2);
+        // "e2_range", JsonStr (T.range_to_string e2.range);
+        // "c", JsonStr(Pulse.Syntax.Printer.comp_to_string c);
+        // "hyp", JsonStr(Pulse.Syntax.Printer.term_to_string hyp);
+        // "total_typing", jsonize_st_typing total_typing;  
+        "e1_st_typing", jsonize_st_typing e1_st_typing;
+        "e2_st_typing", jsonize_st_typing e2_st_typing;
+        // "erased_comp", jsonize_st_typing erased_comp;
+      ])
+    | T_Match g sc_u sc_ty sc total_typing1 total_typing2 c erased brs brs_typing pats_complt ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Match");
+        // "environment", env_bindings_to_json g;
+        // "sc_u", JsonStr (Pulse.Syntax.Printer.univ_to_string sc_u);
+        // "sc_ty", JsonStr (Pulse.Syntax.Printer.term_to_string sc_ty);
+        // "sc", JsonStr (Pulse.Syntax.Printer.term_to_string sc);
+        // "total_typing1", jsonize_st_typing total_typing1;
+        // "total_typing2", jsonize_st_typing total_typing2;
+        // "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+        // "erased", jsonize_st_typing erased;
+        // "branches", JsonList(
+        //   T.map (fun (p, e) -> JsonAssoc([
+        //     "pattern", JsonStr (Pulse.Syntax.Printer.pattern_to_string p);
+        //     "expr", JsonStr (Pulse.Syntax.Printer.st_term_to_string e);
+        //     "expr_range", JsonStr (T.range_to_string (e <: st_term).range);
+        //   ])) brs
+        // );
+        // "brs_typing", jsonize_st_typing brs_typing; // TODO: This is a list of typing derivations for different branchs
+        // "pats_complt", jsonize_st_typing pats_complt;
+      ])
+    | T_Frame g e comp frame total_typing body ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Frame");
+        // "environment", env_bindings_to_json g;
+        // "e", JsonStr (Pulse.Syntax.Printer.st_term_to_string e);
+        // "e_range", JsonStr (T.range_to_string e.range);
+        // "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+        "frame", JsonStr (Pulse.Syntax.Printer.term_to_string frame);
+        // "total_typing", jsonize_st_typing total_typing;
+        "body", jsonize_st_typing body;
+        "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+      ])
+    | T_Equiv g e c c' d eq ->
+      // JsonAssoc ([
+      //   "stmt_type", JsonStr ("T_Equiv");
+      //   // "environment", env_bindings_to_json g;
+      //   // "e", JsonStr (Pulse.Syntax.Printer.st_term_to_string e);
+      //   // "e_range", JsonStr (T.range_to_string e.range);
+      //   // "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+      //   // "c'", JsonStr (Pulse.Syntax.Printer.comp_to_string c');
+      //   "d", jsonize_st_typing d;
+      //   // "eq", jsonize_st_typing eq;
+      // ])
+      jsonize_st_typing d
+    | T_Sub g e c c' d sub ->
+      // JsonAssoc ([
+      //   "stmt_type", JsonStr ("T_Sub");
+      //   "environment", env_bindings_to_json g;
+      //   "e", JsonStr (Pulse.Syntax.Printer.st_term_to_string e);
+      //   "e_range", JsonStr (T.range_to_string e.range);
+      //   "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+      //   "c'", JsonStr (Pulse.Syntax.Printer.comp_to_string c');
+      //   "d", jsonize_st_typing d;
+      //   // "sub", jsonize_st_typing sub;
+      // ])
+      jsonize_st_typing d
+    | T_IntroPure g p tot_typing prop_validity ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_IntroPure");
+        // "environment", env_bindings_to_json g;
+        "p", JsonStr (Pulse.Syntax.Printer.term_to_string p);
+        // "tot_typing", jsonize_st_typing tot_typing;
+        // "prop_validity", jsonize_st_typing prop_validity;
+      ])
+    | T_ElimExists g u t p x tot_typing1 tot_typing2 ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_ElimExists");
+        // "environment", env_bindings_to_json g;
+        // "u", JsonStr (Pulse.Syntax.Printer.univ_to_string u);
+        "t", JsonStr (Pulse.Syntax.Printer.term_to_string t);
+        "p", JsonStr (Pulse.Syntax.Printer.term_to_string p);
+        // "x", JsonInt (x <: var);
+        // "tot_typing1", jsonize_st_typing tot_typing1;
+        // "tot_typing2", jsonize_st_typing tot_typing1;
+      ])
+    | T_IntroExists g u b p e tot_typing1 tot_typing2 ghost_typing ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_IntroExists");
+        // "environment", env_bindings_to_json g;
+        // "u", JsonStr (Pulse.Syntax.Printer.univ_to_string u);
+        // "b", binder_to_json b;
+        "p", JsonStr (Pulse.Syntax.Printer.term_to_string p);
+        "e", JsonStr (Pulse.Syntax.Printer.term_to_string e);
+        // "tot_typing1", jsonize_st_typing tot_typing1;
+        // "tot_typing2", jsonize_st_typing tot_typing2;
+        // "ghost_typing", jsonize_st_typing ghost_typing;
+      ])
+    | T_While g inv cond body tot_typing_inv st_typing_cond st_typing_body ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_While");
+        // "environment", env_bindings_to_json g;
+        "inv", JsonStr (Pulse.Syntax.Printer.term_to_string inv);
+        // "cond", JsonStr (Pulse.Syntax.Printer.st_term_to_string cond);
+        // "cond_range", JsonStr (T.range_to_string cond.range);
+        // "body", JsonStr (Pulse.Syntax.Printer.st_term_to_string body);
+        // "body_range", JsonStr (T.range_to_string body.range);
+        // "tot_typing_inv", jsonize_st_typing tot_typing_inv;
+        "st_typing_cond", jsonize_st_typing st_typing_cond;
+        "st_typing_body", jsonize_st_typing st_typing_body;
+      ])
+    | T_Par g eL cL eR cR x comp_typing_cl comp_typing_cr st_typing_cl st_typing_cr ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Par");
+        // "environment", env_bindings_to_json g;
+        // "eL", JsonStr (Pulse.Syntax.Printer.st_term_to_string eL);
+        // "eL_range", JsonStr (T.range_to_string eL.range);
+        // "cL", JsonStr (Pulse.Syntax.Printer.comp_to_string cL);
+        // "eR", JsonStr (Pulse.Syntax.Printer.st_term_to_string eR);
+        // "eR_range", JsonStr (T.range_to_string eR.range);
+        // "cR", JsonStr (Pulse.Syntax.Printer.comp_to_string cR);
+        // "x", JsonInt (x <: var);
+        // "comp_typing_cl", jsonize_st_typing comp_typing_cl;
+        // "comp_typing_cr", jsonize_st_typing comp_typing_cr;
+        "st_typing_cl", jsonize_st_typing st_typing_cl;
+        "st_typing_cr", jsonize_st_typing st_typing_cr;
+      ])
+    | T_WithLocal g binder_ppname init body init_t c x tot_typing univerese_of comp_typing_u st_typing ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_WithLocal");
+        // "environment", env_bindings_to_json g;
+        "binder_ppname", JsonStr (T.unseal binder_ppname.name);
+        "init", JsonStr (Pulse.Syntax.Printer.term_to_string init);
+        // "body", JsonStr (Pulse.Syntax.Printer.st_term_to_string body);
+        // "body_range", JsonStr (T.range_to_string body.range);
+        "init_t", JsonStr (Pulse.Syntax.Printer.term_to_string init_t);
+        // "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+        // "x", JsonInt (x <: var);
+        // "tot_typing", jsonize_st_typing tot_typing;
+        // "universe_of", JsonStr (Pulse.Syntax.Printer.univ_to_string univerese_of);
+        // "comp_typing_u", jsonize_st_typing comp_typing_u;
+        "st_typing", jsonize_st_typing st_typing;
+      ])
+    | T_WithLocalArray g binder_ppname initializer length body a c x tot_typing_initializer tot_typing_length universe_of comp_typing_u st_typing ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_WithLocalArray");
+        // "environment", env_bindings_to_json g;
+        "binder_ppname", JsonStr (T.unseal binder_ppname.name);
+        "initializer", JsonStr (Pulse.Syntax.Printer.term_to_string initializer);
+        "length", JsonStr (Pulse.Syntax.Printer.term_to_string length);
+        // "body", JsonStr (Pulse.Syntax.Printer.st_term_to_string body);
+        // "body_range", JsonStr (T.range_to_string body.range);
+        "init_t", JsonStr (Pulse.Syntax.Printer.term_to_string a);
+        // "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+        // "x", JsonInt (x <: var);
+        // "tot_typing_initializer", jsonize_st_typing tot_typing_initializer;
+        // "tot_typing_length", jsonize_st_typing tot_typing_length;
+        // "universe_of", JsonStr (Pulse.Syntax.Printer.univ_to_string universe_of);
+        // "comp_typing_u", jsonize_st_typing comp_typing_u;
+        "st_typing", jsonize_st_typing st_typing;
+      ])
+    | T_Rewrite g p q tot_typing_p slprop_equiv ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Rewrite");
+        // "environment", env_bindings_to_json g;
+        "p", JsonStr (Pulse.Syntax.Printer.term_to_string p);
+        "q", JsonStr (Pulse.Syntax.Printer.term_to_string q);
+        // "tot_typing_p", jsonize_st_typing tot_typing_p;
+        // "slprop_equiv", jsonize_st_typing slprop_equiv;
+      ])
+    | T_Admit g c comp_typing ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Admit");
+        // "environment", env_bindings_to_json g;
+        "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+        // "comp_typing", jsonize_st_typing comp_typing;
+      ])
+    | T_Unreachable g c comp_typing prop_validity ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_Unreachable");
+        // "environment", env_bindings_to_json g;
+        "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+        // "comp_typing", jsonize_st_typing comp_typing;
+        // "prop_validity", jsonize_st_typing prop_validity;
+      ])
+    | T_WithInv g i p body c tot_typing_i tot_typing_p body_typing inv_disjointness_token ->
+      JsonAssoc ([
+        "stmt_type", JsonStr ("T_WithInv");
+        // "environment", env_bindings_to_json g;
+        "inv", JsonStr (Pulse.Syntax.Printer.term_to_string i);
+        "inv_type", JsonStr (Pulse.Syntax.Printer.term_to_string p);
+        // "body", JsonStr (Pulse.Syntax.Printer.st_term_to_string body);
+        // "body_range", JsonStr (T.range_to_string body.range);
+        // "c", JsonStr (Pulse.Syntax.Printer.comp_to_string c);
+        // "tot_typing_i", jsonize_st_typing tot_typing_i;
+        // "tot_typing_p", jsonize_st_typing tot_typing_p;
+        "body_typing", jsonize_st_typing body_typing;
+        // "inv_disjointness_token", jsonize_st_typing inv_disjointness_token;
+      ])
+    | _ -> JsonStr "<UNK>"
+
+
+
+let print_st_typing #g #t #c (d:st_typing g t c) : T.Tac unit =
+  let open Pulse.Json in
+  let json = jsonize_st_typing d in
+  T.print (string_of_json json)
+
 
 let debug_main g (s: unit -> T.Tac string) : T.Tac unit =
   if RU.debug_at_level (fstar_env g) "pulse.main"
@@ -59,7 +407,7 @@ let set_impl #g #t (se: RT.sigelt_for g t) (r: bool) (impl: R.term) : Dv (RT.sig
   let se = RU.add_attribute se (Extract.CompilerLib.mk_extracted_as_attr impl) in
   checked, se, blob
 
-#push-options "--z3rlimit_factor 4"
+#push-options "--z3rlimit_factor 10"
 let check_fndefn
     (d : decl{FnDefn? d.d})
     (g : Soundness.Common.stt_env{bindings g == []})
@@ -97,9 +445,9 @@ let check_fndefn
     (fun _ -> Printf.sprintf "\nchecker call returned in main with:\n%s\nderivation=%s\n"
               (P.st_term_to_string body)
               (Pulse.Typing.Printer.print_st_typing t_typing));
-
-  let refl_t = elab_comp c in
   
+  let _ = print_st_typing t_typing in 
+  let refl_t = elab_comp c in
   let refl_e = Pulse.RuntimeUtils.embed_st_term_for_extraction #st_term body (Some rng) in
   let blob = "pulse", refl_e in
   soundness_lemma g body c t_typing;
