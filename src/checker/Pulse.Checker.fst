@@ -189,34 +189,75 @@ let maybe_trace (t:st_term) (g:env) (pre:term) (rng:range) : T.Tac unit =
 *)
 let env_bindings_to_string (g:env) : T.Tac string =
   String.concat "; " <| 
-  T.map (fun (x, n, t) ->
-            Printf.sprintf "%s @ %d : %s"
-                (T.unseal (x <: ppname).name)
-                (n <: var)
-                (Stubs.Pprint.render (Syntax.Printer.term_to_doc t)))
-        (Pulse.Typing.Env.bindings_with_ppname g)
+    T.map 
+      (fun (x, n, t) ->
+        Printf.sprintf "%s @ %d : %s"
+          (T.unseal (x <: ppname).name)
+          (n <: var)
+          (Stubs.Pprint.render (Syntax.Printer.term_to_doc t)))
+      (Pulse.Typing.Env.bindings_with_ppname g)
+
+let env_bindings_to_json_list (g:env) : T.Tac Pulse.Json.json =
+  let open Pulse.Json in
+  JsonList (
+    T.map 
+      (fun (x, n, t) ->
+        JsonAssoc ([
+          "name", JsonStr (T.unseal (x <: ppname).name);
+          "index", JsonInt (n <: var);
+          "type", JsonStr (Stubs.Pprint.render (Syntax.Printer.term_to_doc t))
+        ]))
+      (Pulse.Typing.Env.bindings_with_ppname g)
+  )
 
 let print_post_hint (g:env) (p:post_hint_opt g) : T.Tac string = 
   match p with
-  | None -> "no goal set"
-  | Some p -> 
-    // print p.post
-    //use term_to_doc as above
-    ""
-  
+  | None -> ""
+  | Some p -> Syntax.Printer.term_to_string (p <: post_hint_t).post
+
+let get_type_of_statement (t:st_term) : string =
+  match t.term with
+  | Tm_Return _ -> "return"
+  | Tm_Abs _ -> "abs"
+  | Tm_STApp _ -> "stapp"
+  | Tm_ElimExists _ -> "elimexists"
+  | Tm_IntroExists _ -> "introexists"
+  | Tm_Bind _ -> "bind"
+  | Tm_TotBind _ -> "totbind"
+  | Tm_If _ -> "if"
+  | Tm_While _ -> "while"
+  | Tm_Match _ -> "match"
+  | Tm_ProofHintWithBinders _ -> "proofhintwithbinders"
+  | Tm_WithLocal _ -> "withlocal"
+  | Tm_WithLocalArray _ -> "withlocalarray"
+  | Tm_Par _ -> "par"
+  | Tm_IntroPure _ -> "intropure"
+  | Tm_Admit _ -> "admit"
+  | Tm_Unreachable _ -> "unreachable"
+  | Tm_Rewrite _ -> "rewrite"
+  | Tm_WithInv _ -> "withinv"
+  | _ -> "unknown"
+
 //add post_hint as an argument to dataset_print
 let dataset_print (g: env) (pre: term) (res_ppname: ppname) (t: st_term) (post_hint:post_hint_opt g) : T.Tac unit =
-  if T.ext_getv "pulse:dataset" = "1" then 
-    T.print (Printf.sprintf "DATASET %s" (let open Pulse.Json in
-      let res = Syntax.Pure.slprop_as_list pre in 
-      string_of_json (JsonAssoc ([
-        "range", JsonStr (T.range_to_string t.range);
-        "statement", JsonStr (Stubs.Pprint.render (Syntax.Printer.st_term_to_doc t));
-        "environment", JsonStr (env_bindings_to_string g);
-        //add a field called, say, "goal"
-        //and set its value to JsonStr of print_post_hint
-        "resources", JsonList (Tactics.Util.map (fun pre -> JsonStr (Stubs.Pprint.render (Syntax.Printer.term_to_doc pre))) (Syntax.Pure.slprop_as_list pre));
-      ]))))
+  if T.ext_getv "pulse:dataset" = "1" then
+    T.print (
+      Printf.sprintf "DATASET %s" (
+        let open Pulse.Json in
+        let res = Syntax.Pure.slprop_as_list pre in 
+        string_of_json (JsonAssoc ([
+          "range", JsonStr (T.range_to_string t.range);
+          "preconditions", JsonList (
+            Tactics.Util.map (fun p -> JsonStr (Syntax.Printer.term_to_string p)) res
+          );
+          "statement", JsonStr (Stubs.Pprint.render (Syntax.Printer.st_term_to_doc t));
+          "postcondition", JsonStr (print_post_hint g post_hint);
+          "environment", env_bindings_to_json_list g;
+          "type_of_statement", JsonStr (get_type_of_statement t);
+          "is_in_source", JsonBool (T.unseal t.source);
+        ]))
+      )
+    )
 
 #push-options "--z3rlimit_factor 4 --fuel 0 --ifuel 1"
 let rec check
@@ -228,15 +269,15 @@ let rec check
   (t:st_term)
 : T.Tac (checker_result_t g0 pre0 post_hint)
 = RU.with_error_bound #(checker_result_t g0 pre0 post_hint) t.range <| fun () ->
+  // let _ = dataset_print g0 pre0 res_ppname t post_hint in
   if Pulse.Checker.AssertWithBinders.handle_head_immediately t
-  then Pulse.Checker.AssertWithBinders.check g0 pre0 pre0_typing post_hint res_ppname t check
+  then 
+    Pulse.Checker.AssertWithBinders.check g0 pre0 pre0_typing post_hint res_ppname t check
   else (
     let (| g, pre, pre_typing, k_elim_pure |) = 
       Pulse.Checker.Prover.elim_exists_and_pure pre0_typing 
     in
-
     maybe_trace t g pre t.range;
-  
     if RU.debug_at_level (fstar_env g) "pulse.checker" then
       T.print (Printf.sprintf "At %s{\nerr context:\n>%s\n\n{\n\tenv=%s\ncontext:\n%s,\n\nst_term: %s}}\n"
                 (T.range_to_string t.range)
@@ -244,8 +285,6 @@ let rec check
                 (Pulse.Typing.Env.env_to_string g)
                 (Pulse.Syntax.Printer.term_to_string pre)
                 (Pulse.Syntax.Printer.st_term_to_string t));
-
-    dataset_print g pre res_ppname t post_hint;
 
     let r : checker_result_t g pre post_hint =
       let g = push_context (P.tag_of_st_term t) t.range g in
