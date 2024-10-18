@@ -10,7 +10,7 @@ ifeq (3.81,$(MAKE_VERSION))
 endif
 
 .DEFAULT_GOAL := all
-all: plugin lib pulse2rust
+all: plugin lib-pulse lib-core pulse2rust
 
 .PHONY: .force
 .force:
@@ -46,8 +46,6 @@ extraction.src: .force
 syntax_extension.src: .force
 	$(MAKE) -f mk/syntax_extension.mk
 
-lib: lib-pulse lib-core
-
 lib-pulse: plugin lib-common .force
 	$(MAKE) -f mk/lib-pulse.mk
 
@@ -66,9 +64,9 @@ clean:
 	$(MAKE) -f mk/lib-common.mk clean
 
 .PHONY: test
-test: plugin lib
+test: plugin lib-pulse
 	+$(MAKE) -C share/pulse
 
 .PHONY: pulse2rust
-pulse2rust: lib plugin
+pulse2rust: lib-pulse plugin
 	+$(MAKE) -C pulse2rust
