@@ -560,7 +560,7 @@ let (trace :
                         (fun uu___4 ->
                            FStar_Tactics_Effect.lift_div_tac
                              (fun uu___5 ->
-                                FStarC_Pprint.op_Hat_Hat
+                                FStar_Pprint.op_Hat_Hat
                                   (Pulse_PP.text "TRACE. Current context:")
                                   uu___4)) in
                     FStar_Tactics_Effect.tac_bind
@@ -625,7 +625,7 @@ let (trace :
                                   (fun uu___7 ->
                                      FStar_Tactics_Effect.lift_div_tac
                                        (fun uu___8 ->
-                                          FStarC_Pprint.op_Hat_Hat
+                                          FStar_Pprint.op_Hat_Hat
                                             (Pulse_PP.text
                                                "Typing environment (units elided): ")
                                             uu___7)) in
@@ -675,7 +675,7 @@ let (trace :
                                             (fun uu___10 ->
                                                FStar_Tactics_Effect.lift_div_tac
                                                  (fun uu___11 ->
-                                                    FStarC_Pprint.prefix
+                                                    FStar_Pprint.prefix
                                                       (Prims.of_int (2))
                                                       Prims.int_one
                                                       (Pulse_PP.text
@@ -765,7 +765,8 @@ let (trace :
                           (fun msg ->
                              let uu___2 =
                                let uu___3 =
-                                 let uu___4 = FStar_Tactics_Unseal.unseal rng in
+                                 let uu___4 =
+                                   FStarC_Tactics_Unseal.unseal rng in
                                  FStar_Tactics_Effect.tac_bind
                                    (FStar_Sealed.seal
                                       (Obj.magic
@@ -915,7 +916,7 @@ let (maybe_trace :
                        (fun uu___2 ->
                           (fun trace_full_opt ->
                              let uu___2 =
-                               FStar_Tactics_Unseal.unseal
+                               FStarC_Tactics_Unseal.unseal
                                  t.Pulse_Syntax_Base.source in
                              Obj.magic
                                (FStar_Tactics_Effect.tac_bind
