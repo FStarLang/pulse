@@ -1,5 +1,5 @@
-FSTAR_HOME  ?= $(abspath $(shell $(FSTAR_EXE) --locate)/../../..)
-FSTAR_STAGE ?= $(FSTAR_HOME)/stage2
+FSTAR_HOME  := $(abspath $(shell $(FSTAR_EXE) --locate)/../../..)
+FSTAR_STAGE := $(FSTAR_HOME)/stage2
 
 TAG := syntax_extension
 SRC := src/syntax_extension

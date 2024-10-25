@@ -18,7 +18,7 @@
  
 *)
 (* (c) Microsoft Corporation. All rights reserved *)
-open Fstar_guts
+open Fstarcompiler
 open Prims
 open FStar_Pervasives
 open FStarC_Errors
@@ -88,8 +88,8 @@ let parse_use_lang_blob (extension_name:string)
 %token <string> UINT64
 %token <string> SIZET
 %token <string> REAL
-%token <Fstar_guts.FStar_Char.char> CHAR
-(* ^ Need the explicit Fstar_guts here, regardless of open at the top of the file *)
+%token <Fstarcompiler.FStar_Char.char> CHAR
+(* ^ Need the explicit Fstarcompiler here, regardless of open at the top of the file *)
 %token <bool> LET
 %token <string> LET_OP
 %token <string> AND_OP
@@ -139,9 +139,9 @@ let parse_use_lang_blob (extension_name:string)
 
 %token<string>  OPPREFIX OPINFIX0a OPINFIX0b OPINFIX0c OPINFIX0d OPINFIX1 OPINFIX2 OPINFIX3 OPINFIX4
 %token<string>  OP_MIXFIX_ASSIGNMENT OP_MIXFIX_ACCESS
-%token<string * string * Lexing.position * Fstar_guts.FStarC_Sedlexing.snap>  BLOB
-%token<string * string * Lexing.position * Fstar_guts.FStarC_Sedlexing.snap>  USE_LANG_BLOB
-(* ^ Need the explicit Fstar_guts here, regardless of open at the top of the file *)
+%token<string * string * Lexing.position * Fstarcompiler.FStarC_Sedlexing.snap>  BLOB
+%token<string * string * Lexing.position * Fstarcompiler.FStarC_Sedlexing.snap>  USE_LANG_BLOB
+(* ^ Need the explicit Fstarcompiler here, regardless of open at the top of the file *)
 
 /* These are artificial */
 %token EOF
