@@ -16,10 +16,16 @@
 #         +$(MAKE) -f c.Makefile
 
 
-SUBDIRS += dpe
-SUBDIRS += engine
-SUBDIRS += l0
-SUBDIRS += external
+# NOTE!!!!: no subdirs, we just rely on fstar.include
+# Otherwise we need to state cross-dependencies in each of them,
+# SUBDIRS += cbor
+# SUBDIRS += dpe
+# SUBDIRS += engine
+# SUBDIRS += l0
+# SUBDIRS += external
+
+# Start dep analysis from every file under here.
+FSTAR_FILES != find . -name '*.fst' -o -name '*.fsti'
 
 PULSE_ROOT ?= ../../../..
 include $(PULSE_ROOT)/mk/test.mk
