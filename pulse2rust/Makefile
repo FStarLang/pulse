@@ -1,4 +1,5 @@
-FSTAR_EXE ?= $(shell which fstar.exe)
+PULSE_ROOT ?= ..
+include $(PULSE_ROOT)/mk/locate.mk
 
 .PHONY: all
 all: build
