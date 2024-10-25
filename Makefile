@@ -51,9 +51,16 @@ clean:
 	$(MAKE) -f mk/lib-core.mk clean
 	$(MAKE) -f mk/lib-common.mk clean
 
-.PHONY: test
-test: plugin lib-pulse
+.PHONY: test-pulse
+test-pulse: plugin lib-pulse
 	+$(MAKE) -C share/pulse
+
+.PHONY: test-pulse2rust
+test-pulse2rust: test-pulse
+	+$(MAKE) -C pulse2rust
+
+.PHONY: test
+test: test-pulse test-pulse2rust
 
 .PHONY: pulse2rust
 pulse2rust: lib-pulse plugin
