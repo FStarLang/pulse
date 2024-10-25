@@ -1,5 +1,3 @@
-open Fstarcompiler
-open Fstar_pluginlib
 open Prims
 open FStarC_Ident
 open Pulse_Syntax_Base

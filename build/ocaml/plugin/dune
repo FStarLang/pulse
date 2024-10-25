@@ -3,7 +3,7 @@
  (name pulse)
  (public_name pulse)
  (libraries
-    fstar.pluginlib
+    fstar.lib
  )
  (modes native)
  (wrapped false)
