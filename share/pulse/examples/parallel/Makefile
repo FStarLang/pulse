@@ -1,6 +1,2 @@
-all: verify
-
-# assuming share/pulse/examples/parpar
-PULSE_HOME ?= ../../../..
-
-include $(PULSE_HOME)/share/pulse/Makefile.include
+PULSE_ROOT ?= ../../../..
+include $(PULSE_ROOT)/mk/test.mk
