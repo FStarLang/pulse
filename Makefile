@@ -70,3 +70,7 @@ test: plugin lib-pulse
 .PHONY: pulse2rust
 pulse2rust: lib-pulse plugin
 	+$(MAKE) -C pulse2rust
+
+# Make can figure out internal dependencies between all and test.
+.PHONY: ci
+ci: all test
