@@ -4,10 +4,15 @@ CACHE_DIR=_output/_cache
 CODEGEN=Extension
 TAG=pulse2rust
 
+NO_OCAML := 1
+
 PULSE_EXAMPLES_ROOT ?= $(PULSE_ROOT)/share/pulse/examples
 SRC:=$(PULSE_EXAMPLES_ROOT) # Actually does not matter much
 
 SRC_DIRS := $(addprefix $(PULSE_EXAMPLES_ROOT)/,. by-example dice/external dice/external/hacl dice/external/l0 dice/dpe dice/engine dice/l0)
+
+# This is a huge hack
+OTHERFLAGS += $(addprefix --include ,$(SRC_DIRS))
 
 ROOTS = -d # hehe
 

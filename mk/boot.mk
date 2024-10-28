@@ -23,7 +23,11 @@ clean:
 all: verify ocaml
 
 .PHONY: ocaml
+ifdef NO_OCAML
+ocaml:
+else
 ocaml: all-ml
+endif
 
 .PHONY: verify
 verify: all-checked
