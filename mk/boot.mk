@@ -19,8 +19,8 @@ clean:
 	rm -rf $(CACHE_DIR)
 	rm -rf $(OUTPUT_DIR)
 
-.PHONY: all
-all: verify ocaml
+.PHONY: __all
+__all: verify ocaml
 
 .PHONY: ocaml
 ifdef NO_OCAML

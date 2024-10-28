@@ -1,3 +1,6 @@
+.DEFAULT_GOAL := all
+
+
 PULSE_ROOT ?= ../..
 OUTPUT_DIR=_output
 CACHE_DIR=_output/_cache
@@ -16,6 +19,7 @@ OTHERFLAGS += $(addprefix --include ,$(SRC_DIRS))
 
 ROOTS = -d # hehe
 
+OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/by-example/_cache
 OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/_output/cache
 OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/_output/cache
 OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/common/hacl-c/_output/cache
@@ -72,25 +76,25 @@ FSTAR_DEP_OPTIONS=--extract '* -FStar.Tactics -FStar.Reflection -Pulse +Pulse.Cl
 # files. If so, then this %.ast rule will be generic and can move to
 # share/pulse/Makefile.include-base.
 
-$(OUTPUT_DIRECTORY)/%.ast:
+$(OUTPUT_DIR)/%.ast:
 		$(FSTAR) --admit_smt_queries true --codegen Extension $(subst .ast,.fst, $(subst _,., $(notdir $@))) --extract_module $(basename $(subst .ast,.fst, $(subst _,., $(notdir $@))))
 
-$(RUST_SRC_DIR)/pulsetutorial_array.rs: $(OUTPUT_DIRECTORY)/PulseTutorial_Array.ast
+$(RUST_SRC_DIR)/pulsetutorial_array.rs: $(OUTPUT_DIR)/PulseTutorial_Array.ast
 	$(MAIN) -odir $(RUST_SRC_DIR) $+
 
-$(RUST_SRC_DIR)/pulsetutorial_loops.rs: $(OUTPUT_DIRECTORY)/PulseTutorial_Loops.ast
+$(RUST_SRC_DIR)/pulsetutorial_loops.rs: $(OUTPUT_DIR)/PulseTutorial_Loops.ast
 	$(MAIN) -odir $(RUST_SRC_DIR) $+
 
-$(RUST_SRC_DIR)/pulsetutorial_algorithms.rs: $(OUTPUT_DIRECTORY)/PulseTutorial_Algorithms.ast
+$(RUST_SRC_DIR)/pulsetutorial_algorithms.rs: $(OUTPUT_DIR)/PulseTutorial_Algorithms.ast
 	$(MAIN) -odir $(RUST_SRC_DIR) $+
 
-$(RUST_SRC_DIR)/example_slice.rs: $(OUTPUT_DIRECTORY)/Example_Slice.ast
+$(RUST_SRC_DIR)/example_slice.rs: $(OUTPUT_DIR)/Example_Slice.ast
 	$(MAIN) -odir $(RUST_SRC_DIR) $+
 
 %.rlib: %.rs
 	rustc --crate-type rlib -o $@ $+
 
-DPE_FILES = $(addprefix $(OUTPUT_DIRECTORY)/, \
+DPE_FILES = $(addprefix $(OUTPUT_DIR)/, \
 	EngineTypes.ast \
 	EngineCore.ast \
 	HACL.ast \
