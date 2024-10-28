@@ -1,19 +1,25 @@
-PULSE_HOME ?= ../..
-PULSE_EXAMPLES_ROOT ?= $(PULSE_HOME)/share/pulse/examples
+PULSE_ROOT ?= ../..
+OUTPUT_DIR=_output
+CACHE_DIR=_output/_cache
+CODEGEN=Extension
+TAG=pulse2rust
+
+PULSE_EXAMPLES_ROOT ?= $(PULSE_ROOT)/share/pulse/examples
+SRC:=$(PULSE_EXAMPLES_ROOT) # Actually does not matter much
 
 SRC_DIRS := $(addprefix $(PULSE_EXAMPLES_ROOT)/,. by-example dice/external dice/external/hacl dice/external/l0 dice/dpe dice/engine dice/l0)
-ifneq (,$(wildcard $(PULSE_EXAMPLES_ROOT)/dice/_output/cache))
-SRC_DIRS += $(PULSE_EXAMPLES_ROOT)/dice/_output/cache
-endif
-# ifneq (,$(wildcard $(PULSE_EXAMPLES_ROOT)/dice/common/hacl-c/_output/cache))
-# SRC_DIRS += $(PULSE_EXAMPLES_ROOT)/dice/common/hacl-c/_output/cache
-# endif
-ifneq (,$(wildcard $(PULSE_EXAMPLES_ROOT)/_output/cache))
-SRC_DIRS += $(PULSE_EXAMPLES_ROOT)/_output/cache
-endif
-OUTPUT_DIRECTORY := _output
-CACHE_DIRECTORY := $(OUTPUT_DIRECTORY)/cache
-FSTAR_OPTIONS += --warn_error -342 --cmi
+
+ROOTS = -d # hehe
+
+OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/_output/cache
+OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/_output/cache
+OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/common/hacl-c/_output/cache
+
+OTHERFLAGS += --warn_error -342 --cmi
+OTHERFLAGS += --include $(PULSE_ROOT)/lib # should be subset of next one?
+OTHERFLAGS += --include $(PULSE_ROOT)/out/lib/pulse
+
+include $(PULSE_ROOT)/mk/boot.mk
 
 MAIN=../main.exe
 RUST_SRC_DIR=src
@@ -23,7 +29,6 @@ DPE_OUTPUT_DIR=../dpe/src/generated
 .PHONY: all
 all: test dpe
 
-include $(PULSE_HOME)/share/pulse/Makefile.include
 
 FSTAR_DEP_OPTIONS=--extract '* -FStar.Tactics -FStar.Reflection -Pulse +Pulse.Class +Pulse.Lib -Pulse.Lib.Core'
 

@@ -58,6 +58,7 @@ test-pulse: plugin lib-pulse
 .PHONY: test-pulse2rust
 test-pulse2rust: test-pulse
 	+$(MAKE) -C pulse2rust
+	+$(MAKE) -C pulse2rust test
 
 .PHONY: test
 test: test-pulse test-pulse2rust
