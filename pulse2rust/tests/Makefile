@@ -9,7 +9,7 @@ NO_OCAML := 1
 PULSE_EXAMPLES_ROOT ?= $(PULSE_ROOT)/share/pulse/examples
 SRC:=$(PULSE_EXAMPLES_ROOT) # Actually does not matter much
 
-SRC_DIRS := $(addprefix $(PULSE_EXAMPLES_ROOT)/,. by-example dice/external dice/external/hacl dice/external/l0 dice/dpe dice/engine dice/l0)
+SRC_DIRS := $(addprefix $(PULSE_EXAMPLES_ROOT)/,. by-example dice/cbor dice/external dice/external/hacl dice/external/l0 dice/dpe dice/engine dice/l0)
 
 # I don't like this
 OTHERFLAGS += $(addprefix --include ,$(SRC_DIRS))
