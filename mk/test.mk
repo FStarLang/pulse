@@ -29,8 +29,7 @@ HINTS_ENABLED?=--use_hints
 OTHERFLAGS += --warn_error -321
 OTHERFLAGS += --warn_error @247 # couldn't write a checked file? FAIL RIGHT NOW
 OTHERFLAGS += --ext context_pruning
-OTHERFLAGS += --include $(PULSE_ROOT)/out/lib/pulse # weird path, fix
-OTHERFLAGS += --include $(PULSE_ROOT)/lib # source for lib
+OTHERFLAGS += --include $(PULSE_ROOT)/out/lib/pulse
 
 # Set ADMIT=1 to admit queries
 ADMIT ?=

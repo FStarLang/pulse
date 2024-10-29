@@ -38,7 +38,8 @@ lib-pulse: plugin lib-common .force
 	$(MAKE) -f mk/lib-pulse.mk
 	rm -rf out/lib/pulse/lib
 	mkdir -p out/lib/pulse/lib
-	find lib/pulse \( -name '*.fst' -o -name '*.fsti' -o -name '*.checked' \) \
+	find lib/pulse lib/common \
+		\( -name '*.fst' -o -name '*.fsti' -o -name '*.checked' \) \
 		-exec cp -u -t out/lib/pulse/lib {} \;
 	echo 'lib' > out/lib/pulse/fstar.include
 	# Install library (cp -u: don't copy unless newer)

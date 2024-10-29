@@ -22,7 +22,6 @@ OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/_cache
 OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/common/hacl-c/_cache
 
 OTHERFLAGS += --warn_error -342 --cmi
-OTHERFLAGS += --include $(PULSE_ROOT)/lib # should be subset of next one?
 OTHERFLAGS += --include $(PULSE_ROOT)/out/lib/pulse
 
 include $(PULSE_ROOT)/mk/boot.mk
