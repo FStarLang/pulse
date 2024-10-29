@@ -1,4 +1,3 @@
-SUBDIRS += bug-reports
 SUBDIRS += by-example
 SUBDIRS += c
 SUBDIRS += dice

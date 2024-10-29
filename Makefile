@@ -11,7 +11,9 @@ ifeq (3.81,$(MAKE_VERSION))
 endif
 
 .DEFAULT_GOAL := all
-all: plugin lib-pulse lib-core pulse2rust
+all: install-lib # build plugin and library, and install in out/
+all: lib-core    # also check impls in core
+all: pulse2rust  # and pulse2rust tool
 
 .PHONY: .force
 .force:
@@ -27,7 +29,7 @@ plugin.src: checker.src extraction.src syntax_extension.src
 
 checker.src: .force
 	$(MAKE) -f mk/checker.mk
-	
+
 extraction.src: .force
 	$(MAKE) -f mk/extraction.mk
 
@@ -36,25 +38,20 @@ syntax_extension.src: .force
 
 lib-pulse: plugin lib-common .force
 	$(MAKE) -f mk/lib-pulse.mk
+
+install-lib: plugin lib-pulse
+	# Install library (cp -u: don't copy unless newer)
 	rm -rf out/lib/pulse/lib
 	mkdir -p out/lib/pulse/lib
 	find lib/pulse lib/common \
 		\( -name '*.fst' -o -name '*.fsti' -o -name '*.checked' \) \
 		-exec cp -u -t out/lib/pulse/lib {} \;
 	echo 'lib' > out/lib/pulse/fstar.include
-	# Install library (cp -u: don't copy unless newer)
-	# cp -u -t out/lib/pulse lib/pulse/*.fst || true
-	# cp -u -t out/lib/pulse lib/pulse/*.fsti
-	# cp -u -t out/lib/pulse lib/pulse/c/*.fst
-	# cp -u -t out/lib/pulse lib/pulse/c/*.fsti
-	# cp -u -t out/lib/pulse lib/pulse/lib/*.fst
-	# cp -u -t out/lib/pulse lib/pulse/lib/*.fsti
-	# cp -u -t out/lib/pulse lib/pulse/lib/class/*.fst
-	# cp -u -t out/lib/pulse lib/pulse/lib/class/*.fsti
-	# cp -u -t out/lib/pulse lib/pulse/lib/pledge/*.fst
-	# cp -u -t out/lib/pulse lib/pulse/lib/pledge/*.fsti
-	# # Install checked files for the library
-	# cp -u -t out/lib/pulse lib/pulse/_cache/*.checked
+	# We install share/ too (it's unclear to me why, but I'm retaining
+	# it. However I am moving all tests (bug-reports, etc) out since
+	# they are not interesting to users).
+	rm -rf out/share
+	cp -t out -r share/
 
 lib-core: lib-common .force
 	$(MAKE) -f mk/lib-core.mk
@@ -72,6 +69,10 @@ clean:
 
 .PHONY: test-pulse
 test-pulse: plugin lib-pulse
+	+$(MAKE) -C test
+
+.PHONY: test-share
+test-share: plugin lib-pulse
 	+$(MAKE) -C share/pulse
 
 .PHONY: test-pulse2rust
@@ -80,7 +81,7 @@ test-pulse2rust: test-pulse
 	+$(MAKE) -C pulse2rust test
 
 .PHONY: test
-test: test-pulse test-pulse2rust
+test: test-pulse test-share test-pulse2rust
 
 .PHONY: pulse2rust
 pulse2rust: lib-pulse plugin
