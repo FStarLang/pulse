@@ -76,21 +76,13 @@ endif
 	$(FSTAR) $<
 	touch -c $@
 
-$(OUTPUT_DIR)/%.fst.output: %.fst
+$(OUTPUT_DIR)/%.output: %
 	$(call msg, "OUTPUT", $(basename $(notdir $@)))
-	$(FSTAR) --message_format human -f --print_expected_failures $< >$@ 2>&1
+	$(FSTAR) --silent --message_format human -f --print_expected_failures $< >$@ 2>&1
 
-$(OUTPUT_DIR)/%.fsti.output: %.fsti
-	$(call msg, "OUTPUT", $(basename $(notdir $@)))
-	$(FSTAR) --message_format human -f --print_expected_failures $< >$@ 2>&1
-
-$(OUTPUT_DIR)/%.fst.json_output: %.fst
+$(OUTPUT_DIR)/%.json_output: %
 	$(call msg, "JSONOUT", $(basename $(notdir $@)))
-	$(FSTAR) --message_format json -f --print_expected_failures $< >$@ 2>&1
-
-$(OUTPUT_DIR)/%.fsti.json_output: %.fsti
-	$(call msg, "JSONOUT", $(basename $(notdir $@)))
-	$(FSTAR) --message_format json -f --print_expected_failures $< >$@ 2>&1
+	$(FSTAR) --silent --message_format json -f --print_expected_failures $< >$@ 2>&1
 
 $(OUTPUT_DIR)/$(subst .,_,%).ml:
 	$(call msg, "EXTRACT", $(basename $(notdir $@)))
