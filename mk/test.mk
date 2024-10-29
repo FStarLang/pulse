@@ -46,7 +46,7 @@ FSTAR = $(FSTAR_EXE) $(SIL) 				\
 	--cache_checked_modules				\
 	--odir $(OUTPUT_DIR)				\
 	--cache_dir $(CACHE_DIR)			\
-	--already_cached Prims,FStar			\
+	--already_cached Prims,FStar,Pulse.Lib,Pulse.Class,PulseCore	\
 	 $(OTHERFLAGS) $(MAYBE_ADMIT) $(HINTS_ENABLED)
 
 ifneq ($(MAKECMDGOALS),clean)

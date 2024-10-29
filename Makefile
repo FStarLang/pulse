@@ -46,10 +46,14 @@ install-lib: plugin lib-pulse
 	find lib/pulse lib/common \
 		\( -name '*.fst' -o -name '*.fsti' -o -name '*.checked' \) \
 		-exec cp -u -t out/lib/pulse/lib {} \;
+	# Make sure checked files are newer... the test.mk makefile
+	# anyway has --already_cached, and clients should also use it, arguably.
+	# But this is a decent failsafe.
+	find out/ -name '*.checked' -exec touch -c {} \+
 	echo 'lib' > out/lib/pulse/fstar.include
 	# We install share/ too (it's unclear to me why, but I'm retaining
-	# it. However I am moving all tests (bug-reports, etc) out since
-	# they are not interesting to users).
+	# it). However I am moving all tests (bug-reports, etc) out since
+	# they are not interesting to users.
 	rm -rf out/share
 	cp -t out -r share/
 
@@ -68,15 +72,15 @@ clean:
 	$(MAKE) -f mk/lib-common.mk clean
 
 .PHONY: test-pulse
-test-pulse: plugin lib-pulse
+test-pulse: install-lib
 	+$(MAKE) -C test
 
 .PHONY: test-share
-test-share: plugin lib-pulse
+test-share: install-lib
 	+$(MAKE) -C share/pulse
 
 .PHONY: test-pulse2rust
-test-pulse2rust: test-pulse
+test-pulse2rust: test-share # test-pulse2rust uses .checked files from share/
 	+$(MAKE) -C pulse2rust
 	+$(MAKE) -C pulse2rust test
 
