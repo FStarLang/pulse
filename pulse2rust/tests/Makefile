@@ -35,7 +35,7 @@ RUST_OUT_DIR=out
 DPE_OUTPUT_DIR=../dpe/src/generated
 
 .PHONY: all
-all: test # dpe
+all: test dpe
 
 
 FSTAR_DEP_OPTIONS=--extract '* -FStar.Tactics -FStar.Reflection -Pulse +Pulse.Class +Pulse.Lib -Pulse.Lib.Core'
