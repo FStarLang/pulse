@@ -38,6 +38,8 @@ FSTAR_OPTIONS += --cache_dir "$(CACHE_DIR)"
 FSTAR_OPTIONS += --include "$(SRC)"
 FSTAR_OPTIONS += --cache_checked_modules
 FSTAR_OPTIONS += --warn_error -321
+FSTAR_OPTIONS += $(addprefix --include , $(INCLUDE_PATHS))
+
 ifeq ($(ADMIT),1)
 FSTAR_OPTIONS += --admit_smt_queries true
 endif
@@ -59,6 +61,14 @@ FSTAR = $(FSTAR_EXE) $(SIL) $(FSTAR_OPTIONS)
 %.ml:
 	$(call msg, "EXTRACT", $(LBL))
 	$(FSTAR) $(FF) --already_cached '*' --codegen $(CODEGEN) --extract_module $(MM)
+	@touch -c $@  ## SHOULD NOT BE NEEDED
+
+%.krml: FF=$(notdir $(subst $(EXTENSION),,$<))
+%.krml: MM=$(basename $(FF))
+%.krml: LBL=$(notdir $@)
+%.krml:
+	$(call msg, "EXTRACT", $(LBL))
+	$(FSTAR) $(FF) --already_cached '*' --codegen krml --extract_module $(MM)
 	@touch -c $@  ## SHOULD NOT BE NEEDED
 
 $(CACHE_DIR)/.depend$(TAG):

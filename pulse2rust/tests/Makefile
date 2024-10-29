@@ -1,9 +1,6 @@
-.DEFAULT_GOAL := all
-
-
 PULSE_ROOT ?= ../..
 OUTPUT_DIR=_output
-CACHE_DIR=_output/_cache
+CACHE_DIR=_cache
 CODEGEN=Extension
 TAG=pulse2rust
 
@@ -14,15 +11,15 @@ SRC:=$(PULSE_EXAMPLES_ROOT) # Actually does not matter much
 
 SRC_DIRS := $(addprefix $(PULSE_EXAMPLES_ROOT)/,. by-example dice/external dice/external/hacl dice/external/l0 dice/dpe dice/engine dice/l0)
 
-# This is a huge hack
+# I don't like this
 OTHERFLAGS += $(addprefix --include ,$(SRC_DIRS))
 
 ROOTS = -d # hehe
 
+OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/_cache
 OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/by-example/_cache
-OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/_output/cache
-OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/_output/cache
-OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/common/hacl-c/_output/cache
+OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/_cache
+OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/common/hacl-c/_cache
 
 OTHERFLAGS += --warn_error -342 --cmi
 OTHERFLAGS += --include $(PULSE_ROOT)/lib # should be subset of next one?
@@ -30,13 +27,15 @@ OTHERFLAGS += --include $(PULSE_ROOT)/out/lib/pulse
 
 include $(PULSE_ROOT)/mk/boot.mk
 
+.DEFAULT_GOAL := all
+
 MAIN=../main.exe
 RUST_SRC_DIR=src
 RUST_OUT_DIR=out
 DPE_OUTPUT_DIR=../dpe/src/generated
 
 .PHONY: all
-all: test dpe
+all: test # dpe
 
 
 FSTAR_DEP_OPTIONS=--extract '* -FStar.Tactics -FStar.Reflection -Pulse +Pulse.Class +Pulse.Lib -Pulse.Lib.Core'
@@ -49,7 +48,7 @@ FSTAR_DEP_OPTIONS=--extract '* -FStar.Tactics -FStar.Reflection -Pulse +Pulse.Cl
 # currently two modes:
 #
 # * share/pulse/examples/dice/Makefile produces the DICE .checked
-#   files in a single directory, _output/cache, but it assumes (with
+#   files in a single directory, _cache, but it assumes (with
 #   --already_cached) that the .checked files from the Pulse standard
 #   library already exist somewhere else.
 #
