@@ -36,6 +36,24 @@ syntax_extension.src: .force
 
 lib-pulse: plugin lib-common .force
 	$(MAKE) -f mk/lib-pulse.mk
+	rm -rf out/lib/pulse/lib
+	mkdir -p out/lib/pulse/lib
+	find lib/pulse \( -name '*.fst' -o -name '*.fsti' -o -name '*.checked' \) \
+		-exec cp -u -t out/lib/pulse/lib {} \;
+	echo 'lib' > out/lib/pulse/fstar.include
+	# Install library (cp -u: don't copy unless newer)
+	# cp -u -t out/lib/pulse lib/pulse/*.fst || true
+	# cp -u -t out/lib/pulse lib/pulse/*.fsti
+	# cp -u -t out/lib/pulse lib/pulse/c/*.fst
+	# cp -u -t out/lib/pulse lib/pulse/c/*.fsti
+	# cp -u -t out/lib/pulse lib/pulse/lib/*.fst
+	# cp -u -t out/lib/pulse lib/pulse/lib/*.fsti
+	# cp -u -t out/lib/pulse lib/pulse/lib/class/*.fst
+	# cp -u -t out/lib/pulse lib/pulse/lib/class/*.fsti
+	# cp -u -t out/lib/pulse lib/pulse/lib/pledge/*.fst
+	# cp -u -t out/lib/pulse lib/pulse/lib/pledge/*.fsti
+	# # Install checked files for the library
+	# cp -u -t out/lib/pulse lib/pulse/_cache/*.checked
 
 lib-core: lib-common .force
 	$(MAKE) -f mk/lib-core.mk
