@@ -19,3 +19,5 @@ LICENSE-z3.txt
 BUILDLOG
 
 out
+_output
+_cache
