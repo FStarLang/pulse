@@ -39,6 +39,7 @@ FSTAR_OPTIONS += --include "$(SRC)"
 FSTAR_OPTIONS += --cache_checked_modules
 FSTAR_OPTIONS += --warn_error -321
 FSTAR_OPTIONS += $(addprefix --include , $(INCLUDE_PATHS))
+FSTAR_OPTIONS += --ext context_pruning
 
 ifeq ($(ADMIT),1)
 FSTAR_OPTIONS += --admit_smt_queries true
