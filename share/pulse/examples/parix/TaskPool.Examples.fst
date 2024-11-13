@@ -32,17 +32,22 @@ fn qs (n:nat)
   returns _:unit
   ensures qsv 1 ** qsv 2 ** qsv 3 ** qsv 4
 {
-  let p = setup_pool 42;
-  spawn_ p (fun () -> qsc 1);
-  spawn_ p (fun () -> qsc 2);
-  spawn_ p (fun () -> qsc 3);
-  spawn_ p (fun () -> qsc 4);
-  teardown_pool p;
-  redeem_pledge emp_inames (pool_done p) (qsv 1);
-  redeem_pledge emp_inames (pool_done p) (qsv 2);
-  redeem_pledge emp_inames (pool_done p) (qsv 3);
-  redeem_pledge emp_inames (pool_done p) (qsv 4);
-  drop_ (pool_done p)
+  fn k (p: pool)
+    requires pool_alive p ** emp
+    ensures qsv 1 ** qsv 2 ** qsv 3 ** qsv 4
+  {
+    spawn_ p (fun () -> qsc 1);
+    spawn_ p (fun () -> qsc 2);
+    spawn_ p (fun () -> qsc 3);
+    spawn_ p (fun () -> qsc 4);
+    teardown_pool p;
+    redeem_pledge emp_inames (pool_done p) (qsv 1);
+    redeem_pledge emp_inames (pool_done p) (qsv 2);
+    redeem_pledge emp_inames (pool_done p) (qsv 3);
+    redeem_pledge emp_inames (pool_done p) (qsv 4);
+    drop_ (pool_done p)
+  };
+  with_pool 42 k
 }
 
 
@@ -52,17 +57,22 @@ fn qs_joinpromises (n:nat)
   returns _:unit
   ensures qsv 1 ** qsv 2 ** qsv 3 ** qsv 4
 {
-  let p = setup_pool 42;
-  spawn_ p (fun () -> qsc 1);
-  spawn_ p (fun () -> qsc 2);
-  spawn_ p (fun () -> qsc 3);
-  spawn_ p (fun () -> qsc 4);
-  join_pledge #emp_inames #(pool_done p) (qsv 1) (qsv 2);
-  join_pledge #emp_inames #(pool_done p) (qsv 3) (qsv 4);
-  teardown_pool p;
-  redeem_pledge emp_inames (pool_done p) (qsv 1 ** qsv 2);
-  redeem_pledge emp_inames (pool_done p) (qsv 3 ** qsv 4);
-  drop_ (pool_done p)
+  fn k (p: pool)
+    requires pool_alive p ** emp
+    ensures qsv 1 ** qsv 2 ** qsv 3 ** qsv 4
+  {
+    spawn_ p (fun () -> qsc 1);
+    spawn_ p (fun () -> qsc 2);
+    spawn_ p (fun () -> qsc 3);
+    spawn_ p (fun () -> qsc 4);
+    join_pledge #emp_inames #(pool_done p) (qsv 1) (qsv 2);
+    join_pledge #emp_inames #(pool_done p) (qsv 3) (qsv 4);
+    teardown_pool p;
+    redeem_pledge emp_inames (pool_done p) (qsv 1 ** qsv 2);
+    redeem_pledge emp_inames (pool_done p) (qsv 3 ** qsv 4);
+    drop_ (pool_done p)
+  };
+  with_pool 42 k
 }
 
 
@@ -83,17 +93,22 @@ fn qsh (n:nat)
   returns _:unit
   ensures qsv 1 ** qsv 2 ** qsv 3 ** qsv 4
 {
-  let p = setup_pool 42;
-  spawn_ p qs12;
-  // could do the same thing for 3&4... it's gonna work.
-  // also qs12 could spawn and join its tasks, it would clearly work
-  spawn_ p (fun () -> qsc 3);
-  spawn_ p (fun () -> qsc 4);
-  teardown_pool p;
-  redeem_pledge emp_inames (pool_done p) (qsv 1 ** qsv 2);
-  redeem_pledge emp_inames (pool_done p) (qsv 3);
-  redeem_pledge emp_inames (pool_done p) (qsv 4);
-  drop_ (pool_done p)
+  fn k (p: pool)
+    requires pool_alive p ** emp
+    ensures qsv 1 ** qsv 2 ** qsv 3 ** qsv 4
+  {
+    spawn_ p qs12;
+    // could do the same thing for 3&4... it's gonna work.
+    // also qs12 could spawn and join its tasks, it would clearly work
+    spawn_ p (fun () -> qsc 3);
+    spawn_ p (fun () -> qsc 4);
+    teardown_pool p;
+    redeem_pledge emp_inames (pool_done p) (qsv 1 ** qsv 2);
+    redeem_pledge emp_inames (pool_done p) (qsv 3);
+    redeem_pledge emp_inames (pool_done p) (qsv 4);
+    drop_ (pool_done p)
+  };
+  with_pool 42 k
 }
 
 
@@ -115,22 +130,23 @@ fn qsh_par (n:nat)
   returns _:unit
   ensures qsv 1 ** qsv 2 ** qsv 3 ** qsv 4
 {
-  let p = setup_pool 42;
-  share_alive p _;
-  spawn_ p (fun () -> qs12_par p);
-  (* Ah! This cannot work right now since we need to share part
-  of the pool_alive slprop to the spawned task, so we have
-  to index pool_alive with a permission, and allow
-  share/gather. *)
-  
-  spawn_ p (fun () -> qsc 3);
-  spawn_ p (fun () -> qsc 4);
-  admit();
-  teardown_pool p;
-  redeem_pledge (pool_done p) (qsv 1)
-  redeem_pledge (pool_done p) (qsv 2);
-  redeem_pledge (pool_done p) (qsv 3);
-  redeem_pledge (pool_done p) (qsv 4);
-  drop_ (pool_done p)
+  fn k (p: pool)
+    requires pool_alive p ** emp
+    ensures qsv 1 ** qsv 2 ** qsv 3 ** qsv 4
+  {
+    share_alive p _;
+    spawn_ p (fun () -> qs12_par p);
+    spawn_ p (fun () -> qsc 3);
+    spawn_ p (fun () -> qsc 4);
+    await_pool p (pool_alive #(1.0R/.2.0R) p ** pledge emp_inames (pool_done p) (qsv 1) ** pledge emp_inames (pool_done p) (qsv 2));
+    gather_alive p _;
+    teardown_pool p;
+    redeem_pledge _ (pool_done p) (qsv 1);
+    redeem_pledge _ (pool_done p) (qsv 2);
+    redeem_pledge _ (pool_done p) (qsv 3);
+    redeem_pledge _ (pool_done p) (qsv 4);
+    drop_ (pool_done p)
+  };
+  with_pool 42 k
 }
 

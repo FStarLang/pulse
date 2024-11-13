@@ -47,7 +47,6 @@ fn rec t_quicksort
     pure (pure_pre_quicksort a lo hi lb rb s0)
   ensures 
     pledge emp_inames (T.pool_done p) (
-      T.pool_alive #f p **
       quicksort_post a lo hi s0 lb rb
     )
 {
@@ -67,8 +66,8 @@ fn rec t_quicksort
     return_pledge (T.pool_done p) (A.pts_to_range a r._1 r._2 s2);
     squash_pledge _ _ _;
     (* disambiguating makes this pretty inconvenient now, but it is robust at least... *)
-    join_pledge (T.pool_alive #(f /. 2.0R) p ** quicksort_post a lo r._1 s1 lb pivot) (A.pts_to_range a r._1 r._2 s2);
-    join_pledge _ (T.pool_alive #(f /. 2.0R) p ** quicksort_post a r._2 hi s3 pivot rb);
+    join_pledge (quicksort_post a lo r._1 s1 lb pivot) (A.pts_to_range a r._1 r._2 s2);
+    join_pledge _ (quicksort_post a r._2 hi s3 pivot rb);
 
     ghost fn rewrite_pf ()
       // NB: These two slprops have to be in exactly this shape, as the Pulse checker
@@ -76,11 +75,10 @@ fn rec t_quicksort
       // above must also be in this exact shape. To obtain the shape, I just manually looked
       // at the context. Automation should likely help here.
       requires
-        (T.pool_alive #(f /. 2.0R) p ** quicksort_post a lo r._1 s1 lb pivot) **
+        (quicksort_post a lo r._1 s1 lb pivot) **
         A.pts_to_range a r._1 r._2 s2 **
-        (T.pool_alive #(f /. 2.0R) p ** quicksort_post a r._2 hi s3 pivot rb)
+        (quicksort_post a r._2 hi s3 pivot rb)
       ensures
-        T.pool_alive #f p **
         quicksort_post a lo hi s0 lb rb
     {
       (* Functional correctness *)
@@ -88,18 +86,13 @@ fn rec t_quicksort
       unfold quicksort_post;
       quicksort_proof a lo r._1 r._2 hi lb rb pivot #s0 s1 s2 s3;
       fold (quicksort_post a lo hi s0 lb rb);
-
-      (* Permission accounting *)
-      T.gather_alive p f;
     };
     rewrite_pledge _ _ rewrite_pf;
 
     ()
   } else {
-    return_pledge (T.pool_done p) (
-      T.pool_alive #f p **
-      (exists* s. A.pts_to_range a lo hi s ** pure (pure_post_quicksort a lo hi lb rb s0 s))
-    );
+    drop_ (T.pool_alive #f p);
+    return_pledge (T.pool_done p) (exists* s. A.pts_to_range a lo hi s ** pure (pure_post_quicksort a lo hi lb rb s0 s));
   }
 }
 
@@ -115,20 +108,20 @@ fn rec quicksort
   ensures
     quicksort_post a lo hi s0 lb rb
 {
-  let p = T.setup_pool nthr;
+  fn k (p: T.pool)
+    requires
+      T.pool_alive p **
+      (A.pts_to_range a lo hi s0 **
+      pure (pure_pre_quicksort a lo hi lb rb s0))
+    ensures
+      quicksort_post a lo hi s0 lb rb
+  {
+    T.share_alive p _;
+    t_quicksort p a lo hi #lb #rb;
+    T.await_pool p _;
+    drop_ (T.pool_alive #(0.5R) p);
+  };
 
-  T.share_alive p _;
-
-  t_quicksort p a lo hi #lb #rb;
-
-  // let i = split_pledge _ _;
-
-  T.await_pool p (T.pool_alive #(1.0R /. 2.0R) p ** _);
-
-  T.gather_alive p _;
-
-  T.teardown_pool p;
-  // redeem_pledge _ _ _;
-  drop_ (T.pool_done p)
+  T.with_pool nthr k;
 }
 

@@ -253,7 +253,7 @@ fn rec redeem_range
 }
 
 
-
+(* Use a normal for loop to *spawn* each task *)
 fn
 parallel_for
   (pre : (nat -> slprop))
@@ -263,38 +263,39 @@ parallel_for
   requires on_range pre 0 n
   ensures on_range post 0 n
 {
-  let p = setup_pool 42;
-  (* Use a normal for loop to *spawn* each task *)
+  fn k (p: pool)
+    requires pool_alive p ** on_range pre 0 n
+    ensures on_range post 0 n
+  {
+    (* First, share the pool_alive permission among all n tasks. *)
+    assert (pool_alive #1.0R p);
+    frac_n n p 1.0R;
 
-  (* First, share the pool_alive permission among all n tasks. *)
-  assert (pool_alive #1.0R p);
-  frac_n n p 1.0R;
+    on_range_zip
+      pre
+      (fun i -> pool_alive #(div_perm 1.0R n) p)
+      0 n;
 
-  on_range_zip
-    pre
-    (fun i -> pool_alive #(div_perm 1.0R n) p)
-    0 n;
+    simple_for
+      (fun i -> pre i ** pool_alive #(div_perm 1.0R n) p)
+      (fun i -> pledge emp_inames (pool_done p) (post i) ** pool_alive #(div_perm 1.0R n) p)
+      emp // Alternative: pass pool_alive p here and forget about the n-way split. See below.
+      (spawned_f_i p pre post (div_perm 1.0R n) f)
+      n;
 
-  simple_for
-    (fun i -> pre i ** pool_alive #(div_perm 1.0R n) p)
-    (fun i -> pledge emp_inames (pool_done p) (post i) ** pool_alive #(div_perm 1.0R n) p)
-    emp // Alternative: pass pool_alive p here and forget about the n-way split. See below.
-    (spawned_f_i p pre post (div_perm 1.0R n) f)
-    n;
+    on_range_unzip
+      (fun i -> pledge emp_inames (pool_done p) (post i))
+      (fun i -> pool_alive #(div_perm 1.0R n) p)
+      0 n;
 
-  on_range_unzip
-    (fun i -> pledge emp_inames (pool_done p) (post i))
-    (fun i -> pool_alive #(div_perm 1.0R n) p)
-    0 n;
+    unfrac_n n p 1.0R;
+    teardown_pool p;
 
-  unfrac_n n p 1.0R;
-  teardown_pool p;
+    redeem_range post (pool_done p) n;
 
-  redeem_range post (pool_done p) n;
-
-  drop_ (pool_done p);
-
-  ()
+    drop_ (pool_done p);
+  };
+  with_pool 42 k
 }
 
 
@@ -326,19 +327,23 @@ parallel_for_alt
   requires on_range pre 0 n
   ensures on_range post 0 n
 {
-  let p = setup_pool 42;
+  fn k (p: pool)
+    requires pool_alive p ** on_range pre 0 n
+    ensures on_range post 0 n
+  {
+    simple_for
+      pre
+      (fun i -> pledge emp_inames (pool_done p) (post i))
+      (pool_alive p)
+      (spawned_f_i_alt p pre post f)
+      n;
 
-  simple_for
-    pre
-    (fun i -> pledge emp_inames (pool_done p) (post i))
-    (pool_alive p)
-    (spawned_f_i_alt p pre post f)
-    n;
-
-  teardown_pool p;
-  redeem_range post (pool_done p) n;
-  drop_ (pool_done p);
-  ()
+    teardown_pool p;
+    redeem_range post (pool_done p) n;
+    drop_ (pool_done p);
+    ()
+  };
+  with_pool 42 k
 }
 
 
@@ -436,13 +441,17 @@ parallel_for_wsr
 }
 
 
-assume
-val frame_stt_left
-  (#a:Type u#a)
+fn frame_stt_left
+  (#a:Type0)
   (#pre:slprop) (#post:a -> slprop)
   (frame:slprop)
-  (e:stt a pre post)
-  : stt a (frame ** pre) (fun x -> frame ** post x)
+  (e:unit -> stt a pre (fun x -> post x))
+  requires frame ** pre
+  returns x:a
+  ensures frame ** post x
+{
+  e ()
+}
 
 
 fn rec h_for_task
@@ -460,7 +469,7 @@ fn rec h_for_task
     (* Too small, just run sequentially *)
     drop_ (pool_alive #e p); // won't use the pool
     for_loop pre post emp
-             (fun i -> frame_stt_left emp (f i)) lo hi;
+             (fun i -> frame_stt_left emp (fun _ -> f i)) lo hi;
 
     return_pledge (pool_done p) (on_range post lo hi)
   } else {
@@ -510,17 +519,6 @@ fn rec h_for_task
 }
 
 
-(* Assuming a wait that only needs epsilon permission. We would actually
-need one that takes epsilon permission + a pledge emp_inames for (1-e), or something
-similar. Otherwise we cannot rule out some other thread holding permission
-to the task pool, and we would not be allowed to free it. *)
-assume
-val wait_pool
-  (p:pool)
-  (e:perm)
-  : stt unit (pool_alive #e p) (fun _ -> pool_done p)
-
-
 fn
 parallel_for_hier
   (pre : (nat -> slprop))
@@ -530,49 +528,49 @@ parallel_for_hier
   requires on_range pre 0 n
   ensures on_range post 0 n
 {
-  let p = setup_pool 42;
+  fn k (p: pool)
+    requires pool_alive p ** on_range pre 0 n
+    ensures on_range post 0 n
+  {
+    if (false) { // Checking that both branches would work
+      (* Spawning the first task: useless! Just call it! *)
+      assert (pool_alive #1.0R p);
+      share_alive p 1.0R;
 
-  if (false) { // Checking that both branches would work
-    (* Spawning the first task: useless! Just call it! *)
-    assert (pool_alive #1.0R p);
-    share_alive p 1.0R;
-
-    rewrite (pool_alive #(1.0R /. 2.0R) p ** pool_alive #(1.0R /. 2.0R) p)
-        as (pool_alive #0.5R p ** pool_alive #0.5R p);
-    assert (pool_alive #0.5R p ** pool_alive #0.5R p);
+      rewrite (pool_alive #(1.0R /. 2.0R) p ** pool_alive #(1.0R /. 2.0R) p)
+          as (pool_alive #0.5R p ** pool_alive #0.5R p);
+      assert (pool_alive #0.5R p ** pool_alive #0.5R p);
 
 
-    spawn_ p
-            #0.5R
-            #(pool_alive #0.5R p ** on_range pre 0 n)
-            #(pledge emp_inames (pool_done p) (on_range post 0 n))
-            (h_for_task p 0.5R pre post f 0 n);
+      spawn_ p
+              #0.5R
+              #(pool_alive #0.5R p ** on_range pre 0 n)
+              #(pledge emp_inames (pool_done p) (on_range post 0 n))
+              (h_for_task p 0.5R pre post f 0 n);
 
-    (* We get this complicated pledge emp_inames from the spawn above. We can
-    massage it before even waiting. *)
-    assert (pledge emp_inames (pool_done p) (pledge emp_inames (pool_done p) (on_range post 0 n)));
+      (* We get this complicated pledge emp_inames from the spawn above. We can
+      massage it before even waiting. *)
+      assert (pledge emp_inames (pool_done p) (pledge emp_inames (pool_done p) (on_range post 0 n)));
 
-    squash_pledge (pool_done p) (on_range post 0 n);
+      squash_pledge (pool_done p) (on_range post 0 n);
 
-    assert (pledge emp_inames (pool_done p) (on_range post 0 n));
+      assert (pledge emp_inames (pool_done p) (on_range post 0 n));
 
-    wait_pool p 0.5R;
+      teardown_pool p;
 
-    redeem_pledge emp_inames (pool_done p) (on_range post 0 n);
+      redeem_pledge emp_inames (pool_done p) (on_range post 0 n);
 
-    drop_ (pool_done p)
-  } else {
-    (* Directly calling is much easier, and actually better all around. *)
-    share_alive p 1.0R;
-    h_for_task p (1.0R /. 2.0R) pre post f 0 n ();
+      drop_ (pool_done p)
+    } else {
+      (* Directly calling is much easier, and actually better all around. *)
+      share_alive p 1.0R;
+      h_for_task p (1.0R /. 2.0R) pre post f 0 n ();
 
-    wait_pool p (1.0R /. 2.0R);
+      await_pool p _;
 
-    assert (pool_done p);
-
-    redeem_pledge emp_inames (pool_done p) (on_range post 0 n);
-
-    drop_ (pool_done p)
-  }
+      drop_ (pool_alive #(0.5R) p)
+    }
+  };
+  with_pool 42 k
 }
 

@@ -92,8 +92,6 @@ fn gather_alive
   requires pool_alive #(e /. 2.0R) p ** pool_alive #(e /. 2.0R) p
   ensures pool_alive #e p
 
-fn setup_pool
-  (n: pos)
-  requires emp
-  returns p : pool
-  ensures pool_alive p
+fn with_pool #pre #post (n: pos) (k: (p:pool -> stt unit (pool_alive p ** pre) (fun _ -> post)))
+  requires pre
+  ensures post

@@ -27,6 +27,9 @@ let setup_pool num_domains =
     let cv = CV.create () in
     { p; m; ctr; cv }
 
+let with_pool () () nthr k =
+    k (setup_pool nthr)
+
 let rec wait_for_empty p =
     if !(p.ctr) <> 0 then (
         CV.wait p.cv p.m;

@@ -69,11 +69,15 @@ fn rec msort
   requires pts_to_range a (SZ.v lo) (SZ.v hi) (reveal s)
   ensures  pts_to_range a (SZ.v lo) (SZ.v hi) (sort (reveal s))
 {
-  // No need for pledge reasoning here as t_msort_par is synchronous, even
-  // if it parallelizes internally.
-  let p = setup_pool nthr;
-  t_msort_par p 1.0R a lo hi s;
-  teardown_pool p;
-  drop_ (pool_done p);
+  fn k (p: pool)
+    requires pool_alive p ** pts_to_range a (SZ.v lo) (SZ.v hi) (reveal s)
+    ensures  pts_to_range a (SZ.v lo) (SZ.v hi) (sort (reveal s))
+  {
+    // No need for pledge reasoning here as t_msort_par is synchronous, even
+    // if it parallelizes internally.
+    t_msort_par p 1.0R a lo hi s;
+    drop_ (pool_alive p);
+  };
+  with_pool nthr k
 }
 

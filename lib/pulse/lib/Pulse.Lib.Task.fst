@@ -1437,43 +1437,32 @@ fn gather_alive
   fold (pool_alive #f p);
 }
 
-
-(* Very basic model of a thread fork *)
-assume
-val fork
-  (#p #q : slprop)
-  (f : unit -> stt unit p (fun _ -> q))
-  : stt unit p (fun _ -> emp)
-
-fn spawn_worker
-  (p:pool)
-  (#f:perm)
-  requires pool_alive #f p
-  ensures  emp
+fn with_worker (p: pool) (#f: perm) (#pre #post: slprop)
+  (k: unit -> stt unit pre (fun _ -> post))
+  requires pool_alive #f p ** pre
+  ensures pool_alive #f p ** post
 {
-  fork (fun () -> worker #f p)
+  par (fun _ -> worker p) k
 }
 
-fn rec spawn_workers
-  (p:pool) (#f:perm)
-  (n:pos)
-  requires pool_alive #f p
-  ensures  emp
+fn rec with_workers (p: pool) (n: nat) (#f: perm) (#pre #post: slprop)
+  (k: unit -> stt unit pre (fun _ -> post))
+  requires pool_alive #f p ** pre
+  ensures pool_alive #f p ** post
 {
-  if (n = 1) {
-    spawn_worker p;
+  if (n = 0) {
+    k ()
   } else {
     share_alive p f;
-    spawn_worker p;
-    spawn_workers p (n - 1);
+    with_worker p #(f /. 2.0R) #(pool_alive #(f /. 2.0R) p ** pre) #(pool_alive #(f /. 2.0R) p ** post)
+      (fun _ -> with_workers p (n-1) #(f /. 2.0R) #pre #post k);
+    gather_alive p f;
   }
 }
 
-fn setup_pool
-  (n : pos)
-  requires emp
-  returns p : pool
-  ensures pool_alive p
+fn with_pool #pre #post (n: pos) (k: (p:pool -> stt unit (pool_alive p ** pre) (fun _ -> post)))
+  requires pre
+  ensures post
 {
   let runnable = Pulse.Lib.Reference.alloc ([] <: list task_t);
   assert (pure (list_preorder #task_t [] [] /\ True));
@@ -1484,14 +1473,11 @@ fn setup_pool
   let p = {lk; runnable; g_runnable};
 
   rewrite each lk as p.lk;
-  rewrite each g_runnable as p.g_runnable;
-  rewrite each runnable as p.runnable;
-
   Pulse.Lib.SpinLock.share2 p.lk;
   fold (pool_alive p);
   fold (pool_alive p);
 
-  spawn_workers p #1.0R n;
-
-  p
+  with_workers p n (fun _ -> k p);
+  teardown_pool p;
+  drop_ (pool_done p)
 }
