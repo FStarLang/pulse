@@ -1,5 +1,5 @@
 (*
-   Copyright 2023 Microsoft Research
+   Copyright ANONYMIZED
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@
   *   - Loops are easier and more structured
   *   - There are fewer rewrites and manipulations of existentials
   *
-  * Author: N. Swamy
+  * Author: ANONYMIZED
   *)
 module ZetaHashAccumulator
 #lang-pulse

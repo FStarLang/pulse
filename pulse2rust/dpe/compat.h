@@ -1,4 +1,4 @@
-/* Copyright (c) INRIA and Microsoft Corporation. All rights reserved.
+/* Copyright ANONYMIZED
    Licensed under the Apache 2.0 License. */
 
 #ifndef KRML_COMPAT_H
