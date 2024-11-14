@@ -3,7 +3,7 @@
 This directory contains the F* code described in the paper.
 The code is anonymized, names have been redacted and some comments have been changed or removed entirely.
 
-  - `lib/pulse/core` contains the PulseCore formalization described in Sec. 3.
+  - `lib/pulse/core` contains the PulseCore formalization described in Sec. 3-4.
      A more detailed description of the formalization is below.
 
 The PulseCore formalization is written in pure F* and can be checked using `make -C lib/pulse/core`.
@@ -21,7 +21,7 @@ which is neither part of the paper nor part of this submission.
 
 ## A Tour of the Formalization of PulseCore
 
-`lib/pulse/core` contains the formalization of PulseCore presented in Section 3 of
+`lib/pulse/core` contains the formalization of PulseCore presented in Sections 3-4 of
 the paper.
 
 As mentioned in the paper, the presentation in the paper is more abstract and
