@@ -860,7 +860,7 @@ let select_refine_pre (#meta:erased bool) (#a:_) (#p:_)
                     let Ref _ _ _ v_r = select_addr hr ad in
                     assert (composable p v_l v_r);
                     select_join #meta r x h0 hl hr;
-                    assert (op p v_l v_r == v); //NS: this one seems to be fragile, without the lemma call above
+                    assert (op p v_l v_r == v); //ANONYMIZED: this one seems to be fragile, without the lemma call above
                     assert (compatible p x v_l);
                     let aux (frame_l:a)
                       : Lemma

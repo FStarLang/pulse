@@ -320,7 +320,7 @@ fn reclaim (#h:hash_value_t) (s:ha)
 // Note, I had first tried a vairant of this with a refinement on wi
 // in the invariant to constrain its length, but that led to various problems.
 // I should try that again and open issues. 
-#push-options "--retry 2 --ext 'pulse:rvalues'" // GM: Part of this VC fails on batch mode, not on ide...
+#push-options "--retry 2 --ext 'pulse:rvalues'" // ANONYMIZED: Part of this VC fails on batch mode, not on ide...
 
 fn aggregate_raw_hashes (#s1 #s2:e_raw_hash_value_t)
                         (b1 b2: hash_value_buf)
