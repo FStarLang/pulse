@@ -33,11 +33,12 @@ let laws ()
 
 let state0 (e:inames) : Sem.state u#4 = {
     s = Sep.full_mem;
+    budget = Sep.budget;
     pred = slprop;
     emp = emp;
     star = star;
-    interp = (fun p m -> interp p m.m);
-    invariant = (fun m -> mem_invariant e m.m);
+    interp;
+    invariant = mem_invariant e;
     laws = laws ();
 }
 
