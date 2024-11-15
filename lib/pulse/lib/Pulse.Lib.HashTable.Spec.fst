@@ -1,5 +1,5 @@
 (*
-   Copyright 2023 Microsoft Research
+   Copyright ANONYMIZED
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -601,7 +601,7 @@ let rec insert_repr_walk #kt #vt #sz (#spec : erased (spec_t kt vt))
           // Don't need these asserts
           let cidx = canonical_index k repr in
           assert (all_used_not_by repr cidx off k);
-          // GM: Removing this assert, not needed now it seems
+          // ANONYMIZED: Removing this assert, not needed now it seems
           //assert (if idx >= cidx then i > idx || i <= cidx else i > idx /\ i <= cidx);
           assert (all_used_not_by (del_ repr i) cidx off k);
           (**)lemma_zombie_upd #_ #_ #sz (spec -- k) (del_ repr i) off k v;

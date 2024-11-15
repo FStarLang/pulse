@@ -1,159 +1,54 @@
-# The Pulse separation logic DSL for F*
+# Supplementary material for the paper "PulseCore: An Impredicative Concurrent Separation Logic for Dependently Typed Programs"
 
-For documentation on how to use Pulse, see https://fstar-lang.org/tutorial/book/pulse/pulse.html#pulse-proof-oriented-programming-in-concurrent-separation-logic
+This directory contains the F* code described in the paper.
+The code is anonymized, names have been redacted and some comments have been changed or removed entirely.
 
-## Layout
+  - `lib/pulse/core` contains the PulseCore formalization described in Sec. 3-4.
+     A more detailed description of the formalization is below.
 
-This repository has been designed to closely follow the Filesystem
-Hierarchy Standard (FHS), so that it can be used the same way in all
-the following cases:
-* direct use of the Pulse repository clone
-* installation into a FHS-like hierarchy (e.g. `/usr/local`)
-* installation as an _opam_ package, using the _opam_ package manager for
-  OCaml
+The PulseCore formalization is written in pure F* and can be checked using `make -C lib/pulse/core`.
+This requires an F* version built from a git version from November 13th 2024.
 
-In all cases, a Pulse installation (or the Pulse repository clone) is
-laid out as follows:
+Compiling the other parts of the supplementary material would require the Pulse plugin,
+which is neither part of the paper nor part of this submission.
 
-* in `lib/pulse`:
-  * the theoretical foundations of Pulse, in `core` (namespace `PulseCore`)
-  * the interface powering the Pulse DSL, `Pulse.Main.fsti`
-  * the Pulse standard library, in `lib` (namespace `Pulse.Lib`), with
-    some subdirectories for typeclasses (in `class`, namespace
-    `Pulse.Class`) and pledges (in `pledge`), and for the OCaml
-    runtime implementation of Pulse references, etc. (in `ml`)
-  * the Pulse F* plugin, `pulse.cmxs`, containing the Pulse
-    tactics, and the Pulse and PulseC extraction to krml, is installed
-    here
-  * the PulseC F* modules of the `Pulse.C` namespace (in `c`)
+  - `share/pulse/examples/PulseCorePaper.S2.Lock.fst` contains the spinlock example from Sec 2
+  - `lib/pulse/lib/Pulse.Lib.Task.fst` contains the task pool from Sec. 5.1
+  - `share/pulse/examples/Quicksort.Task.fst` contains the parallel quicksort from Sec. 5.2
+  - `lib/pulse/lib/Pulse.Lib.ConditionVar.fst` contains the barrier from Sec. 5.3
+  - `share/pulse/examples/dice/dpe` contains the DPE implementation from Sec. 5.4
+    - `pulse2rust/dpe/src` contains the Rust code extracted from this DPE implementation
 
-* in `share/pulse`: `Makefile.include`, the GNU Make rules to verify
-  Pulse code
+## A Tour of the Formalization of PulseCore
 
-In addition, `share/pulse/examples` also contains all examples and
-tests, but those are not installed as of now.
+`lib/pulse/core` contains the formalization of PulseCore presented in Sections 3-4 of
+the paper.
 
-The only exception is Pulse2Rust, which is still in its own directory,
-and is not installed as of now, due to its dependency on the Rust
-toolchain.
+As mentioned in the paper, the presentation in the paper is more abstract and
+uses a more mathematical notation than the code. It also omits a few
+technicalities that the code deals with. This README aims to relate concepts in
+the paper to the code.
 
-## Prerequisites
+* `PulseCore.BaseHeapSig`: Defines the product of the core heap and erased core heap
 
-* Z3 4.8.5 exactly
-* OCaml 4.10 or higher
-* GNU Make
-* A GCC-compatible compiler
-* F* 2023.04.15 or higher (installed via opam or via its source. A
-  binary package is unlikely to work, since Pulse needs to dynamically
-  load a plugin.)
-* Karamel, but only if you are interested in extracting to C. If you
-  are only interested in verifying Pulse code, or extracting to OCaml,
-  then Karamel is not needed.
+* `PulseCore.IndirectionTheory`: Defines the Knot construction from Indirection Theory
 
-## Building (and optionally installing) Pulse
+* `PulseCore.KnotInstantiation`: Defines the instantion of the Knot construction for the Pulse-specific functor
 
-### Building the source
+* `PulseCore.IndirectionTheorySep`: Defines mem, slprop, and the concrete predicates from Sec. 3.3
 
-1. Make sure `fstar.exe` is in your `PATH`. If F* was installed with
-   opam, you may need to run `eval $(opam env)`. If F* is not in your
-   `PATH`, set the `FSTAR_HOME` environment variable to the directory
-   where F* was installed (or to the F* source tree), so that the F*
-   executable should be in `$FSTAR_HOME/bin/fstar.exe`.
-2. Run `make -j`
+* `PulseCore.Semantics`: A generic Act-Ret-Par definition for action-tree forests
+  and its interpreter. It's defined generally for an abstract separation logic.
 
-### Building the source and installing to a custom location
+* `PulseCore.InstantiatedSemantics`: Instantiates PulseCore.Semantics with the
+  extended heap derived in IndirectionTheorySep.
 
-1. Follow the instructions above to build Pulse from the source.
-2. Install with `PREFIX=<your prefix> make -j install` . By default,
-   `PREFIX` will be set to `/usr/local`, as per the UNIX custom.
+* `PulseCore.Action`: The `except:set iname { except \cap opens == \emptyset}`
+  parameter is introduced here, allowing an atomic computation's type to speak
+  about the invariants it opens, rather than the invariants that the context
+  must not open.
 
-### Building and installing with opam
+* `PulseCore.Atomic`: A final level of abstraction, packaging actions and action
+  trees into the stt_atomic, stt_ghost, and stt types.
 
-1. Clone the F* repository and install F* with `opam install
-   <path to FStar>/./fstar.opam`. This will build F* and all of its
-   dependencies (including Z3)
-   
-   (Right now the F* release on the opam package repository is too
-   old. Once version 2023.04.15 or later is made available on the opam
-   repository, cloning the F* repository will no longer be necessary,
-   and `opam install fstar` should be enough for this step.)
-   
-2. Build and install Pulse with `opam install ./pulse.opam`
-
-## Using Pulse
-
-### Writing a Makefile to verify Pulse code
-
-Pulse comes with `share/pulse/Makefile.include` (which is also
-properly installed by `make install` or via opam), which contains the
-GNU Make rules to call F* with the Pulse include path and the Pulse
-plugin loaded.
-
-1. Make sure `fstar.exe` is in your `PATH`. If F* was installed with
-   opam, you may need to run `eval $(opam env)`. Alternatively,
-   instead of having F* in your `PATH`, you can also set the
-   `FSTAR_HOME` environment variable to the directory where F* was
-   installed (or to the F* source tree), so that the F* executable
-   should be in `$FSTAR_HOME/bin/fstar.exe`.
-
-2. Define the `PULSE_HOME` environment variable. This should be one of the following:
-   * If used directly from source: The root directory of your clone of the Pulse repository
-   * If installed with `make install`: The PREFIX directory used when installing Pulse
-   * If installed with `opam`: The prefix directory of the opam
-     switch where Pulse was installed, obtained with `opam config var prefix`
- 
-3. (Optional) In your Makefile, define the following variables with `+=` or `:=` :
-   * `SRC_DIRS`: the directories containing the source `.fst` and
-     `.fsti` files of your project, in addition to the current
-     directory.
-   * `FSTAR_FILES`: the F* files to verify. By default, those are the
-     `*.fst` and `*.fsti` files from the directories in `SRC_DIRS`
-   * `INCLUDE_PATHS`: the paths to include for verification with F*'s
-     `--include` option. By default, those are the Pulse library
-     include paths and `SRC_DIRS`.
-     * If you want to use PulseC, add `$PULSE_HOME/lib/pulse/c` to
-       this variable.
-   * `ALREADY_CACHED_LIST`: the comma-separated list of namespaces
-     that are assumed to be already cached. By default
-     `Prims,FStar,PulseCore,Pulse`, but if all of your source files
-     are in the same namespace, you can override this variable with
-     something like `*,-MyNamespace`
-   * `OTHERFLAGS`: additional options to pass to F*.
-   * `FSTAR_DEP_OPTIONS`: additional options to pass to F* to compute
-     dependencies (in addition to `FSTAR_OPTIONS`), such as `--extract`
-   * `FSTAR_ML_CODEGEN`: useful only if you want to extract OCaml
-     code. If you want to extract a F* plugin, set this option to
-     `Plugin`. Otherwise, it is set by default to `OCaml`.
-
-4. After those variable definitions, insert `include
-   $PULSE_HOME/share/pulse/Makefile.include` to your Makefile.
-
-5. In your project directory, run `make -j verify`
-
-### Calling F* directly
-
-If you already have an existing `Makefile` for your Pulse-based
-project, you now need to pass new options to your Makefile to use
-Pulse from this repository, as described in this section.
-
-To call F* with Pulse:
-
-1. Make sure F* and Pulse are properly located, following steps 1 and 2 above.
-2. Pass the following options to F*:
-   * in all cases, `--include $PULSE_HOME/lib/pulse`
-   * if you want to use PulseC, add `--include $PULSE_HOME/lib/pulse/c`
-
-### Extracting Pulse code to C or OCaml
-
-The rule to extract `*.krml` files is already in the
-`share/pulse/Makefile.include` file distributed and installed with
-Pulse. To learn how to run Karamel, you can have a look at the
-PulseCPointStruct example in `share/pulse/examples/Makefile`.
-
-The rule to extract `*.ml` files is already in the
-`share/pulse/Makefile.include` file distributed and installed with
-Pulse. TODO: add a compilation example for OCaml.
-
-## Developer's guide
-
-If you want to contribute to Pulse, please read `CONTRIBUTING.md`
+* `Pulse.Lib.Core`: Contains the definition `later_credit_buy`.

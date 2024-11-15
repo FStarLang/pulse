@@ -1,5 +1,5 @@
 (*
-   Copyright 2024 Microsoft Research
+   Copyright ANONYMIZED
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -93,9 +93,9 @@ let pnst_sep (st:state u#s) (a:Type u#a) (pre:st.pred) (post:a -> st.pred) =
  *  However, we augment them with two features:
  *   1. they have pre-condition [pre] and post-condition [post]
  *   2. their type guarantees that they are frameable
- *  Thanks to Matt Parkinson for suggesting to set up atomic actions
+ *  Thanks to ANONYMIZED for suggesting to set up atomic actions
  *  as frame-preserving steps.
- *  Also see: https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/views.pdf
+ *  Also see: ANONYMIZED
  *)
 noeq
 type action (st:state u#s) (a:Type u#a) : Type u#(max a s) = {

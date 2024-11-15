@@ -45,7 +45,7 @@ val hash :
   input_len:U32.t {A.length input = U32.v input_len /\ U32.v input_len `less_than_max_input_length` a} ->
   stt unit
   (requires
-    EverCrypt.AutoConfig2.initialized ** // see https://github.com/hacl-star/hacl-star/blob/59723f7dde13bd7b7eb90491f1385b4e3ee2904f/providers/evercrypt/fst/EverCrypt.Hash.Incremental.fst#L292-L294
+    EverCrypt.AutoConfig2.initialized ** // see ANONYMIZED
     pts_to input #p_input v_input **
       (exists* v_output . pts_to output v_output)
   )
