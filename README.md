@@ -15,6 +15,7 @@ which is neither part of the paper nor part of this submission.
   - `share/pulse/examples/PulseCorePaper.S2.Lock.fst` contains the spinlock example from Sec 2
   - `lib/pulse/lib/Pulse.Lib.Task.fst` contains the task pool from Sec. 5.1
   - `share/pulse/examples/Quicksort.Task.fst` contains the parallel quicksort from Sec. 5.2
+    - `qs/` contains its extracted code, which can be run with OCaml 5.1.1
   - `lib/pulse/lib/Pulse.Lib.ConditionVar.fst` contains the barrier from Sec. 5.3
   - `share/pulse/examples/dice/dpe` contains the DPE implementation from Sec. 5.4
     - `pulse2rust/dpe/src` contains the Rust code extracted from this DPE implementation
