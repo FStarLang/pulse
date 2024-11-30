@@ -37,6 +37,24 @@
           };
         };
 
+        packages.pulse-dune = pkgs.ocaml-ng.ocamlPackages_4_14.buildDunePackage rec {
+
+          pname = "pulse-dune";
+          version = "2024.06.02";
+          sourceRoot = "${src.name}/src/ocaml";
+
+          src = pkgs.fetchFromGitHub {
+            owner = "FStarLang";
+            repo = pname;
+            rev = "v${version}";
+            hash = "sha256-jRm21FtPorAW/eQlXbqPyo2Ev0Kdv0evvGmSoPpNE7A=";
+          };
+
+          inherit (inputs.fstar.packages.${system}.fstar-dune) nativeBuildInputs;
+
+          buildInputs = inputs.fstar.packages.${system}.fstar-dune.buildInputs ++ [ inputs.fstar.packages.${system}.fstar-dune ];
+
+        };
         devShells = {
           default = inputs.devenv.lib.mkShell {
             inherit inputs pkgs;
