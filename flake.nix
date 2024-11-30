@@ -83,6 +83,20 @@
           '';
 
         };
+
+        packages.pulse-exe = pkgs.writeShellScriptBin "pulse.exe" ''
+          exec ${inputs.fstar.packages.${system}.fstar}/bin/fstar.exe "$1" \
+            --include ${config.packages.pulse}/lib/pulse \
+            --include ${config.packages.pulse}/lib/pulse/c \
+            --include ${config.packages.pulse}/lib/pulse/core \
+            --include ${config.packages.pulse}/lib/pulse/lib \
+            --include ${config.packages.pulse}/lib/pulse/lib/class \
+            --include ${config.packages.pulse}/lib/pulse/lib/ml \
+            --include ${config.packages.pulse}/lib/pulse/lib/pledge \
+            --load_cmxs pulse \
+            "$@"
+        '';
+
         devShells = {
           default = inputs.devenv.lib.mkShell {
             inherit inputs pkgs;
