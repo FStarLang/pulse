@@ -55,6 +55,34 @@
           buildInputs = inputs.fstar.packages.${system}.fstar-dune.buildInputs ++ [ inputs.fstar.packages.${system}.fstar-dune ];
 
         };
+
+        packages.pulse = pkgs.stdenv.mkDerivation rec {
+
+          pname = "pulse";
+          version = "2024.06.02";
+
+          src = pkgs.fetchFromGitHub {
+            owner = "FStarLang";
+            repo = pname;
+            rev = "v${version}";
+            hash = "sha256-jRm21FtPorAW/eQlXbqPyo2Ev0Kdv0evvGmSoPpNE7A=";
+          };
+
+          inherit (inputs.fstar.packages.${system}.fstar-dune) nativeBuildInputs;
+
+          buildInputs = inputs.fstar.packages.${system}.fstar-dune.buildInputs ++ [
+            inputs.fstar.packages.${system}.fstar
+            pkgs.which
+          ];
+          PATH = "${inputs.fstar.packages.${system}.fstar}/bin:$PATH";
+
+          enableParallelBuilding = true;
+
+          installPhase = ''
+            PREFIX=$out make install
+          '';
+
+        };
         devShells = {
           default = inputs.devenv.lib.mkShell {
             inherit inputs pkgs;
