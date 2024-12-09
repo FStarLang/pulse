@@ -103,22 +103,9 @@
             modules = [
               {
                 # https://devenv.sh/reference/options/
-                packages = [
-                  inputs.fstar.packages.${system}.z3
-                ] ++ (with inputs.fstar.packages.${system}.ocamlPackages; [
-                  menhir
-                  batteries
-                  menhirLib
-                  pprint
-                  ppx_deriving
-                  ppx_deriving_yojson
-                  ppxlib
-                  process
-                  sedlex
-                  stdint
-                  yojson
-                  zarith
-                ]);
+                packages = with inputs.fstar.packages.${system}; [ z3 ]
+                  ++ fstar-dune.buildInputs
+                  ++ fstar-dune.nativeBuildInputs;
 
                 env.OCAMLPATH = "${inputs.fstar.packages.${system}.fstar}/lib/ocaml/4.14.1/site-lib";
                 env.PULSE_HOME = ".";
