@@ -1,13 +1,12 @@
 {
   inputs = {
-    nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
-    systems.url = "github:nix-systems/default";
-    fstar.url = "github:FStarLang/FStar/a94456863e3f971a7c63a64aca1a07d2cd9eb9a1";
-    devenv.url = "github:cachix/devenv";
     devenv.inputs.nixpkgs.follows = "nixpkgs";
+    devenv.url = "github:cachix/devenv";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    treefmt-nix.url = "github:numtide/treefmt-nix";
+    fstar.url = "github:FStarLang/FStar/a94456863e3f971a7c63a64aca1a07d2cd9eb9a1";
+    nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
   };
 
   nixConfig = {
