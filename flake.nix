@@ -39,7 +39,7 @@
 
         packages.pulse-dune = pkgs.ocaml-ng.ocamlPackages_4_14.buildDunePackage rec {
 
-          pname = "pulse-dune";
+          pname = "pulse";
           version = "2024.06.02";
           sourceRoot = "${src.name}/src/ocaml";
 
