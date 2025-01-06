@@ -125,7 +125,8 @@
                     --include ./lib/pulse/lib/pulse \
                     --include ./lib/pulse/lib/pulse/core \
                     --include ./lib/pulse/lib/pulse/lib \
-                    --load_cmxs lib/pulse/pulse
+                    --load_cmxs lib/pulse/pulse \
+                    "$@"
                 '';
               }
             ];
