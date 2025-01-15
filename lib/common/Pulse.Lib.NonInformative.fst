@@ -29,8 +29,8 @@ instance non_informative_tuple2
   (d1 : non_informative a)
   (d2 : non_informative b)
   : non_informative (a & b) = {
-  reveal = (fun p -> (d1.reveal (Ghost.elift1 Mktuple2?._1 p),
-                      d2.reveal (Ghost.elift1 Mktuple2?._2 p)));
+  reveal = (fun p -> (d1.reveal (hide <| Mktuple2?._1 p),
+                      d2.reveal (hide <| Mktuple2?._2 p)));
 }
 
 instance non_informative_tuple3
@@ -39,9 +39,9 @@ instance non_informative_tuple3
   (d2 : non_informative b)
   (d3 : non_informative c)
   : non_informative (a & b & c) = {
-  reveal = (fun p -> (d1.reveal (Ghost.elift1 Mktuple3?._1 p),
-                      d2.reveal (Ghost.elift1 Mktuple3?._2 p),
-                      d3.reveal (Ghost.elift1 Mktuple3?._3 p)));
+  reveal = (fun p -> (d1.reveal (hide <| Mktuple3?._1 p),
+                      d2.reveal (hide <| Mktuple3?._2 p),
+                      d3.reveal (hide <| Mktuple3?._3 p)));
 }
 
 instance non_informative_tuple4
@@ -51,10 +51,10 @@ instance non_informative_tuple4
   (d3 : non_informative c)
   (d4 : non_informative d)
   : non_informative (a & b & c & d) = {
-  reveal = (fun p -> (d1.reveal (Ghost.elift1 Mktuple4?._1 p),
-                      d2.reveal (Ghost.elift1 Mktuple4?._2 p),
-                      d3.reveal (Ghost.elift1 Mktuple4?._3 p),
-                      d4.reveal (Ghost.elift1 Mktuple4?._4 p)));
+  reveal = (fun p -> (d1.reveal (hide <| Mktuple4?._1 p),
+                      d2.reveal (hide <| Mktuple4?._2 p),
+                      d3.reveal (hide <| Mktuple4?._3 p),
+                      d4.reveal (hide <| Mktuple4?._4 p)));
 }
 
 instance non_informative_tuple5
@@ -65,11 +65,11 @@ instance non_informative_tuple5
   (d4 : non_informative d)
   (d5 : non_informative e)
   : non_informative (a & b & c & d & e) = {
-  reveal = (fun p -> (d1.reveal (Ghost.elift1 Mktuple5?._1 p),
-                      d2.reveal (Ghost.elift1 Mktuple5?._2 p),
-                      d3.reveal (Ghost.elift1 Mktuple5?._3 p),
-                      d4.reveal (Ghost.elift1 Mktuple5?._4 p),
-                      d5.reveal (Ghost.elift1 Mktuple5?._5 p)));
+  reveal = (fun p -> (d1.reveal (hide <| Mktuple5?._1 p),
+                      d2.reveal (hide <| Mktuple5?._2 p),
+                      d3.reveal (hide <| Mktuple5?._3 p),
+                      d4.reveal (hide <| Mktuple5?._4 p),
+                      d5.reveal (hide <| Mktuple5?._5 p)));
 }
 
 instance non_informative_tuple6
@@ -81,12 +81,12 @@ instance non_informative_tuple6
   (d5 : non_informative e)
   (d6 : non_informative f)
   : non_informative (a & b & c & d & e & f) = {
-  reveal = (fun p -> (d1.reveal (Ghost.elift1 Mktuple6?._1 p),
-                      d2.reveal (Ghost.elift1 Mktuple6?._2 p),
-                      d3.reveal (Ghost.elift1 Mktuple6?._3 p),
-                      d4.reveal (Ghost.elift1 Mktuple6?._4 p),
-                      d5.reveal (Ghost.elift1 Mktuple6?._5 p),
-                      d6.reveal (Ghost.elift1 Mktuple6?._6 p)));
+  reveal = (fun p -> (d1.reveal (hide <| Mktuple6?._1 p),
+                      d2.reveal (hide <| Mktuple6?._2 p),
+                      d3.reveal (hide <| Mktuple6?._3 p),
+                      d4.reveal (hide <| Mktuple6?._4 p),
+                      d5.reveal (hide <| Mktuple6?._5 p),
+                      d6.reveal (hide <| Mktuple6?._6 p)));
 }
 
 instance non_informative_tuple7
@@ -99,11 +99,11 @@ instance non_informative_tuple7
   (d6 : non_informative f)
   (d7 : non_informative g)
   : non_informative (a & b & c & d & e & f & g) = {
-  reveal = (fun p -> (d1.reveal (Ghost.elift1 Mktuple7?._1 p),
-                      d2.reveal (Ghost.elift1 Mktuple7?._2 p),
-                      d3.reveal (Ghost.elift1 Mktuple7?._3 p),
-                      d4.reveal (Ghost.elift1 Mktuple7?._4 p),
-                      d5.reveal (Ghost.elift1 Mktuple7?._5 p),
-                      d6.reveal (Ghost.elift1 Mktuple7?._6 p),
-                      d7.reveal (Ghost.elift1 Mktuple7?._7 p)));
+  reveal = (fun p -> (d1.reveal (hide <| Mktuple7?._1 p),
+                      d2.reveal (hide <| Mktuple7?._2 p),
+                      d3.reveal (hide <| Mktuple7?._3 p),
+                      d4.reveal (hide <| Mktuple7?._4 p),
+                      d5.reveal (hide <| Mktuple7?._5 p),
+                      d6.reveal (hide <| Mktuple7?._6 p),
+                      d7.reveal (hide <| Mktuple7?._7 p)));
 }

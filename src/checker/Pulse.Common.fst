@@ -60,7 +60,7 @@ let rec zip #a #b l1 l2 = match l1, l2 with
     | x::xs, y::ys -> (x,y) :: (zip xs ys)
     | _ -> []
 
-let rec map_opt f l = match l with
+let rec map_opt (f: 'a -> option 'b) (l: list 'a) : option (list 'b) = match l with
   | [] -> Some []
   | x::xs ->
     let? y = f x in

@@ -17,7 +17,7 @@
 module PulseCore.PartialNondeterministicHoareStateMonad
 open FStar.Ghost
 type level = n:erased nat & (unit -> Dv (k:nat { k == reveal n }))
-let mk_level (n:nat) : level = (| hide n, fun () -> n |)
+let mk_level (n:nat) : level = (| hide n, ((fun () -> n) <: unit -> Dv (k:nat{k == reveal n})) |)
 
 open PulseCore.HoareStateMonad
 module NST = PulseCore.NondeterministicHoareStateMonad

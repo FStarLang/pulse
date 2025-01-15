@@ -132,14 +132,16 @@ let rec slprop_equiv_typing (#g:_) (#t0 #t1:term) (v:slprop_equiv g t0 t1)
     
     | VE_Fa g x u b t0 t1 d ->
       let d0, d1 = slprop_equiv_typing d in
-      (fun fa0_typing ->
+      ((fun fa0_typing ->
         let b_typing, t0_typing = invert_forall_typing fa0_typing x in
         let t1_typing = d0 t0_typing in
-        construct_forall_typing #g #u x b_typing t1_typing),
-      (fun fa1_typing ->
+        construct_forall_typing #g #u x b_typing t1_typing)
+        <: tot_typing g (tm_forall_sl u b t0) tm_slprop -> tot_typing g (tm_forall_sl u b t1) tm_slprop),
+      ((fun fa1_typing ->
         let b_typing, t1_typing = invert_forall_typing fa1_typing x in
         let t0_typing = d1 t1_typing in
         construct_forall_typing #g #u #b #t0 x b_typing t0_typing)
+        <: tot_typing g (tm_forall_sl u b t1) tm_slprop -> tot_typing g (tm_forall_sl u b t0) tm_slprop)
         
 #push-options "--z3rlimit_factor 8 --ifuel 1 --fuel 2"
 

@@ -219,7 +219,7 @@ let diff g1 g2 =
 
   let g1_bs_rev = L.rev g1.bs in
   let g2_bs_rev = L.rev g2.bs in
-  let g3_bs_rev : G.erased _ = G.elift1 L.rev g3.bs in
+  let g3_bs_rev = Ghost.hide (L.rev g3.bs) in
 
   L.rev_append g3.bs g2.bs;
   assert (g1_bs_rev == g2_bs_rev @ g3_bs_rev);
