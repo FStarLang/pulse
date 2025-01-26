@@ -87,8 +87,10 @@ do-install: plugin lib-pulse
 	# Set up fstar.include so users only include lib/pulse
 	echo 'lib' > $(PREFIX)/lib/pulse/fstar.include
 
-	# Install share/ too, as-is.
+	# Install share/ too, as-is, but remove _cache and _output
 	cp -p -t $(PREFIX) -r share/
+	find $(PREFIX)/share/ -path '**/_cache*' -delete
+	find $(PREFIX)/share/ -path '**/_output*' -delete
 
 .PHONY: clean
 clean:
