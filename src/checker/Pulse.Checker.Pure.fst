@@ -94,13 +94,13 @@ let rtb_instantiate_implicits g f t expected =
   (* WARN: unary dependence, see comment in RU *)
   let t = RU.deep_transform_to_unary_applications t in
   let res, iss = RU.with_context (get_context g) (fun _ -> RTB.instantiate_implicits f t expected) in
-  match res with
+  begin match res with
   | None ->
-    debug g (fun _ -> "Returned from instantiate_implicits: None");
-    res, iss
+    debug g (fun _ -> "Returned from instantiate_implicits: None")
   | Some (_, t, _) ->
-    debug g (fun _ -> Printf.sprintf "Returned from instantiate_implicits: %s" (T.term_to_string t));
-    res, iss
+    debug g (fun _ -> Printf.sprintf "Returned from instantiate_implicits: %s" (Pulse.Show.show t))
+  end;
+  res, iss
 
 let rtb_core_check_term g f e eff t =
   check_ln g "rtb_core_check_term.e" e;
@@ -210,17 +210,22 @@ let instantiate_term_implicits (g:env) (t0:term) (expected:option typ) : Tac _ =
   let rng = RU.range_of_term t0 in
   let f = RU.env_set_range f (Pulse.Typing.Env.get_range g (Some rng)) in
   let topt, issues = catch_all (fun _ -> rtb_instantiate_implicits g f t0 expected) in
-  let fail () =
+  let fail #a issues : Tac a =
     fail_doc_with_subissues g (Some rng) issues [
       prefix 2 1 (text "Could not check term:") (pp t0)
     ]
   in
   match topt with
-  | None -> fail()
+  | None -> fail issues
   | Some (namedvs, t, ty) ->
-    if L.length namedvs <> 0
-    then fail ()
-    else t, ty
+    if L.length namedvs <> 0 then
+      fail [
+        FStar.Issue.mk_issue "Error"
+          (Printf.sprintf "Unexpected named variables in instantiated term (%s)"
+            (Pulse.Show.show (List.Tot.map fst namedvs)))
+        None None []
+      ];
+    t, ty
 
 let instantiate_term_implicits_uvs (g:env) (t0:term) =
   let f = elab_env g in
