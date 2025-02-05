@@ -404,9 +404,7 @@ let fail_doc_env (#a:Type) (with_env:bool) (g:env) (r:option range) (msg:list Pp
     then msg @ [doc_of_string "In typing environment:" ^^ indent (env_to_doc g)]
     else msg
   in
-  let issue = FStar.Issue.mk_issue_doc "Error" msg (Some r) None (ctxt_to_list g) in
-  T.log_issues [issue];
-  T.fail_at "Pulse checker failed." (Some r)
+  T.fail_doc_at msg (Some r)
 
 let warn_doc (g:env) (r:option range) (msg:list Pprint.document) : T.Tac unit =
   let r = get_range g r in
@@ -432,3 +430,15 @@ let warn (g:env) (r:option range) (msg:string) : T.Tac unit =
 
 let info (g:env) (r:option range) (msg:string) =
   info_doc g r [Pprint.arbitrary_string msg]
+
+let fail_doc_with_subissues #a (g:env) (ro : option range)
+  (sub : list Issue.issue)
+  (msg : list document)
+=
+  let msg =
+    msg @
+    [ Pprint.doc_of_string "Issues:" ^^ hardline ^^
+        (List.Tot.map Issue.issue_to_doc sub |>
+         concat) ]
+  in
+  fail_doc g ro msg
