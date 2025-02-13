@@ -17,7 +17,7 @@ module Example.Slice
 #lang-pulse
 open Pulse
 open Pulse.Lib.Trade
-open Pulse.Lib.Slice.Util
+open Pulse.Lib.MutableSlice.Util
 module A = Pulse.Lib.Array
 
 fn test (arr: A.array UInt8.t)
