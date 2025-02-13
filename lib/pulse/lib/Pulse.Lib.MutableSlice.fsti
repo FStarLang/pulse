@@ -14,13 +14,11 @@
    limitations under the License.
 *)
 
-module Pulse.Lib.Slice
+module Pulse.Lib.MutableSlice
 open FStar.Tactics.V2
 open Pulse.Lib.Pervasives
 module SZ = FStar.SizeT
 module A = Pulse.Lib.Array
-module Trade = Pulse.Lib.Trade
-module MS = Pulse.Lib.MutableSlice
 
 val slice ([@@@strictly_positive] elt: Type0) : Type0
 
@@ -46,11 +44,11 @@ val to_array (#t: Type) (s: slice t) (#p: perm) (#v: Seq.seq t) (#a: array t) : 
     (pts_to s #p v ** is_from_array a s)
     (fun _ -> A.pts_to a #p v)
 
-(* BEGIN C only: conversions to/from Pulse.Lib.ConstArrayPtr. Those are
+(* BEGIN C only: conversions to/from Pulse.Lib.ArrayPtr. Those are
    meant to design "clean" C APIs without the need to monomorphize
    the slice type in the extracted .h file. *)
 
-module AP = Pulse.Lib.ConstArrayPtr
+module AP = Pulse.Lib.ArrayPtr
 
 val arrayptr_to_slice
   (#t: Type)
@@ -82,12 +80,6 @@ val slice_to_arrayptr_elim (#t: Type) (a: AP.ptr t) (#p: perm) (#v: Seq.seq t) (
 
 (* END C only *)
 
-val from_mutable_slice
-  (#t: Type) (s: MS.slice t) (#p: perm) (#v: Ghost.erased (Seq.seq t))
-: stt (slice t)
-  (pts_to s #p v)
-  (fun res -> pts_to res #p v ** Trade.trade (pts_to res #p v) (pts_to s #p v))
-
 (* Written x.(i) *)
 val op_Array_Access
         (#t: Type)
@@ -101,6 +93,20 @@ val op_Array_Access
         (ensures fun res ->
             pts_to a #p s **
             pure (res == Seq.index s (SZ.v i)))
+
+
+(* Written a.(i) <- v *)
+val op_Array_Assignment
+        (#t: Type)
+        (a: slice t)
+        (i: SZ.t)
+        (v: t)
+        (#s: Ghost.erased (Seq.seq t) {SZ.v i < Seq.length s})
+  : stt unit
+        (requires
+            pts_to a s)
+        (ensures fun res ->
+            pts_to a (Seq.upd s (SZ.v i) v))
 
 val share
   (#a:Type)
@@ -156,3 +162,7 @@ let subslice_rest #t (r: slice t) (s: slice t) p (i j: SZ.t) (v: erased (Seq.seq
 val subslice #t (s: slice t) #p (i j: SZ.t) (#v: erased (Seq.seq t) { SZ.v i <= SZ.v j /\ SZ.v j <= Seq.length v }) :
   stt (slice t) (pts_to s #p v)
     fun res -> pts_to res #p (Seq.slice v (SZ.v i) (SZ.v j)) ** subslice_rest res s p i j v
+
+val copy (#t: Type) (dst: slice t) (#p: perm) (src: slice t) (#v: Ghost.erased (Seq.seq t)) : stt unit
+    (exists* v_dst . pts_to dst v_dst ** pts_to src #p v ** pure (len src == len dst))
+    (fun _ -> pts_to dst v ** pts_to src #p v)

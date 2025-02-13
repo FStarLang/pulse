@@ -17,7 +17,7 @@
 module Pulse.Lib.Swap.Slice
 open Pulse.Lib.Pervasives
 module SZ = FStar.SizeT
-module S = Pulse.Lib.Slice
+module S = Pulse.Lib.MutableSlice
 
 inline_for_extraction noextract [@@noextract_to "krml"]
 val slice_swap

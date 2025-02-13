@@ -14,11 +14,10 @@
    limitations under the License.
 *)
 
-module Pulse.Lib.Slice
+module Pulse.Lib.MutableSlice
 #lang-pulse
 
-module AP = Pulse.Lib.ConstArrayPtr
-module Trade = Pulse.Lib.Trade.Util
+module AP = Pulse.Lib.ArrayPtr
 
 noeq
 type slice t = {
@@ -160,39 +159,6 @@ ensures
   fold_pts_to s #p v
 }
 
-fn from_mutable_slice
-  (#t: Type) (s: MS.slice t) (#p: perm) (#v: Ghost.erased (Seq.seq t))
-requires
-  pts_to s #p v
-returns res: slice t
-ensures
-  pts_to res #p v ** Trade.trade (pts_to res #p v) (pts_to s #p v)
-{
-  let len = MS.len s;
-  MS.pts_to_len s;
-  let a = MS.slice_to_arrayptr_intro s;
-  ghost fn aux (_: unit)
-  requires MS.slice_to_arrayptr s a ** pts_to a #p v
-  ensures pts_to s #p v
-  {
-    MS.slice_to_arrayptr_elim a;
-  };
-  Trade.intro _ _ _ aux;
-  let ca = AP.from_arrayptr a;
-  Trade.trans _ _ (pts_to s #p v);
-  let res = arrayptr_to_slice_intro ca len;
-  pts_to_len res;
-  ghost fn aux2 (_: unit)
-  requires arrayptr_to_slice ca res ** pts_to res #p v
-  ensures pts_to ca #p v
-  {
-    arrayptr_to_slice_elim res
-  };
-  Trade.intro _ _ _ aux2;
-  Trade.trans _ _ (pts_to s #p v);
-  res
-}
-
 fn op_Array_Access
         (#t: Type)
         (a: slice t)
@@ -210,6 +176,22 @@ ensures
     let res = AP.op_Array_Access a.elt i;
     fold_pts_to a #p s;
     res
+}
+
+fn op_Array_Assignment
+        (#t: Type)
+        (a: slice t)
+        (i: SZ.t)
+        (v: t)
+        (#s: Ghost.erased (Seq.seq t) {SZ.v i < Seq.length s})
+        requires
+            pts_to a s
+        ensures
+            pts_to a (Seq.upd s (SZ.v i) v)
+{
+    unfold_pts_to a s;
+    AP.op_Array_Assignment a.elt i v;
+    fold_pts_to a (Seq.upd s (SZ.v i) v)
 }
 
 ghost
@@ -339,4 +321,22 @@ fn subslice #t (s: slice t) #p (i j: SZ.t) (#v: erased (Seq.seq t) { SZ.v i <= S
   fold_pts_to s3 #p (Seq.slice v (SZ.v j) (Seq.length v));
   fold subslice_rest;
   ({ elt = elt'; len = SZ.sub j i })
+}
+
+fn copy
+  (#t: Type) (dst: slice t) (#p: perm) (src: slice t) (#v: Ghost.erased (Seq.seq t))
+requires
+  (exists* v_dst . pts_to dst v_dst ** pts_to src #p v ** pure (len src == len dst))
+ensures
+  (pts_to dst v ** pts_to src #p v)
+{
+  with v_dst . assert (pts_to dst v_dst);
+  unfold_pts_to dst v_dst;
+  unfold_pts_to src #p v;
+  AP.memcpy src.elt 0sz dst.elt 0sz src.len;
+  fold_pts_to src #p v;
+  assert pure (v `Seq.equal`
+    Seq.append (Seq.slice v 0 (SZ.v src.len))
+      (Seq.slice v_dst (SZ.v src.len) (Seq.length v_dst)));
+  fold_pts_to dst v
 }
