@@ -185,6 +185,10 @@ let rec extract_mlty (g:env) (t:S.mlty) : typ =
     mk_slice is_mut arg
   | S.MLTY_Named ([arg], p)
     when S.string_of_mlpath p = "Pulse.Lib.Slice.slice" ->
+    let is_mut = false in
+    mk_slice is_mut arg
+  | S.MLTY_Named ([arg], p)
+    when S.string_of_mlpath p = "Pulse.Lib.MutableSlice.slice" ->
     let is_mut = true in
     mk_slice is_mut arg
   | S.MLTY_Named ([arg; _], p)
@@ -612,6 +616,7 @@ and extract_mlexpr (g:env) (e:S.mlexpr) : expr =
     when S.string_of_mlpath p = "Pulse.Lib.Array.Core.op_Array_Access" ||
          S.string_of_mlpath p = "Pulse.Lib.Array.Core.pts_to_range_index" ||
          S.string_of_mlpath p = "Pulse.Lib.Slice.op_Array_Access" ||
+         S.string_of_mlpath p = "Pulse.Lib.MutableSlice.op_Array_Access" ||
          S.string_of_mlpath p = "Pulse.Lib.Vec.op_Array_Access" ||
          S.string_of_mlpath p = "Pulse.Lib.Vec.read_ref" ->
 
@@ -620,7 +625,7 @@ and extract_mlexpr (g:env) (e:S.mlexpr) : expr =
   | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, e1::e2::e3::_)
     when S.string_of_mlpath p = "Pulse.Lib.Array.Core.op_Array_Assignment" ||
          S.string_of_mlpath p = "Pulse.Lib.Array.Core.pts_to_range_upd" ||
-         S.string_of_mlpath p = "Pulse.Lib.Slice.op_Array_Assignment" ||
+         S.string_of_mlpath p = "Pulse.Lib.MutableSlice.op_Array_Assignment" ||
          S.string_of_mlpath p = "Pulse.Lib.Vec.op_Array_Assignment" ||
          S.string_of_mlpath p = "Pulse.Lib.Vec.write_ref" ->
 
@@ -648,20 +653,30 @@ and extract_mlexpr (g:env) (e:S.mlexpr) : expr =
                    (extract_mlexpr g e_x)
 
   | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, e::_)
-    when S.string_of_mlpath p = "Pulse.Lib.Slice.from_array" ->
+    when S.string_of_mlpath p = "Pulse.Lib.Slice.from_array"
+     || S.string_of_mlpath p = "Pulse.Lib.MutableSlice.from_array"
+    ->
     extract_mlexpr g e
   | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, e::_::i::_)
-    when S.string_of_mlpath p = "Pulse.Lib.Slice.split" ->
+    when S.string_of_mlpath p = "Pulse.Lib.Slice.split"
+    ||  S.string_of_mlpath p = "Pulse.Lib.MutableSlice.split"
+    ->
     mk_method_call (extract_mlexpr g e) "split_at_mut" [extract_mlexpr g i]
   | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, s::_::a::b::_)
     when S.string_of_mlpath p = "Pulse.Lib.Slice.subslice" ->
+    let mutb = false in
+    mk_reference_expr mutb (mk_expr_index (extract_mlexpr g s) (mk_range (Some (extract_mlexpr g a)) RangeLimitsHalfOpen (Some (extract_mlexpr g b))))
+  | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, s::_::a::b::_)
+    when S.string_of_mlpath p = "Pulse.Lib.MutableSlice.subslice" ->
     let mutb = true in
-    mk_reference_expr true (mk_expr_index (extract_mlexpr g s) (mk_range (Some (extract_mlexpr g a)) RangeLimitsHalfOpen (Some (extract_mlexpr g b))))
+    mk_reference_expr mutb (mk_expr_index (extract_mlexpr g s) (mk_range (Some (extract_mlexpr g a)) RangeLimitsHalfOpen (Some (extract_mlexpr g b))))
   | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, a::_::b::_)
-    when S.string_of_mlpath p = "Pulse.Lib.Slice.copy" ->
+    when S.string_of_mlpath p = "Pulse.Lib.MutableSlice.copy" ->
     mk_method_call (extract_mlexpr g a) "copy_from_slice" [extract_mlexpr g b]
   | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, [a])
-    when S.string_of_mlpath p = "Pulse.Lib.Slice.len" ->
+    when S.string_of_mlpath p = "Pulse.Lib.Slice.len"
+    || S.string_of_mlpath p = "Pulse.Lib.MutableSlice.len"
+    ->
     mk_method_call (extract_mlexpr g a) "len" []
 
     //
