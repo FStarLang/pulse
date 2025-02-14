@@ -14,13 +14,13 @@
    limitations under the License.
 *)
 
-module Pulse.Lib.Slice.Util
+module Pulse.Lib.MutableSlice.Util
 #lang-pulse
 include Pulse.Lib.Pervasives
-include Pulse.Lib.Slice
+include Pulse.Lib.MutableSlice
 include Pulse.Lib.Trade
 
-module S = Pulse.Lib.Slice
+module S = Pulse.Lib.MutableSlice
 module SZ = FStar.SizeT
 
 inline_for_extraction
@@ -214,7 +214,7 @@ fn subslice_trade #t (s: slice t) #p (i j: SZ.t) (#v: erased (Seq.seq t) { SZ.v 
 
 (* BEGIN C only (see comment in Pulse.Lib.Slice) *)
 
-module AP = Pulse.Lib.ConstArrayPtr
+module AP = Pulse.Lib.ArrayPtr
 
 inline_for_extraction
 fn arrayptr_to_slice_intro_trade

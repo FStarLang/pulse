@@ -43,6 +43,11 @@ let pulse_translate_type_without_decay : translate_type_without_decay_t = fun en
      p = "Pulse.Lib.Box.box")
     ->
       TBuf (translate_type_without_decay env arg)
+  | MLTY_Named ([arg], p) when
+    (let p = Syntax.string_of_mlpath p in
+     p = "Pulse.Lib.ConstArrayPtr.ptr")
+    ->
+      TConstBuf (translate_type_without_decay env arg)
   
   | MLTY_Named ([arg; _], p) when Syntax.string_of_mlpath p = "Pulse.Lib.GlobalVar.gvar" ->
       translate_type_without_decay env arg
@@ -128,15 +133,21 @@ let pulse_translate_expr : translate_expr_t = fun env e ->
 
   (* Pulse array pointers (ArrayPtr, as an underlying C extraction for slices *)
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ e; i; _p; _w ])
-    when string_of_mlpath p = "Pulse.Lib.ArrayPtr.op_Array_Access" ->
+    when string_of_mlpath p = "Pulse.Lib.ArrayPtr.op_Array_Access"
+    || string_of_mlpath p = "Pulse.Lib.ConstArrayPtr.op_Array_Access"
+    ->
     EBufRead (translate_expr env e, translate_expr env i)
 
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ x; _p; _w ])
-    when string_of_mlpath p = "Pulse.Lib.ArrayPtr.from_array" ->
+    when string_of_mlpath p = "Pulse.Lib.ArrayPtr.from_array"
+    || string_of_mlpath p = "Pulse.Lib.ConstArrayPtr.from_array"
+    ->
     translate_expr env x
 
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ a; _p; i; _w ])
-    when string_of_mlpath p = "Pulse.Lib.ArrayPtr.split" ->
+    when string_of_mlpath p = "Pulse.Lib.ArrayPtr.split"
+    || string_of_mlpath p = "Pulse.Lib.ConstArrayPtr.split"
+    ->
     EBufSub (translate_expr env a, translate_expr env i)
 
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, (e :: i :: v :: _))

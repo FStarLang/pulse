@@ -3,11 +3,11 @@ module Pulse.Lib.Sort.Merge.Slice
 open Pulse.Lib.Pervasives
 include Pulse.Lib.Sort.Base
 include Pulse.Lib.Sort.Merge.Spec
-include Pulse.Lib.Slice.Util
+include Pulse.Lib.MutableSlice.Util
 open Pulse.Lib.Sort.Merge.Common
 
 module SM = Pulse.Lib.SeqMatch.Util
-module S = Pulse.Lib.Slice.Util
+module S = Pulse.Lib.MutableSlice.Util
 module AS = Pulse.Lib.Swap.Slice
 module SZ = FStar.SizeT
 module R = Pulse.Lib.Reference

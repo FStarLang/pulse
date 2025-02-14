@@ -13,18 +13,18 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 *)
-module Example.Slice
+module Example.MutableSlice
 #lang-pulse
 open Pulse
 open Pulse.Lib.Trade
-open Pulse.Lib.Slice.Util
+open Pulse.Lib.MutableSlice.Util
 module A = Pulse.Lib.Array
 module UInt8 = FStar.UInt8
 
 fn test (arr: A.array UInt8.t)
     requires pts_to arr seq![0uy; 1uy; 2uy; 3uy; 4uy; 5uy]
     returns res: UInt8.t
-    ensures exists* s. pts_to arr s ** pure (s `Seq.equal` seq![0uy; 1uy; 2uy; 3uy; 4uy; 5uy]) {
+    ensures exists* s. pts_to arr s ** pure (s `Seq.equal` seq![0uy; 5uy; 4uy; 5uy; 4uy; 5uy]) {
   A.pts_to_len arr;
   let slice = from_array arr 6sz;
   let s' = split slice 2sz;
@@ -34,6 +34,7 @@ fn test (arr: A.array UInt8.t)
       share s2;
       let s2' = subslice_trade s2 1sz 4sz;
       let x = s2'.(len s1);
+      s1.(1sz) <- x;
       elim_trade _ _;
       gather s2;
       let s' = split s2 2sz;
@@ -41,6 +42,7 @@ fn test (arr: A.array UInt8.t)
         Mktuple2 s3 s4 -> {
           pts_to_len s3;
           pts_to_len s4;
+          copy s3 s4;
           let y = s3.(0sz);
           let z = s4.(0sz);
           join s3 s4 s2;
