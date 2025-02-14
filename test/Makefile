@@ -18,6 +18,9 @@ $(OUTPUT_DIR)/Example_Hashtable.c: $(addprefix $(OUTPUT_DIR)/,\
 $(OUTPUT_DIR)/Example_MutableSlice.c: $(addprefix $(OUTPUT_DIR)/,\
 	Pulse_Lib_MutableSlice.krml)
 
+$(OUTPUT_DIR)/Example_Slice.c: $(addprefix $(OUTPUT_DIR)/,\
+	Pulse_Lib_Slice.krml)
+
 $(OUTPUT_DIR)/Example_Unreachable.c: $(addprefix $(OUTPUT_DIR)/,\
 	FStar_Pervasives.krml \
 	FStar_Pervasives_Native.krml)
