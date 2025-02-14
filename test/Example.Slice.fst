@@ -19,9 +19,11 @@ open Pulse
 open Pulse.Lib.Trade
 open Pulse.Lib.Slice.Util
 module A = Pulse.Lib.Array
+module UInt8 = FStar.UInt8
 
 fn test (arr: A.array UInt8.t)
     requires pts_to arr seq![0uy; 1uy; 2uy; 3uy; 4uy; 5uy]
+    returns res: UInt8.t
     ensures exists* s. pts_to arr s ** pure (s `Seq.equal` seq![0uy; 1uy; 2uy; 3uy; 4uy; 5uy]) {
   A.pts_to_len arr;
   let slice = from_array arr 6sz;
@@ -39,9 +41,12 @@ fn test (arr: A.array UInt8.t)
         Mktuple2 s3 s4 -> {
           pts_to_len s3;
           pts_to_len s4;
+          let y = s3.(0sz);
+          let z = s4.(0sz);
           join s3 s4 s2;
           join s1 s2 slice;
           to_array slice;
+          (x `UInt8.add` y `UInt8.add` z)
         }
       }
     }

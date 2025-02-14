@@ -64,7 +64,7 @@ static void copy__uint8_t(slice__uint8_t dst, slice__uint8_t src)
   memcpy(dst.elt, src.elt, src.len * sizeof (uint8_t));
 }
 
-void Example_MutableSlice_test(uint8_t *arr)
+uint8_t Example_MutableSlice_test(uint8_t *arr)
 {
   slice__uint8_t slice = from_array__uint8_t(arr, (size_t)6U);
   __Pulse_Lib_MutableSlice_slice_uint8_t_Pulse_Lib_MutableSlice_slice_uint8_t
@@ -80,5 +80,8 @@ void Example_MutableSlice_test(uint8_t *arr)
   slice__uint8_t s3 = s_1.fst;
   slice__uint8_t s4 = s_1.snd;
   copy__uint8_t(s3, s4);
+  uint8_t y = op_Array_Access__uint8_t(s3, (size_t)0U);
+  uint8_t z = op_Array_Access__uint8_t(s4, (size_t)0U);
+  return (uint32_t)x + (uint32_t)y + (uint32_t)z;
 }
 
