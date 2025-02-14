@@ -1,7 +1,7 @@
 /* krml header omitted for test repeatability */
 
 
-#include "Example_Slice.h"
+#include "Example_MutableSlice.h"
 
 typedef struct slice__uint8_t_s
 {
@@ -64,7 +64,7 @@ static void copy__uint8_t(slice__uint8_t dst, slice__uint8_t src)
   memcpy(dst.elt, src.elt, src.len * sizeof (uint8_t));
 }
 
-void Example_Slice_test(uint8_t *arr)
+void Example_MutableSlice_test(uint8_t *arr)
 {
   slice__uint8_t slice = from_array__uint8_t(arr, (size_t)6U);
   __Pulse_Lib_MutableSlice_slice_uint8_t_Pulse_Lib_MutableSlice_slice_uint8_t
