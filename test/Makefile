@@ -36,3 +36,10 @@ $(OUTPUT_DIR)/Example_Unreachable.c: $(addprefix $(OUTPUT_DIR)/,\
 $(OUTPUT_DIR)/%.rs:
 	$(call msg, "KRML RS", $(basename $(notdir $@)))
 	$(KRML_EXE) -header=$(PULSE_ROOT)/mk/krmlheader -bundle $(basename $(notdir $<))=* -skip-compilation $+ -fkeep-tuples -tmpdir $(OUTPUT_DIR) -backend rust
+
+$(OUTPUT_DIR)/example/lib%.rlib: $(OUTPUT_DIR)/example/%.rs
+	$(call msg, "RUSTC", $(basename $(notdir $@)))
+	rustc --crate-type=rlib -o $@ $<
+
+__extract: $(OUTPUT_DIR)/example/libslice.rlib
+__extract: $(OUTPUT_DIR)/example/libmutableslice.rlib
