@@ -55,7 +55,7 @@ jobs:
         with:
           path: karamel
           repository: FStarLang/karamel
-          ref: master
+          ref: _taramana_mutable_slice
 
       - name: Try fetch built karamel
         id: cache-karamel
