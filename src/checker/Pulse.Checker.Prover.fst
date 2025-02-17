@@ -159,10 +159,11 @@ let elim_exists_and_pure (#g:env) (#ctxt:slprop)
            ctxt':term &
            tot_typing g' ctxt' tm_slprop &
            continuation_elaborator g ctxt g' ctxt') =
-  
-  let (| g1, ctxt1, d1, k1 |) = ElimExists.elim_exists ctxt_typing in
-  let (| g2, ctxt2, d2, k2 |) = ElimPure.elim_pure d1 in
-  (| g2, ctxt2, d2, k_elab_trans k1 k2 |)
+
+  let (| ctxt1, equiv, ctxt_typing |) = normalize_slprop_welltyped g ctxt ctxt_typing in
+  let (| g2, ctxt2, d2, k2 |) = ElimExists.elim_exists ctxt_typing in
+  let (| g3, ctxt3, d3, k3 |) = ElimPure.elim_pure d2 in
+  (| g3, ctxt3, d3, k_elab_equiv (k_elab_trans k2 k3) (VE_Sym _ _ _ equiv) (VE_Refl _ _) |)
 
 let unsolved_equiv_pst (#preamble:_) (pst:prover_state preamble) (unsolved':list slprop)
   (d:slprop_equiv (push_env pst.pg pst.uvs) (list_as_slprop pst.unsolved) (list_as_slprop unsolved'))
