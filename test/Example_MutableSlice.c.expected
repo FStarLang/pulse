@@ -59,9 +59,47 @@ static void op_Array_Assignment__uint8_t(slice__uint8_t a, size_t i, uint8_t v)
   a.elt[i] = v;
 }
 
-static void copy__uint8_t(slice__uint8_t dst, slice__uint8_t src)
+static uint8_t *slice_to_arrayptr_intro__uint8_t(slice__uint8_t s)
 {
-  memcpy(dst.elt, src.elt, src.len * sizeof (uint8_t));
+  return s.elt;
+}
+
+typedef struct slice__uint8_t0_s
+{
+  const uint8_t *elt;
+  size_t len;
+}
+slice__uint8_t0;
+
+static slice__uint8_t0 arrayptr_to_slice_intro__uint8_t(const uint8_t *a, size_t alen)
+{
+  return ((slice__uint8_t0){ .elt = a, .len = alen });
+}
+
+static slice__uint8_t0 to_slice__uint8_t(slice__uint8_t s)
+{
+  size_t len1 = len__uint8_t(s);
+  uint8_t *a = slice_to_arrayptr_intro__uint8_t(s);
+  const uint8_t *ca = a;
+  slice__uint8_t0 res = arrayptr_to_slice_intro__uint8_t(ca, len1);
+  return res;
+}
+
+static size_t len__uint8_t0(slice__uint8_t0 s)
+{
+  return s.len;
+}
+
+static const uint8_t *slice_to_arrayptr_intro__uint8_t0(slice__uint8_t0 s)
+{
+  return s.elt;
+}
+
+static void copy__uint8_t(slice__uint8_t dst, slice__uint8_t0 src)
+{
+  size_t slen = len__uint8_t0(src);
+  const uint8_t *ssrc = slice_to_arrayptr_intro__uint8_t0(src);
+  memcpy(dst.elt, ssrc, slen * sizeof (uint8_t));
 }
 
 uint8_t Example_MutableSlice_test(uint8_t *arr)
@@ -79,7 +117,8 @@ uint8_t Example_MutableSlice_test(uint8_t *arr)
   s_1 = split__uint8_t(s2, (size_t)2U);
   slice__uint8_t s3 = s_1.fst;
   slice__uint8_t s4 = s_1.snd;
-  copy__uint8_t(s3, s4);
+  slice__uint8_t0 s4_ = to_slice__uint8_t(s4);
+  copy__uint8_t(s3, s4_);
   uint8_t y = op_Array_Access__uint8_t(s3, (size_t)0U);
   uint8_t z = op_Array_Access__uint8_t(s4, (size_t)0U);
   return (uint32_t)x + (uint32_t)y + (uint32_t)z;

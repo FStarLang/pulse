@@ -20,7 +20,6 @@ open Pulse.Lib.Pervasives
 module SZ = FStar.SizeT
 module A = Pulse.Lib.Array
 module Trade = Pulse.Lib.Trade
-module MS = Pulse.Lib.MutableSlice
 
 val slice ([@@@strictly_positive] elt: Type0) : Type0
 
@@ -81,12 +80,6 @@ val slice_to_arrayptr_elim (#t: Type) (a: AP.ptr t) (#p: perm) (#v: Seq.seq t) (
     (fun _ -> pts_to s #p v)
 
 (* END C only *)
-
-val from_mutable_slice
-  (#t: Type) (s: MS.slice t) (#p: perm) (#v: Ghost.erased (Seq.seq t))
-: stt (slice t)
-  (pts_to s #p v)
-  (fun res -> pts_to res #p v ** Trade.trade (pts_to res #p v) (pts_to s #p v))
 
 (* Written x.(i) *)
 val op_Array_Access

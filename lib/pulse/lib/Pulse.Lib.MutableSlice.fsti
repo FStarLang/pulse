@@ -19,6 +19,8 @@ open FStar.Tactics.V2
 open Pulse.Lib.Pervasives
 module SZ = FStar.SizeT
 module A = Pulse.Lib.Array
+module S = Pulse.Lib.Slice
+module Trade = Pulse.Lib.Trade
 
 val slice ([@@@strictly_positive] elt: Type0) : Type0
 
@@ -79,6 +81,12 @@ val slice_to_arrayptr_elim (#t: Type) (a: AP.ptr t) (#p: perm) (#v: Seq.seq t) (
     (fun _ -> pts_to s #p v)
 
 (* END C only *)
+
+val to_slice
+  (#t: Type) (s: slice t) (#p: perm) (#v: Ghost.erased (Seq.seq t))
+: stt (S.slice t)
+  (pts_to s #p v)
+  (fun res -> pts_to res #p v ** Trade.trade (pts_to res #p v) (pts_to s #p v))
 
 (* Written x.(i) *)
 val op_Array_Access
@@ -163,6 +171,6 @@ val subslice #t (s: slice t) #p (i j: SZ.t) (#v: erased (Seq.seq t) { SZ.v i <= 
   stt (slice t) (pts_to s #p v)
     fun res -> pts_to res #p (Seq.slice v (SZ.v i) (SZ.v j)) ** subslice_rest res s p i j v
 
-val copy (#t: Type) (dst: slice t) (#p: perm) (src: slice t) (#v: Ghost.erased (Seq.seq t)) : stt unit
-    (exists* v_dst . pts_to dst v_dst ** pts_to src #p v ** pure (len src == len dst))
+val copy (#t: Type) (dst: slice t) (#p: perm) (src: S.slice t) (#v: Ghost.erased (Seq.seq t)) : stt unit
+    (exists* v_dst . pts_to dst v_dst ** pts_to src #p v ** pure (S.len src == len dst))
     (fun _ -> pts_to dst v ** pts_to src #p v)

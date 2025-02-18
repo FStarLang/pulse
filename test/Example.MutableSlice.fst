@@ -20,6 +20,8 @@ open Pulse.Lib.Trade
 open Pulse.Lib.MutableSlice.Util
 module A = Pulse.Lib.Array
 module UInt8 = FStar.UInt8
+module S = Pulse.Lib.Slice
+module Trade = Pulse.Lib.Trade.Util
 
 fn test (arr: A.array UInt8.t)
     requires pts_to arr seq![0uy; 1uy; 2uy; 3uy; 4uy; 5uy]
@@ -42,7 +44,10 @@ fn test (arr: A.array UInt8.t)
         Mktuple2 s3 s4 -> {
           pts_to_len s3;
           pts_to_len s4;
-          copy s3 s4;
+          let s4' = to_slice s4;
+          S.pts_to_len s4';
+          copy s3 s4';
+          Trade.elim (pts_to s4' _) _;
           let y = s3.(0sz);
           let z = s4.(0sz);
           join s3 s4 s2;

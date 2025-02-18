@@ -141,6 +141,7 @@ let pulse_translate_expr : translate_expr_t = fun env e ->
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ x; _p; _w ])
     when string_of_mlpath p = "Pulse.Lib.ArrayPtr.from_array"
     || string_of_mlpath p = "Pulse.Lib.ConstArrayPtr.from_array"
+    || string_of_mlpath p = "Pulse.Lib.ConstArrayPtr.from_arrayptr"
     ->
     translate_expr env x
 
@@ -155,7 +156,7 @@ let pulse_translate_expr : translate_expr_t = fun env e ->
     EBufWrite (translate_expr env e, translate_expr env i, translate_expr env v)
 
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ _; e1; e2; e3; e4; e5; _; _ ])
-    when string_of_mlpath p = "Pulse.Lib.ArrayPtr.memcpy" ->
+    when string_of_mlpath p = "Pulse.Lib.ConstArrayPtr.memcpy" ->
     EBufBlit (translate_expr env e1, translate_expr env e2, translate_expr env e3, translate_expr env e4, translate_expr env e5)
 
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ b ])

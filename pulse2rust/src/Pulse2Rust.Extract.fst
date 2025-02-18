@@ -655,6 +655,7 @@ and extract_mlexpr (g:env) (e:S.mlexpr) : expr =
   | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, e::_)
     when S.string_of_mlpath p = "Pulse.Lib.Slice.from_array"
      || S.string_of_mlpath p = "Pulse.Lib.MutableSlice.from_array"
+     || S.string_of_mlpath p = "Pulse.Lib.MutableSlice.to_slice"
     ->
     extract_mlexpr g e
   | S.MLE_App ({expr=S.MLE_TApp ({expr=S.MLE_Name p}, [_])}, e::_::i::_)

@@ -160,39 +160,6 @@ ensures
   fold_pts_to s #p v
 }
 
-fn from_mutable_slice
-  (#t: Type) (s: MS.slice t) (#p: perm) (#v: Ghost.erased (Seq.seq t))
-requires
-  pts_to s #p v
-returns res: slice t
-ensures
-  pts_to res #p v ** Trade.trade (pts_to res #p v) (pts_to s #p v)
-{
-  let len = MS.len s;
-  MS.pts_to_len s;
-  let a = MS.slice_to_arrayptr_intro s;
-  ghost fn aux (_: unit)
-  requires MS.slice_to_arrayptr s a ** pts_to a #p v
-  ensures pts_to s #p v
-  {
-    MS.slice_to_arrayptr_elim a;
-  };
-  Trade.intro _ _ _ aux;
-  let ca = AP.from_arrayptr a;
-  Trade.trans _ _ (pts_to s #p v);
-  let res = arrayptr_to_slice_intro ca len;
-  pts_to_len res;
-  ghost fn aux2 (_: unit)
-  requires arrayptr_to_slice ca res ** pts_to res #p v
-  ensures pts_to ca #p v
-  {
-    arrayptr_to_slice_elim res
-  };
-  Trade.intro _ _ _ aux2;
-  Trade.trans _ _ (pts_to s #p v);
-  res
-}
-
 fn op_Array_Access
         (#t: Type)
         (a: slice t)

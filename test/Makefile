@@ -16,6 +16,7 @@ $(OUTPUT_DIR)/Example_Hashtable.c: $(addprefix $(OUTPUT_DIR)/,\
 	Pulse_Lib_HashTable.krml)
 
 $(OUTPUT_DIR)/Example_MutableSlice.c: $(addprefix $(OUTPUT_DIR)/,\
+	Pulse_Lib_Slice.krml \
 	Pulse_Lib_MutableSlice.krml)
 
 $(OUTPUT_DIR)/Example_Slice.c: $(addprefix $(OUTPUT_DIR)/,\
@@ -23,6 +24,7 @@ $(OUTPUT_DIR)/Example_Slice.c: $(addprefix $(OUTPUT_DIR)/,\
 
 $(OUTPUT_DIR)/example/mutableslice.rs: $(addprefix $(OUTPUT_DIR)/,\
 	Example_MutableSlice.krml \
+	Pulse_Lib_Slice.krml \
 	Pulse_Lib_MutableSlice.krml)
 
 $(OUTPUT_DIR)/example/slice.rs: $(addprefix $(OUTPUT_DIR)/,\

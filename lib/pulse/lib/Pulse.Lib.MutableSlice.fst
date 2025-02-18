@@ -18,6 +18,7 @@ module Pulse.Lib.MutableSlice
 #lang-pulse
 
 module AP = Pulse.Lib.ArrayPtr
+module Trade = Pulse.Lib.Trade.Util
 
 noeq
 type slice t = {
@@ -157,6 +158,41 @@ ensures
 {
   unfold (slice_to_arrayptr s a);
   fold_pts_to s #p v
+}
+
+module CAP = Pulse.Lib.ConstArrayPtr
+
+fn to_slice
+  (#t: Type) (s: slice t) (#p: perm) (#v: Ghost.erased (Seq.seq t))
+requires
+  pts_to s #p v
+returns res: S.slice t
+ensures
+  pts_to res #p v ** Trade.trade (pts_to res #p v) (pts_to s #p v)
+{
+  let len = len s;
+  pts_to_len s;
+  let a = slice_to_arrayptr_intro s;
+  ghost fn aux (_: unit)
+  requires slice_to_arrayptr s a ** pts_to a #p v
+  ensures pts_to s #p v
+  {
+    slice_to_arrayptr_elim a;
+  };
+  Trade.intro _ _ _ aux;
+  let ca = CAP.from_arrayptr a;
+  Trade.trans _ _ (pts_to s #p v);
+  let res = S.arrayptr_to_slice_intro ca len;
+  S.pts_to_len res;
+  ghost fn aux2 (_: unit)
+  requires S.arrayptr_to_slice ca res ** pts_to res #p v
+  ensures pts_to ca #p v
+  {
+    S.arrayptr_to_slice_elim res
+  };
+  Trade.intro _ _ _ aux2;
+  Trade.trans _ _ (pts_to s #p v);
+  res
 }
 
 fn op_Array_Access
@@ -324,19 +360,21 @@ fn subslice #t (s: slice t) #p (i j: SZ.t) (#v: erased (Seq.seq t) { SZ.v i <= S
 }
 
 fn copy
-  (#t: Type) (dst: slice t) (#p: perm) (src: slice t) (#v: Ghost.erased (Seq.seq t))
+  (#t: Type) (dst: slice t) (#p: perm) (src: S.slice t) (#v: Ghost.erased (Seq.seq t))
 requires
-  (exists* v_dst . pts_to dst v_dst ** pts_to src #p v ** pure (len src == len dst))
+  (exists* v_dst . pts_to dst v_dst ** pts_to src #p v ** pure (S.len src == len dst))
 ensures
   (pts_to dst v ** pts_to src #p v)
 {
   with v_dst . assert (pts_to dst v_dst);
   unfold_pts_to dst v_dst;
-  unfold_pts_to src #p v;
-  AP.memcpy src.elt 0sz dst.elt 0sz src.len;
-  fold_pts_to src #p v;
+  S.pts_to_len src;
+  let slen = S.len src;
+  let ssrc = S.slice_to_arrayptr_intro src;
+  CAP.memcpy ssrc 0sz dst.elt 0sz slen;
+  S.slice_to_arrayptr_elim ssrc;
   assert pure (v `Seq.equal`
-    Seq.append (Seq.slice v 0 (SZ.v src.len))
-      (Seq.slice v_dst (SZ.v src.len) (Seq.length v_dst)));
+    Seq.append (Seq.slice v 0 (SZ.v (S.len src)))
+      (Seq.slice v_dst (SZ.v (S.len src)) (Seq.length v_dst)));
   fold_pts_to dst v
 }
