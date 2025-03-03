@@ -16,7 +16,7 @@
 
   outputs = { self, ... }@inputs:
 
-    inputs.flake-parts.lib.mkFlake { inherit inputs; } rec {
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } {
 
       systems = inputs.nixpkgs.lib.systems.flakeExposed;
       imports = [
@@ -40,7 +40,6 @@
 
           pname = "pulse";
           version = "84b3fc39e2ba16059408d4df039d4a03efa85b16";
-
           src = pkgs.fetchFromGitHub {
             owner = "FStarLang";
             repo = pname;
@@ -49,7 +48,6 @@
           };
 
           inherit (inputs.fstar.packages.${system}.fstar) nativeBuildInputs;
-
           buildInputs = inputs.fstar.packages.${system}.fstar.buildInputs ++ [
             inputs.fstar.packages.${system}.fstar
             pkgs.which
@@ -82,30 +80,13 @@
             modules = [
               {
                 # https://devenv.sh/reference/options/
-                packages = with inputs.fstar.packages.${system}; [ z3 ];
-
                 env.FSTAR_EXE = "${inputs.fstar.packages.${system}.fstar}/bin/fstar.exe";
                 env.FSTAR_HOME = "${inputs.fstar.packages.${system}.fstar}/lib/fstar";
                 env.PULSE_HOME = "${config.packages.pulse}/lib/pulse";
-                env.OCAMLPATH = "${inputs.fstar.packages.${system}.fstar}/lib/ocaml/4.14.1/site-lib";
-                enterShell = ''
-                  export PATH="${inputs.fstar.packages.${system}.fstar}/bin:$PATH"
-                '';
 
                 languages.rust = {
                   enable = true;
                 };
-
-                scripts.pulse.exec = ''
-                  fstar.exe $1 \
-                    --include ./lib/pulse/lib/class \
-                    --include ./lib/pulse/lib/pledge \
-                    --include ./lib/pulse/lib/pulse \
-                    --include ./lib/pulse/lib/pulse/core \
-                    --include ./lib/pulse/lib/pulse/lib \
-                    --load_cmxs lib/pulse/pulse \
-                    "$@"
-                '';
               }
             ];
           };
