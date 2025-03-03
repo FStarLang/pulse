@@ -893,6 +893,16 @@ and desugar_binders (env:env_t) (bs:Sugar.binders)
           let rng = b.A.brange in
           let (aq, b, t, attrs) = destruct_binder b in
           let! t = desugar_term env t in
+          if Cons? attrs && not (Options.Ext.enabled "pulse:binder_attrs") then (
+            let open FStarC.Errors.Msg in
+            (* Using "Unused01" error code is a huge hack, but we don't
+            have a way of extending error codes. *)
+            fail_doc [
+              text "NOTE: Pulse does not properly support binder attributes. \
+                    They will be ignored by later stages.";
+              text "This error can be ignored (at your own risk) by passing --ext pulse:binder_attrs."
+            ] (List.hd attrs).range
+          ) else return ();!
           let! attrs = mapM (desugar_term env) attrs in
           let env, bv = push_bv env b in
           let! env, bs, bvs = aux env bs in
