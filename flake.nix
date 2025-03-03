@@ -92,9 +92,8 @@
                   export PATH="${inputs.fstar.packages.${system}.fstar}/bin:$PATH"
                 '';
 
-                languages.ocaml = {
+                languages.rust = {
                   enable = true;
-                  packages = inputs.fstar.packages.${system}.ocamlPackages;
                 };
 
                 scripts.pulse.exec = ''
