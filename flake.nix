@@ -74,6 +74,68 @@
             "$@"
         '';
 
+        packages.rustast-bindings = pkgs.rustPlatform.buildRustPackage rec {
+          inherit (config.packages.pulse) version src;
+          inherit (inputs.fstar.packages.${system}.fstar) nativeBuildInputs;
+          pname = "rustast-bindings";
+          sourceRoot = "${src.name}/pulse2rust/src/ocaml";
+          cargoLock = {
+            lockFile = ./pulse2rust/src/ocaml/Cargo.lock;
+          };
+          postPatch = ''
+            ln -s ${./pulse2rust/src/ocaml/Cargo.lock} Cargo.lock
+          '';
+        };
+
+        packages.extract = pkgs.stdenv.mkDerivation {
+          pname = "extract";
+          inherit (config.packages.pulse) version;
+          src = pkgs.fetchFromGitHub {
+            owner = "FStarLang";
+            repo = "pulse";
+            rev = "42842b823c45f83376b65bc10ffa803ad6f21dc4";
+            hash = "sha256-CRlrfiDXoSn9s0tiU4dunsUsUu00jb8U9/QApfu+Qtw=";
+          };
+          sourceRoot = "source/pulse2rust/src";
+          buildInputs = [
+            inputs.fstar.packages.${system}.fstar
+            pkgs.which
+          ];
+          PATH = "${inputs.fstar.packages.${system}.fstar}/bin:$PATH";
+
+          installPhase = ''
+            mkdir -p $out/ocaml/generated
+            cp -r ocaml/generated $out/ocaml
+          '';
+        };
+
+        packages.pulse2rust = inputs.fstar.inputs.nixpkgs.legacyPackages.${system}.ocaml-ng.ocamlPackages_4_14.buildDunePackage rec {
+          inherit (config.packages.pulse) version src;
+          pname = "main";
+          sourceRoot = "${src.name}/pulse2rust/src/ocaml";
+
+          nativeBuildInputs = inputs.fstar.packages.${system}.fstar.nativeBuildInputs ++ [ inputs.fstar.packages.${system}.fstar ];
+          buildInputs = inputs.fstar.packages.${system}.fstar.buildInputs ++ [ inputs.fstar.packages.${system}.fstar ];
+
+          buildPhase = ''
+            eval $(${inputs.fstar.packages.${system}.fstar}/bin/fstar.exe --ocamlenv)
+            mkdir -p $out/bin
+            dune build main.exe --build-dir=$out/bin
+          '';
+
+          postPatch = ''
+            ln -s ${./pulse2rust/src/dune-project} dune-project
+            ln -s ${config.packages.rustast-bindings}/lib/librustast_bindings.a librustast_bindings.a
+            mkdir -p ocaml/generated
+            cp -r ${config.packages.extract}/ocaml/generated ocaml
+          '';
+
+          # overwrites the default dune installPhase
+          installPhase = '''';
+
+          meta.mainProgram = "default/ocaml/main.exe";
+        };
+
         devShells = {
           default = inputs.devenv.lib.mkShell {
             inherit inputs pkgs;
