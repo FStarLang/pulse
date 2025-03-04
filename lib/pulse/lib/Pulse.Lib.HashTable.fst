@@ -45,10 +45,15 @@ let models_timeless #kt #vt (ht:ht_t kt vt) (pht:pht_t kt vt)
   : Lemma (timeless (models ht pht))
           [SMTPat (timeless (models ht pht))] = ()
 
+(* NOTE: We do not add the Rust attributes in these definitions since
+   1- They anyway be ignored by Pulse (currently, should fix)
+   2- The ones that really matter are the ones in the declarations
+      in the fsti (which currently are, and must be, F* vals).
+*)
 
 fn alloc
-  (#[@@@ Rust_generics_bounds ["Copy"; "PartialEq"; "Clone"]] k:eqtype)
-  (#[@@@ Rust_generics_bounds ["Clone"]] v:Type0)
+  (#k:eqtype)
+  (#v:Type0)
   (hashf:(k -> SZ.t)) (l:pos_us)
   requires pure (SZ.fits (2 `op_Multiply` SZ.v l))
   returns ht:ht_t k v
@@ -63,11 +68,9 @@ fn alloc
   ht
 }
 
-
-
 fn dealloc
-  (#[@@@ Rust_generics_bounds ["Copy"; "PartialEq"; "Clone"]] k:eqtype)
-  (#[@@@ Rust_generics_bounds ["Clone"]] v:Type0)
+  (#k:eqtype)
+  (#v:Type0)
   (ht:ht_t k v)
   requires exists* pht. models ht pht
   ensures emp
@@ -85,8 +88,8 @@ let size_t_mod (x:SZ.t) (y : SZ.t { y =!= 0sz })
 #push-options "--fuel 1 --ifuel 1"
 
 fn lookup
-  (#[@@@ Rust_generics_bounds ["Copy"; "PartialEq"; "Clone"]] kt:eqtype)
-  (#[@@@ Rust_generics_bounds ["Clone"]] vt:Type0)
+  (#kt:eqtype)
+  (#vt:Type0)
   (#pht:erased (pht_t kt vt))
   (ht:ht_t kt vt)
   (k:kt)
@@ -200,8 +203,8 @@ fn lookup
 
 
 fn replace
-  (#[@@@ Rust_generics_bounds ["Copy"; "PartialEq"; "Clone"]] kt:eqtype)
-  (#[@@@ Rust_generics_bounds ["Clone"]] vt:Type0)
+  (#kt:eqtype)
+  (#vt:Type0)
   (#pht:erased (pht_t kt vt))
   (ht:ht_t kt vt)
   (idx:SZ.t)
@@ -244,8 +247,8 @@ fn replace
 
 #push-options "--fuel 1 --ifuel 2 --z3rlimit_factor 4"
 fn insert
-  (#[@@@ Rust_generics_bounds ["Copy"; "PartialEq"; "Clone"]] kt:eqtype)
-  (#[@@@ Rust_generics_bounds ["Clone"]] vt:Type0)
+  (#kt:eqtype)
+  (#vt:Type0)
   (ht:ht_t kt vt) (k:kt) (v:vt)
   (#pht:(p:erased (pht_t kt vt){PHT.not_full p.repr}))
   requires models ht pht
@@ -424,8 +427,8 @@ let is_used
 
 
 fn not_full
-  (#[@@@ Rust_generics_bounds ["Copy"; "PartialEq"; "Clone"]] kt:eqtype)
-  (#[@@@ Rust_generics_bounds ["Clone"]] vt:Type0)
+  (#kt:eqtype)
+  (#vt:Type0)
   (ht:ht_t kt vt)
   (#pht:erased (pht_t kt vt))
 
@@ -492,8 +495,8 @@ fn not_full
 
 
 fn insert_if_not_full
-  (#[@@@ Rust_generics_bounds ["Copy"; "PartialEq"; "Clone"]] kt:eqtype)
-  (#[@@@ Rust_generics_bounds ["Clone"]] vt:Type0)
+  (#kt:eqtype)
+  (#vt:Type0)
   (ht:ht_t kt vt) (k:kt) (v:vt)
   (#pht:erased (PHT.pht_t kt vt))
   requires models ht pht
@@ -522,8 +525,8 @@ fn insert_if_not_full
 
 #push-options "--z3rlimit_factor 4"
 fn delete
-  (#[@@@ Rust_generics_bounds ["Copy"; "PartialEq"; "Clone"]] kt:eqtype)
-  (#[@@@ Rust_generics_bounds ["Clone"]] vt:Type0)
+  (#kt:eqtype)
+  (#vt:Type0)
   (ht:ht_t kt vt) (k:kt)
   (#pht:erased (pht_t kt vt))
 
