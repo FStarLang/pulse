@@ -5,8 +5,6 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     fstar.url = "github:FStarLang/FStar/v2025.02.17";
     nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
-    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
-    treefmt-nix.url = "github:numtide/treefmt-nix";
   };
 
   nixConfig = {
@@ -19,22 +17,9 @@
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
 
       systems = inputs.nixpkgs.lib.systems.flakeExposed;
-      imports = [
-        inputs.treefmt-nix.flakeModule
-      ];
+      imports = [ ];
 
       perSystem = { pkgs, config, system, ... }: {
-
-        treefmt.config = {
-          projectRootFile = "flake.nix";
-          flakeFormatter = true;
-          flakeCheck = true;
-          programs = {
-            nixpkgs-fmt.enable = true;
-            deadnix.enable = true;
-            statix.enable = true;
-          };
-        };
 
         packages.pulse = pkgs.stdenv.mkDerivation rec {
 
