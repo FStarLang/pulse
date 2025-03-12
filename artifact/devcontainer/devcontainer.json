@@ -1,0 +1,11 @@
+{
+  "name": "Pulse devcontainer (pulsecore-pldi2025 image)",
+  "image": "pulsecore-pldi2025"
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "FStarLang.fstar-vscode-assistant"
+      ]
+    }
+  }
+}
