@@ -22,6 +22,6 @@ docker build -t $TAG .
 docker save $TAG -o $TAG-docker.tar
 gzip $TAG-docker.tar
 
-tar czf $TAG-src.tar.gz $NAME/
+tar czf $TAG-src.tar.gz $NAME/ README.md
 
 echo 'Done!'
