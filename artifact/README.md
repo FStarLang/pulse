@@ -10,7 +10,7 @@ The artifact includes:
   paper).
 - The examples from the paper, in Pulse.
 
-# Getting started
+# Getting Started
 
 We provide three options to use our artifact
 
@@ -26,8 +26,8 @@ After any of these options, you should be able to run
     All verification conditions discharged successfully
 
 And get a successful verification (you may see Warning 241 about not
-being able to load checked dependencies--- this is fine). (The pulse.sh
-script is just a wrapper to pass the required options to F*.)
+being able to load checked dependencies--- this is fine). The `pulse.sh`
+script is just a wrapper to pass the required options to F*.
 
 If you see an error like
 
@@ -43,7 +43,7 @@ succeeded.
 The artifact contains a devcontainer specification, that can be used to
 easily drop into a development environment with all needed dependencies.
 The devcontainer is configured to use the same Docker image provided in
-this artifact. Since it is not published to a container storage, Tou
+this artifact. Since it is not published to a container storage, you
 need to first load the provided Docker image into your system
 
     $ docker load < pulsecore-pldi2025-docker.tar.gz
@@ -64,11 +64,17 @@ and immediately be able to verify them interactively. This link
 https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide
 contains an explanation on how to use the F* mode in VS Code.
 
-Note: VS code will mount your workspace (i.e. a directory in your own
-host system) in the container, usually somewhere under `/workspaces`.
-There will also be an artifact checkout in `/home/user`, as this uses
+**NOTE:** the devcontainer user has a UID of 1000. VS code will bind
+mount your workspace (i.e. a directory in your own host system) into the
+container, usually somewhere under `/workspaces`, without remapping any
+UIDs. If the UID of your host user is different, it is possible that
+you will not be able to read/write any of the workspace files while
+inside the container. You can, externally, run `chmod -R ugo+rw` over
+the artifact to prevent this.
+
+There will also be an artifact checkout in `/home/ubuntu`, as this uses
 the same Docker container as the option below. You can ignore the one in
-`/home/user` if you choose this option.
+`/home/ubuntu` if you choose this option.
 
 ## Running in Docker
 
@@ -108,7 +114,18 @@ do so, you can follow the instructions in `pulsecore/README.md`.
 FIXME: instructions, or just remove. We should write down commit hashes
 if we want this.
 
-# Structure of the Artifact
+# Step-by-Step Guide
+
+We provide some broad comments here and then more details.
+
+By having build Pulse by any of the methods above, the PulseCore logic
+has already been fully verified. The Pulse standard library (including
+spinlocks, linked list, task pool, etc) has also been verified.
+To check all the examples in the artifact, covering those mentioned
+in the paper, you can run `make test-share`. To build and run
+the task-parallel Quicksort, run `make test-qs`.
+
+## Structure of the Artifact
 
 - `lib/common` and `lib/core`: contain the F* definitions for the
 PulseCore logic. This directories can be checked fully by running 'make
@@ -140,7 +157,7 @@ artifact.
 
 - `out/`: contains the build result of PulseCore and Pulse.
 
-# Connection to Paper Text
+## Connection to Paper Text
 
 For every `.fst` file mentioned here, there is usually also a matching
 `.fsti` with the interface for the module.
@@ -164,7 +181,7 @@ Spinlock: lib/pulse/Pulse.Lib.SpinLock.fst
 
 - PCMs: The theory of PCMs is implemented in F*, outside of PulseCore.
   You can find it in `ulib/FStar.PCM.fst` wherever F* is installed (if
-  using the container, `/home/user/FStar`)
+  using the container, `/home/ubuntu/FStar`)
 
 - Cell, core: `lib/core/PulseCore.Heap.fsti`
 

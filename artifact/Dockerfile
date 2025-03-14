@@ -15,8 +15,13 @@ RUN apt-get update \
     && apt-get clean -y
 
 # Create a new user and give them sudo rights
-ARG USER=user
-RUN useradd -d /home/$USER -s /bin/bash -m $USER
+#ARG USER=user
+#RUN useradd -d /home/$USER -s /bin/bash -m $USER
+# NOTE: reuse the ubuntu user, instead of making a new one so we
+# get UID=1000, which is the one most people have. This avoids file
+# permission issues when using a devcontainer, unless we're unlucky.
+# Such is life.
+ARG USER=ubuntu
 RUN echo "$USER ALL=NOPASSWD: ALL" >> /etc/sudoers
 USER $USER
 ENV HOME /home/$USER
