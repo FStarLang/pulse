@@ -1,7 +1,5 @@
 FROM ubuntu:24.04
 
-SHELL ["/bin/bash", "-c"]
-
 # Base dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -32,7 +30,7 @@ ENV OPAMYES=1
 
 # Get F* master and build (install opam deps too)
 RUN eval $(opam env) \
- && source $HOME/.profile \
+ && . $HOME/.profile \
  && git clone --depth=1 https://github.com/FStarLang/FStar \
  && cd FStar/ \
  && opam install --deps-only ./fstar.opam \
@@ -44,7 +42,7 @@ RUN sudo ./FStar/.scripts/get_fstar_z3.sh /usr/local/bin
 
 # Get karamel master and build (installing opam deps too, but ignoring fstar dependency)
 RUN eval $(opam env) \
- && source $HOME/.profile \
+ && . $HOME/.profile \
  && git clone --depth=1 https://github.com/FStarLang/karamel \
  && cd karamel/ \
  && sed -i '/"fstar"/d' karamel.opam \
@@ -69,4 +67,4 @@ RUN opam switch $OCAML_VERSION
 
 # Copy and build pulse
 COPY --chown=$USER pulsecore/ pulsecore/
-RUN source .bash_profile && cd pulsecore/ && make -j$(nproc)
+RUN . $HOME/.bash_profile && cd pulsecore/ && make -j$(nproc)
