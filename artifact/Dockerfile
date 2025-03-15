@@ -73,3 +73,13 @@ RUN opam switch $OCAML_VERSION
 # Copy and build pulse
 COPY --chown=$USER pulsecore/ pulsecore/
 RUN . $HOME/.bash_profile && cd pulsecore/ && make -j$(nproc)
+
+RUN wget https://github.com/coder/code-server/releases/download/v4.98.0/code-server_4.98.0_amd64.deb \
+ && sudo dpkg -i code-server*.deb \
+ && rm code-server*.deb
+
+RUN wget https://github.com/FStarLang/fstar-vscode-assistant/releases/download/v0.17.1/fstar-vscode-assistant-0.17.1.vsix \
+ && code-server --install-extension fstar-vscode-assistant-*.vsix \
+ && rm fstar-vscode-assistant-*.vsix
+
+ENTRYPOINT code-server --auth none --bind-addr 0.0.0.0:8080 --disable-workspace-trust pulsecore

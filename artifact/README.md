@@ -10,6 +10,20 @@ The artifact includes:
   paper).
 - The examples from the paper, in Pulse.
 
+# Getting Started (with code-server)
+
+The artifact is a docker container that starts a vscode server on port 8080.
+
+ 1. To run this container you first need to load it:
+
+  docker load < pulsecore-pldi2025-docker.tar.gz
+
+ 2. Then you can start it:
+
+  docker run -p 127.0.0.1:8080:8080 -it pulsecore-pldi2025
+
+ 3. You can now access the vscode server at http://localhost:8080
+
 # Getting Started
 
 We provide three options to use our artifact
