@@ -60,9 +60,12 @@ vscode and verify them interactively.
 The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide)
 contains an explanation on how to use the F* mode in VS Code.
 
-  6. TODO: in phase 1 of the artifact review process, reviewers are expected to
-  check for "basic functionality". Add some busywork here to validate that the
-  reviewer can open files, compile some pulse code, etc.
+  6. To check that everything works as expected, open the
+     `share/pulse/examples/PulseCorePaper.S2.Lock.fst` file which is the
+     spinlock example from the paper.  Put the cursor at the end of the file and
+     press `ctrl+.`, this instructs F* to verify the file until the cursor.
+     After a few seconds, you should see a green bar on the left of the file.
+     The green bar indicates that the file has been successfully checked.
 
 # Step-By-Step Instructions
 
