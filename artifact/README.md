@@ -16,24 +16,24 @@ The artifact is a docker container that starts a vscode server on port 8080.
 
   1. To run this container you first need to load it:
 
-  docker load < pulsecore-pldi2025-docker.tar.gz
+        docker load < pulsecore-pldi2025-docker.tar.gz
 
   2. Then you can start it:
 
-  docker run -p 127.0.0.1:8080:8080 -it pulsecore-pldi2025
+        docker run -p 127.0.0.1:8080:8080 -it pulsecore-pldi2025
 
   3. You can now access the vscode server by opening http://localhost:8080 in
-  your browser.
+     your browser.
 
   4. Open a terminal inside vscode using the keyboard shortcut `` ctrl+`` `
 
   5. Run `make`.  This will build and verify PulseCore (and Pulse) using F*.
-  That this command successfully terminates shows that F* fully verifies the
-  PulseCore logic and the Pulse standard library (including spinlocks, linked
-  list, task pool, etc).
+     That this command successfully terminates shows that F* fully verifies the
+     PulseCore logic and the Pulse standard library (including spinlocks, linked
+     list, task pool, etc).
 
-  You may see some warnings (e.g. Warning 241 about not being able to load
-  checked dependencies).  This is fine.
+     You may see some warnings (e.g. Warning 241 about not being able to load
+     checked dependencies).  This is fine.
 
 Optional:
 We have included a `pulse.sh` script that sets all the right options for F*
@@ -50,7 +50,7 @@ The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-as
 contains an explanation on how to use the F* mode in VS Code.
 
   6. To check all the examples in the artifact, covering those mentioned in the
-  paper, run `make test-share`.
+     paper, run `make test-share`.
 
   7. To build and run the task-parallel Quicksort, run `make test-qs`.
 
