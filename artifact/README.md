@@ -49,6 +49,10 @@ vscode and verify them interactively.
 The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide)
 contains an explanation on how to use the F* mode in VS Code.
 
+  6. TODO: in phase 1 of the artifact review process, reviewers are expected to
+  check for "basic functionality". Add some busywork here to validate that the
+  reviewer can open files, compile some pulse code, etc.
+
 # Step-By-Step Instructions
 
   6. To check all the examples in the artifact, covering those mentioned in the
