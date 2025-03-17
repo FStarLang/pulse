@@ -167,6 +167,12 @@ lib/core/PulseCore.IndirectionTheoryActions.fst
 
 ### 4.2
 
+The module `lib/core/PulseCore.Semantics.fst` contains the definition of the
+`stt` type of concurrent computations, and the function `run` implements the
+interpreter.  This development in this module is generic over an abstract type
+of heaps, it is instantiated to the actual type of memories in
+`lib/core/PulseCore.InstantiatedSemantics.fst`.
+
 ### 5.1
 
 - Task pool: `lib/pulse/lib/Pulse.Lib.Task.fst`.
