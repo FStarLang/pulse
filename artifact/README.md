@@ -149,15 +149,14 @@ Our implementation of indirection theory is in
 The functor for the indirection theory construction is defined in
 `lib/core/PulseCore.KnotInstantiation.fst`.
 
-### 4.0
-
-
 These two modules are used to construct a separation logic
 in `lib/core/PulseCore.IndirectionTheorySep.fst`.
 
-lib/core/PulseCore.IndirectionTheoryActions.fst
-
 ### 4.1
+
+FIXME
+Actions:
+lib/core/PulseCore.IndirectionTheoryActions.fst
 
 - Shifts:  `lib/pulse/lib/pledge/Pulse.Lib.Shift.fst`
 - Trades:  `lib/pulse/lib/pledge/Pulse.Lib.Trade.fst`
