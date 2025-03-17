@@ -44,7 +44,8 @@ The artifact is a docker container that starts a vscode server on port 8080.
      list, task pool, etc).
 
      You may see some warnings (e.g. Warning 241 about not being able to load
-     checked dependencies).  This is fine.
+     checked dependencies).  This is expected, and has no impact on the
+     verification status.
 
   6. To check that everything works as expected, open the
      `share/pulse/examples/PulseCorePaper.S2.Lock.fst` file which is the
