@@ -10,7 +10,7 @@ The artifact includes:
   paper).
 - The examples from the paper, in Pulse.
 
-# Step-by-step guide
+# Getting Started Guide
 
 The artifact is a docker container that starts a vscode server on port 8080.
 
@@ -48,6 +48,8 @@ Once you've run `make`, you are be able to open F* files from the artifact in
 vscode and verify them interactively.
 The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide)
 contains an explanation on how to use the F* mode in VS Code.
+
+# Step-By-Step Instructions
 
   6. To check all the examples in the artifact, covering those mentioned in the
      paper, run `make test-share -j$(nproc)`.
