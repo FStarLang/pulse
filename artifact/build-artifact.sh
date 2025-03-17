@@ -14,7 +14,7 @@ git -C .. archive HEAD | tar -C $NAME -x
 mv $NAME/README.md $NAME/README-original.md
 cp README.md $NAME/README.md
 
-# Replace devcontainer definition
+# Remove devcontainer definition, we use code-server instead
 rm -rf $NAME/.devcontainer
 cp pulse.sh $NAME/pulse.sh
 

@@ -77,7 +77,7 @@ TODO: explicit steps to verify the PulseCore formalization
 
 - `lib/common` and `lib/core`: contain the F* definitions for the
 PulseCore logic. This directories can be checked fully by running 'make
-lib-core'. There is no imperative Pulse code here, only pure F*
+lib-core'. There is no imperative Pulse code here, only pure F*.
 
 - `lib/pulse`: contains the Pulse library, e.g. with implementations for
 references, arrays, linked lists, task pools, etc.
