@@ -54,18 +54,16 @@ result is cached).  If you see an error like `Unknown language extension pulse`
 it indicates that the Pulse checker has not been built, make sure that `make`
 succeeded.
 
-Optional:
-Once you've run `make`, you are be able to open F* files from the artifact in
-vscode and verify them interactively.
-The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide)
-contains an explanation on how to use the F* mode in VS Code.
-
   6. To check that everything works as expected, open the
      `share/pulse/examples/PulseCorePaper.S2.Lock.fst` file which is the
      spinlock example from the paper.  Put the cursor at the end of the file and
-     press `ctrl+.`, this instructs F* to verify the file until the cursor.
-     After a few seconds, you should see a green bar on the left of the file.
-     The green bar indicates that the file has been successfully checked.
+     press `ctrl+.`, this instructs F* to verify the file until the cursor
+     position (i.e., the whole file).  After a few seconds, you should see a
+     green bar on the left of the file.  The green bar indicates that the file
+     has been successfully checked.
+
+     The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide)
+     contains a detailed explanation on how to use the F* mode in VS Code.
 
 # Step-By-Step Instructions
 
