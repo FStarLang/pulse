@@ -56,7 +56,7 @@ RUN eval $(opam env) \
  && make -j$(nproc)
 RUN sudo ln -s $(realpath karamel/krml) /usr/local/bin/krml
 
-ENV KRML_HOME /karamel/
+ENV KRML_HOME $HOME/karamel/
 
 WORKDIR $HOME
 
