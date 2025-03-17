@@ -138,7 +138,7 @@ Spinlock: lib/pulse/Pulse.Lib.SpinLock.fst
   using the container, `/home/ubuntu/FStar`)
 
 - Cell, core: `lib/core/PulseCore.Heap.fsti`
-  Note that the F* type has an extra `erased bool` field in the code, which is not in the paper.
+  Note that the F* type for `cell` has an extra `erased bool` field in the code, which is not in the paper.
   This legacy feature was used to encode invariants in an earlier version of Pulse.
 
 ### 3.2
