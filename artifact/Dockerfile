@@ -70,9 +70,10 @@ RUN opam switch create 5.1.1
 RUN opam install --switch=5.1.1 -- dune domainslib
 RUN opam switch $OCAML_VERSION
 
-# Copy and build pulse
+# Copy pulse
 COPY --chown=$USER pulsecore/ pulsecore/
-RUN . $HOME/.bash_profile && cd pulsecore/ && make -j$(nproc)
+# Do not build it, let the reviewers do it
+# RUN . $HOME/.bash_profile && cd pulsecore/ && make -j$(nproc)
 
 RUN wget https://github.com/coder/code-server/releases/download/v4.98.0/code-server_4.98.0_amd64.deb \
  && sudo dpkg -i code-server*.deb \
