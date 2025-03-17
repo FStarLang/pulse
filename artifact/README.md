@@ -10,134 +10,51 @@ The artifact includes:
   paper).
 - The examples from the paper, in Pulse.
 
-# Getting Started (with code-server)
+# Step-by-step guide
 
 The artifact is a docker container that starts a vscode server on port 8080.
 
- 1. To run this container you first need to load it:
+  1. To run this container you first need to load it:
 
   docker load < pulsecore-pldi2025-docker.tar.gz
 
- 2. Then you can start it:
+  2. Then you can start it:
 
   docker run -p 127.0.0.1:8080:8080 -it pulsecore-pldi2025
 
- 3. You can now access the vscode server at http://localhost:8080
+  3. You can now access the vscode server by opening http://localhost:8080 in
+  your browser.
 
-# Getting Started
+  4. Open a terminal inside vscode using the keyboard shortcut `` ctrl+`` `
 
-We provide three options to use our artifact
+  5. Run `make`.  This will build and verify PulseCore (and Pulse) using F*.
+  That this command successfully terminates shows that F* fully verifies the
+  PulseCore logic and the Pulse standard library (including spinlocks, linked
+  list, task pool, etc).
 
-- Devcontainer in VS code. We recommend this to get an interactive
-  experience.
-- Using the shell in Docker.
-- Building from source.
+  You may see some warnings (e.g. Warning 241 about not being able to load
+  checked dependencies).  This is fine.
 
-After any of these options, you should be able to run
-
-    $ ./pulse.sh share/pulse/examples/Quicksort.Task.fst
-    Verified module: Quicksort.Task
-    All verification conditions discharged successfully
-
-And get a successful verification (you may see Warning 241 about not
-being able to load checked dependencies--- this is fine). The `pulse.sh`
-script is just a wrapper to pass the required options to F*.
-
-If you see an error like
-
-    * Error 168 at Quicksort.Task.fst:18.11-18.11:
-      - Unknown language extension pulse
-
-it indicates that the Pulse checker has not been built, this should not
-happen in the containers. If building from source, make sure that `make`
+Optional:
+We have included a `pulse.sh` script that sets all the right options for F*
+to verify a particular Pulse file.  You can run
+`./pulse.sh -f path/to/file.fst` (`-f` makes sure F* verifies it even if the
+result is cached).  If you see an error like `Unknown language extension pulse`
+it indicates that the Pulse checker has not been built, make sure that `make`
 succeeded.
 
-## Using a Devcontainer and VS Code
-
-The artifact contains a devcontainer specification, that can be used to
-easily drop into a development environment with all needed dependencies.
-The devcontainer is configured to use the same Docker image provided in
-this artifact. Since it is not published to a container storage, you
-need to first load the provided Docker image into your system
-
-    $ docker load < pulsecore-pldi2025-docker.tar.gz
-
-and then extract the source package (`pulsecore-pldi2025-src.tar.gz`)
-
-    $ tar xzf pulsecore-pldi2025.tar.gz
-
-This will create the pulsecore/ directory with the artifact
-contents. You can now open this directory in VS Code (or another
-devcontainer-capable editor) and tell it to use the devcontainer (see
-`.devcontainer/devcontainer.json` for its definition). VS Code will
-usually prompt you about it, but otherwise can be done via Ctrl-Shift-P
-and "Dev Containers: Rebuild and Reopen in Container".
-
-Once done, you should be able to open F* files in the artifact
-and immediately be able to verify them interactively. This link
-https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide
+Optional:
+Once you've run `make`, you are be able to open F* files from the artifact in
+vscode and verify them interactively.
+The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide)
 contains an explanation on how to use the F* mode in VS Code.
 
-**NOTE:** the devcontainer user has a UID of 1000. VS code will bind
-mount your workspace (i.e. a directory in your own host system) into the
-container, usually somewhere under `/workspaces`, without remapping any
-UIDs. If the UID of your host user is different, it is possible that
-you will not be able to read/write any of the workspace files while
-inside the container. You can, externally, run `chmod -R ugo+rw` over
-the artifact to prevent this.
+  6. To check all the examples in the artifact, covering those mentioned in the
+  paper, run `make test-share`.
 
-There will also be an artifact checkout in `/home/ubuntu`, as this uses
-the same Docker container as the option below. You can ignore the one in
-`/home/ubuntu` if you choose this option.
+  7. To build and run the task-parallel Quicksort, run `make test-qs`.
 
-## Running in Docker
-
-To run the provided image purely in Docker, you need to first load the
-image into Docker
-
-    $ docker load < pulsecore-pldi2025-docker.tar.gz
-
-and run it, which should drop to a shell. The contents of the artifact
-proper are under the `pulsecore/` directory. Dependencies (FStar and
-karamel) are installed too.
-
-    $ docker run -it pulsecore-pldi2025
-    user@10693fcfc3bd:~$ ls
-    FStar  karamel  pulsecore
-    user@10693fcfc3bd:~$ ls pulsecore/
-    CONTRIBUTING.md   Pulse.fst.config.json  lib         pulse.sh    src
-    CONTRIBUTORS.txt  README.md              mk          pulse2rust  test
-    LICENSE           artifact               out         qs
-    Makefile          build                  pulse.opam  share
-
-The pulsecore/ has a fully-built checkout of the PulseCore logic, the
-Pulse checker, and the examples in the paper (and more).
-
-To verify a particular file, you can run `./pulse.sh -f
-path/to/file.fst` (`-f` makes sure F* does it, even if the respective
-`.checked` exists). You can also run `make clean` and remove the `out`
-directory (this removes every built object) and run `make` to start the
-build and verification process, which will verify every file.
-
-## Building from source
-
-If desired, Pulse can be built from source. But we do not recommend this
-as it is very much sensitive to versions of F* and KaRaMeL involved. To
-do so, you can follow the instructions in `pulsecore/README.md`.
-
-FIXME: instructions, or just remove. We should write down commit hashes
-if we want this.
-
-# Step-by-Step Guide
-
-We provide some broad comments here and then more details.
-
-By having build Pulse by any of the methods above, the PulseCore logic
-has already been fully verified. The Pulse standard library (including
-spinlocks, linked list, task pool, etc) has also been verified.
-To check all the examples in the artifact, covering those mentioned
-in the paper, you can run `make test-share`. To build and run
-the task-parallel Quicksort, run `make test-qs`.
+TODO: explicit steps to verify the PulseCore formalization
 
 ## Structure of the Artifact
 
