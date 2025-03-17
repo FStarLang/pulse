@@ -46,14 +46,6 @@ The artifact is a docker container that starts a vscode server on port 8080.
      You may see some warnings (e.g. Warning 241 about not being able to load
      checked dependencies).  This is fine.
 
-Optional:
-We have included a `pulse.sh` script that sets all the right options for F*
-to verify a particular Pulse file.  You can run
-`./pulse.sh -f path/to/file.fst` (`-f` makes sure F* verifies it even if the
-result is cached).  If you see an error like `Unknown language extension pulse`
-it indicates that the Pulse checker has not been built, make sure that `make`
-succeeded.
-
   6. To check that everything works as expected, open the
      `share/pulse/examples/PulseCorePaper.S2.Lock.fst` file which is the
      spinlock example from the paper.  Put the cursor at the end of the file and
@@ -64,6 +56,14 @@ succeeded.
 
      The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-assistant/?tab=readme-ov-file#features-and-basic-usage-guide)
      contains a detailed explanation on how to use the F* mode in VS Code.
+
+Optional:
+We have included a `pulse.sh` script that sets all the right options for F*
+to verify a particular Pulse file.  You can run
+`./pulse.sh -f share/pulse/examples/PulseCorePaper.S2.Lock.fst` (`-f` makes sure
+F* verifies it even if the result is cached).  If you see an error like
+`Unknown language extension pulse` it indicates that the Pulse checker has not
+been built, make sure that `make` succeeded.
 
 # Step-By-Step Instructions
 
