@@ -175,9 +175,6 @@ lib/core/PulseCore.IndirectionTheoryActions.fst
   using lemmas from `share/pulse/examples/Quicksort.Base.fst`.
   There is also a sequential implementation in
   `share/pulse/examples/Quicksort.Sequential.fst`.
-- You can build and run this implementation by following the
-  instructions in the `qs/` directory (in the container, `make run`
-  should do it).
 
 ### 5.3
 
