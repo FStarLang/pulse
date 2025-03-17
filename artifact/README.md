@@ -5,10 +5,9 @@ can we fix them?
 
 The artifact includes:
 
-- The implementation of the PulseCore logic.
-- The implementation of the Pulse checker (not a contribution of the
-  paper).
-- The examples from the paper, in Pulse.
+  1. The implementation of the PulseCore logic.
+  2. The implementation of the Pulse checker (not a contribution of the paper).
+  3. The examples from the paper, in Pulse.
 
 We want to emphasize that the main contribution of the paper is the PulseCore
 logic (1) and showing that it is expressive enough to handle many interesting
