@@ -10,6 +10,18 @@ The artifact includes:
   paper).
 - The examples from the paper, in Pulse.
 
+We want to emphasize that the main contribution of the paper is the PulseCore
+logic (1) and showing that it is expressive enough to handle many interesting
+programs (3).  The Pulse checker is a partially-verified certified type checker
+for Pulse and, as such, has some admitted proofs. The admitted proofs are mostly
+related to the difficulties of writing a certified type checker and some
+scalability limitations of the F* metaprogramming engine, and not at all to the
+separation logic itself. We include it in the interest of transparency, but
+remark that it's partial verification status should not be of interest to the
+reviewers.
+There are no admits in the PulseCore logic, nor in the presented examples. There
+are other admits in tests (intentional) and in some other examples.
+
 # Getting Started Guide
 
 The artifact is a docker container that starts a vscode server on port 8080.
