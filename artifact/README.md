@@ -25,7 +25,7 @@ The artifact is a docker container that starts a vscode server on port 8080.
   3. You can now access the vscode server by opening http://localhost:8080 in
      your browser.
 
-  4. Open a terminal inside vscode using the keyboard shortcut `` ctrl+`` `
+  4. Open a terminal inside vscode using the keyboard shortcut `` ctrl+` ``
 
   5. Run `make -j$(nproc)`.  This will build and verify PulseCore (and Pulse) using F*.
      That this command successfully terminates shows that F* fully verifies the
