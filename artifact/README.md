@@ -69,12 +69,15 @@ contains an explanation on how to use the F* mode in VS Code.
 
 # Step-By-Step Instructions
 
-  6. To check all the examples in the artifact, covering those mentioned in the
+  7. To check all the examples in the artifact, covering those mentioned in the
      paper, run `make test-share -j$(nproc)`.
 
-  7. To build and run the task-parallel Quicksort, run `make test-qs`.
+  8. To build and run the task-parallel Quicksort, run `make test-qs`.
 
-TODO: explicit steps to verify the PulseCore formalization
+  9. Open the files listed in the "Connection to Paper Text" section in this
+     README and check that they contain the corresponding concepts from the
+     paper.  You can use go-to-definition to navigate around the code
+     (ctrl+click).
 
 ## Structure of the Artifact
 
