@@ -83,4 +83,5 @@ RUN wget https://github.com/FStarLang/fstar-vscode-assistant/releases/download/v
  && code-server --install-extension fstar-vscode-assistant-*.vsix \
  && rm fstar-vscode-assistant-*.vsix
 
-ENTRYPOINT code-server --auth none --bind-addr 0.0.0.0:8080 --disable-workspace-trust pulsecore
+COPY entrypoint /entrypoint
+ENTRYPOINT ["/entrypoint"]

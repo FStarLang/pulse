@@ -1,0 +1,18 @@
+#!/bin/bash
+
+cleanup() {
+    trap - SIGTERM
+    kill -- -$$
+
+    echo Stopped code-server
+    echo "To resume this session run: docker start -ai $HOSTNAME"
+}
+trap cleanup SIGINT SIGTERM EXIT
+
+code-server --auth none --bind-addr 0.0.0.0:8080 --disable-workspace-trust pulsecore \
+    >>code-server.log 2>&1 &
+
+echo Started code-server on http://localhost:8080
+echo
+
+bash -i
