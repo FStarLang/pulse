@@ -27,7 +27,7 @@ The artifact is a docker container that starts a vscode server on port 8080.
 
   4. Open a terminal inside vscode using the keyboard shortcut `` ctrl+`` `
 
-  5. Run `make`.  This will build and verify PulseCore (and Pulse) using F*.
+  5. Run `make -j$(nproc)`.  This will build and verify PulseCore (and Pulse) using F*.
      That this command successfully terminates shows that F* fully verifies the
      PulseCore logic and the Pulse standard library (including spinlocks, linked
      list, task pool, etc).
@@ -50,7 +50,7 @@ The [F* VS Code extension homepage](https://github.com/FStarLang/fstar-vscode-as
 contains an explanation on how to use the F* mode in VS Code.
 
   6. To check all the examples in the artifact, covering those mentioned in the
-     paper, run `make test-share`.
+     paper, run `make test-share -j$(nproc)`.
 
   7. To build and run the task-parallel Quicksort, run `make test-qs`.
 
