@@ -125,7 +125,7 @@ For every `.fst` file mentioned here, there is usually also a matching
 
 ### 2.1, 2.2:
 
-Spinlock: lib/pulse/Pulse.Lib.SpinLock.fst
+Spinlock: `lib/pulse/Pulse.Lib.SpinLock.fst`
 
 ### 3.0
 
