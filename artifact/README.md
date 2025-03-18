@@ -120,8 +120,9 @@ For every `.fst` file mentioned here, there is usually also a matching
 
 - The full PulseCore logic is under `lib/core`, with some interfaces in
   `lib/common`. We provide more detailed pointers below.
+
 - The definitional interpreter is defined in
-  `lib/core/PulseCore.Semantics.fst`, and instantiated
+  `lib/core/PulseCore.Semantics.fst`. See 4.2 for its instatiation.
 
 ### 2.1, 2.2:
 
@@ -133,9 +134,10 @@ Spinlock: `lib/pulse/Pulse.Lib.SpinLock.fst`
   You can find it in `ulib/FStar.PCM.fst` wherever F* is installed (if
   using the container, `/home/ubuntu/FStar`)
 
-- Cell, core: `lib/core/PulseCore.Heap.fsti`
-  Note that the F* type for `cell` has an extra `erased bool` field in the code, which is not in the paper.
-  This legacy feature was used to encode invariants in an earlier version of Pulse.
+- Cell, core: `lib/core/PulseCore.Heap.fsti`. Note that the F* type for
+  `cell` has an extra `erased bool` field in the code, which is not in
+  the paper. This legacy feature was used to encode invariants in an
+  earlier version of Pulse. It is no longer needed.
 
 ### 3.2
 
