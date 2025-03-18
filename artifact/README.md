@@ -160,6 +160,11 @@ indexed by them as in the paper. This is inconsequential.
 The `gather_invariant` function is named
 `invariant_name_identifies_invariant`.
 
+- `extend` is in `lib/core/PulseCore.Heap.fst`. Here, it takes an
+argument for an address, which must be fresh. This is later composed
+with `with_fresh_counter` in `lib/core/PulseCore.BaseHeapSig.fst` to
+obtain type like the one in the paper.
+
 - Shifts:  `lib/pulse/lib/pledge/Pulse.Lib.Shift.fst`
 - Trades:  `lib/pulse/lib/pledge/Pulse.Lib.Trade.fst`
 - Pledges: `lib/pulse/lib/pledge/Pulse.Lib.Pledge.fst`
