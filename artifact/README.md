@@ -24,19 +24,19 @@ The artifact is a docker container that starts a vscode server on port 8080.
 
   1. To run this container you first need to load it:
 
-        docker load < pulsecore-pldi2025-docker.tar.gz
+    docker load < pulsecore-pldi2025-docker.tar.gz
 
   2. Then you can start it:
 
-        docker run -p 127.0.0.1:8080:8080 -it pulsecore-pldi2025
+    docker run -p 127.0.0.1:8080:8080 -it pulsecore-pldi2025
 
   3. You can now access the vscode server by opening http://localhost:8080 in
      your browser.
 
   4. Open a terminal inside vscode using the keyboard shortcut `` ctrl+` ``
 
-  5. Run `make -j$(nproc)`.  This will build and verify PulseCore (and Pulse) using F*.
-     That this command successfully terminates shows that F* fully verifies the
+  5. Run `make -j$(nproc)`.  This will build and verify PulseCore (and Pulse) using F\*.
+     That this command successfully terminates shows that F\* fully verifies the
      PulseCore logic and the Pulse standard library (including spinlocks, linked
      list, task pool, etc).
 
@@ -47,7 +47,7 @@ The artifact is a docker container that starts a vscode server on port 8080.
   6. To check that everything works as expected, open the
      `share/pulse/examples/PulseCorePaper.S2.Lock.fst` file which is the
      spinlock example from the paper.  Put the cursor at the end of the file and
-     press `ctrl+.`, this instructs F* to verify the file until the cursor
+     press `ctrl+.`, this instructs F\* to verify the file until the cursor
      position (i.e., the whole file).  After a few seconds, you should see a
      green bar on the left of the file.  The green bar indicates that the file
      has been successfully checked.
@@ -56,10 +56,10 @@ The artifact is a docker container that starts a vscode server on port 8080.
      contains a detailed explanation on how to use the F* mode in VS Code.
 
 Optional:
-We have included a `pulse.sh` script that sets all the right options for F*
+We have included a `pulse.sh` script that sets all the right options for F\*
 to verify a particular Pulse file.  You can run
 `./pulse.sh -f share/pulse/examples/PulseCorePaper.S2.Lock.fst` (`-f` makes sure
-F* verifies it even if the result is cached).  If you see an error like
+F\* verifies it even if the result is cached).  If you see an error like
 `Unknown language extension pulse` it indicates that the Pulse checker has not
 been built, make sure that `make` succeeded.
 
@@ -77,9 +77,9 @@ been built, make sure that `make` succeeded.
 
 ## Structure of the Artifact
 
-- `lib/common` and `lib/core`: contain the F* definitions for the
+- `lib/common` and `lib/core`: contain the F\* definitions for the
 PulseCore logic. This directories can be checked fully by running 'make
-lib-core'. There is no imperative Pulse code here, only pure F*.
+lib-core'. There is no imperative Pulse code here, only pure F\*.
 
 - `lib/pulse`: contains the Pulse library, e.g. with implementations for
 references, arrays, linked lists, task pools, etc.
@@ -130,11 +130,11 @@ Spinlock: `lib/pulse/Pulse.Lib.SpinLock.fst`
 
 ### 3.0
 
-- PCMs: The theory of PCMs is implemented in F*, outside of PulseCore.
-  You can find it in `ulib/FStar.PCM.fst` wherever F* is installed (if
+- PCMs: The theory of PCMs is implemented in F\*, outside of PulseCore.
+  You can find it in `ulib/FStar.PCM.fst` wherever F\* is installed (if
   using the container, `/home/ubuntu/FStar`)
 
-- Cell, core: `lib/core/PulseCore.Heap.fsti`. Note that the F* type for
+- Cell, core: `lib/core/PulseCore.Heap.fsti`. Note that the F\* type for
   `cell` has an extra `erased bool` field in the code, which is not in
   the paper. This legacy feature was used to encode invariants in an
   earlier version of Pulse. It is no longer needed.
