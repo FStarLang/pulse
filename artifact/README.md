@@ -124,7 +124,7 @@ For every `.fst` file mentioned here, there is usually also a matching
   `lib/common`. We provide more detailed pointers below.
 
 - The definitional interpreter is defined in
-  `lib/core/PulseCore.Semantics.fst`. See 4.2 for its instatiation.
+  `lib/core/PulseCore.Semantics.fst`. See 4.2 for its instantiation.
 
 ### 2.1, 2.2:
 
