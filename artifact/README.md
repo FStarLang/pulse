@@ -1,6 +1,3 @@
-FIXME: There are many warnings about Reference.free/alloc being unsound,
-can we fix them?
-
 # PulseCore artifact (PLDI 2025)
 
 The artifact includes:
