@@ -177,7 +177,7 @@ obtain type like the one in the paper.
 
 The module `lib/core/PulseCore.Semantics.fst` contains the definition
 of the `m` type, which is the `stt` type of concurrent computation
-presented in the paper. The actual `stt` of PulseCore is is in
+presented in the paper. The actual `stt` of PulseCore is in
 `lib/core/Pulse.Lib.Core.fst`, and defined to a universe lowering of
 `m`. The the function `run` in `lib/core/PulseCore.Semantics.fst`
 implements the interpreter. This development in this module is generic
