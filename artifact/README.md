@@ -3,20 +3,22 @@
 The artifact includes:
 
   1. The implementation of the PulseCore logic.
-  2. The implementation of the Pulse checker (not a contribution of the paper).
-  3. The examples from the paper, in Pulse.
+  2. The examples from the paper, in Pulse.
+  3. The implementation of the Pulse checker (not a contribution of the paper).
 
-We want to emphasize that the main contribution of the paper is the PulseCore
-logic (1) and showing that it is expressive enough to handle many interesting
-programs (3).  The Pulse checker is a partially-verified certified type checker
-for Pulse and, as such, has some admitted proofs. The admitted proofs are mostly
-related to the difficulties of writing a certified type checker and some
-scalability limitations of the F* metaprogramming engine, and not at all to the
-separation logic itself. We include it in the interest of transparency, but
-remark that it's partial verification status should not be of interest to the
-reviewers.
-There are no admits in the PulseCore logic, nor in the presented examples. There
-are other admits in tests (intentional) and in some other examples.
+The main contribution of the paper is the PulseCore logic (1) and
+showing that it is expressive enough to handle many interesting programs
+(2). The Pulse checker is a partially-verified certified type checker
+for Pulse and, as such, has some admitted proofs. The admitted proofs
+are mostly related to the difficulties of writing a certified type
+checker and some scalability limitations of the F* metaprogramming
+engine, and not at all to the separation logic itself. We include it in
+the interest of transparency, but remark that its partial verification
+status should not be of interest to the reviewers.
+
+There are no admits in the PulseCore logic, nor in the examples
+explained in the paper. There are other admits in tests (intentional)
+and in some other examples.
 
 # Getting Started Guide
 
