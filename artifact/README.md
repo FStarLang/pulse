@@ -152,9 +152,13 @@ in `lib/core/PulseCore.IndirectionTheorySep.fst`.
 
 ### 4.1
 
-FIXME
-Actions:
-lib/core/PulseCore.IndirectionTheoryActions.fst
+- Actions are defined in `lib/core/PulseCore.Semantics.fst`. The type
+here is a record, with pre- and postconditions fields, instead of being
+indexed by them as in the paper. This is inconsequential.
+
+- Invariant operations: defined in `lib/core/PulseCore.Atomic.fst`.
+The `gather_invariant` function is named
+`invariant_name_identifies_invariant`.
 
 - Shifts:  `lib/pulse/lib/pledge/Pulse.Lib.Shift.fst`
 - Trades:  `lib/pulse/lib/pledge/Pulse.Lib.Trade.fst`
@@ -162,11 +166,14 @@ lib/core/PulseCore.IndirectionTheoryActions.fst
 
 ### 4.2
 
-The module `lib/core/PulseCore.Semantics.fst` contains the definition of the
-`stt` type of concurrent computations, and the function `run` implements the
-interpreter.  This development in this module is generic over an abstract type
-of heaps, it is instantiated to the actual type of memories in
-`lib/core/PulseCore.InstantiatedSemantics.fst`.
+The module `lib/core/PulseCore.Semantics.fst` contains the definition
+of the `m` type, which is the `stt` type of concurrent computation
+spresented in the paper. The actual `stt` of PulseCore is is in
+`lib/core/Pulse.Lib.Core.fst`, and defined to a universe lowering of
+`m`. The the function `run` in `lib/core/PulseCore.Semantics.fst`
+implements the interpreter. This development in this module is generic
+over an abstract type of heaps, it is instantiated to the actual type of
+memories in `lib/core/PulseCore.InstantiatedSemantics.fst`.
 
 ### 5.1
 
@@ -184,7 +191,7 @@ of heaps, it is instantiated to the actual type of memories in
 
 ### 5.3
 
-- Barrier: `lib/pulse/lib/Pulse.Lib.ConditionVar.fst` FIXME: naming
+- Barrier: `lib/pulse/lib/Pulse.Lib.ConditionVar.fst`
 
 ### 5.4
 
