@@ -366,6 +366,17 @@ let rec st_typing_weakening g g' t c d g1
       (st_typing_weakening g g' cond (comp_while_cond ppname_default inv) cond_typing g1)
       (st_typing_weakening g g' body (comp_while_body ppname_default inv) body_typing g1)
 
+  | T_NuWhile g invariant conditition cpost body invariant_typing cpost_typing ->
+    admit();
+    T_NuWhile
+      g
+      invariant
+      conditition
+      cpost
+      body
+      (RU.magic ())
+      (RU.magic ())
+
   | T_Par _ eL cL eR cR x cL_typing cR_typing eL_typing eR_typing ->
     assume (~ (x `Set.mem` dom g'));
     assume (~ (x `Set.mem` dom g1));
@@ -726,6 +737,17 @@ let rec st_typing_subst g x t g' #e #eff e_typing #e1 #c1 e1_typing _
               (RU.magic ())
               (st_typing_subst g x t g' e_typing cond_typing (RU.magic ()))
               (st_typing_subst g x t g' e_typing body_typing (RU.magic ()))
+
+  | T_NuWhile g invariant conditition cpost body invariant_typing cpost_typing ->
+    admit();
+    T_NuWhile
+      g
+      (subst_term invariant ss)
+      (subst_st_term conditition ss)
+      (subst_term cpost ss)
+      (subst_st_term body ss)
+      (RU.magic ())
+      (RU.magic ())
 
   | T_Par _ eL cL eR cR y d_cL d_cR d_eL d_eR ->
     admit ();

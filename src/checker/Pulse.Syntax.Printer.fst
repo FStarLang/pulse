@@ -347,6 +347,16 @@ let rec st_term_to_string' (level:string) (t:st_term)
         (st_term_to_string' (indent level) body)
         level
 
+    | Tm_NuWhile { invariant; condition; body } ->
+      sprintf "nuwhile (%s)\n%sinvariant %s\n%s{\n%s%s\n%s}"
+        (st_term_to_string' level condition)
+        level
+        (term_to_string invariant)
+        level
+        (indent level)
+        (st_term_to_string' (indent level) body)
+        level
+
     | Tm_Par { pre1; body1; post1; pre2; body2; post2 } ->
       sprintf "par (<%s> (%s) <%s) (<%s> (%s) <%s)"
         (term_to_string pre1)
@@ -492,6 +502,7 @@ let tag_of_st_term (t:st_term) =
   | Tm_ElimExists _ -> "Tm_ElimExists"
   | Tm_IntroExists _ -> "Tm_IntroExists"
   | Tm_While _ -> "Tm_While"
+  | Tm_NuWhile _ -> "Tm_NuWhile"
   | Tm_Par _ -> "Tm_Par"
   | Tm_WithLocal _ -> "Tm_WithLocal"
   | Tm_WithLocalArray _ -> "Tm_WithLocalArray"
@@ -513,25 +524,9 @@ let tag_of_comp (c:comp) : T.Tac string =
 let rec print_st_head (t:st_term)
   : Tot string (decreases t) =
   match t.term with
-  | Tm_Abs _  -> "Abs"
   | Tm_Return p -> print_head p.term
-  | Tm_Bind _ -> "Bind"
-  | Tm_TotBind _ -> "TotBind"
-  | Tm_If _ -> "If"
-  | Tm_Match _ -> "Match"
-  | Tm_While _ -> "While"
-  | Tm_Admit _ -> "Admit"
-  | Tm_Unreachable _ -> "Unreachable"
-  | Tm_Par _ -> "Par"
-  | Tm_Rewrite _ -> "Rewrite"
-  | Tm_WithLocal _ -> "WithLocal"
-  | Tm_WithLocalArray _ -> "WithLocalArray"
   | Tm_STApp { head = p } -> print_head p
-  | Tm_IntroPure _ -> "IntroPure"
-  | Tm_IntroExists _ -> "IntroExists"
-  | Tm_ElimExists _ -> "ElimExists"  
-  | Tm_ProofHintWithBinders _ -> "AssertWithBinders"
-  | Tm_WithInv _ -> "WithInv"
+  | _ -> tag_of_st_term t
 and print_head (t:term) =
   match t with
   // | Tm_FVar fv
@@ -549,6 +544,7 @@ let rec print_skel (t:st_term) =
   | Tm_If _ -> "If"
   | Tm_Match _ -> "Match"
   | Tm_While _ -> "While"
+  | Tm_NuWhile _ -> "NuWhile"
   | Tm_Admit _ -> "Admit"
   | Tm_Unreachable _ -> "Unreachable"
   | Tm_Par _ -> "Par"

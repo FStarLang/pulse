@@ -52,6 +52,22 @@ type computation_type = {
      range:rng
 }
 
+type while_annot' =
+  | LoopInvariant of slprop
+
+type while_annot = while_annot' & rng
+
+instance showable_while_annot' : showable while_annot' = {
+  show = (fun i -> match i with
+    | LoopInvariant s -> "LoopInvariant " ^ show s)
+}
+
+instance showable_while_annot : showable while_annot = {
+  show = (fun (a, _) -> show a);
+}
+
+type while_annots = list while_annot
+
 (* Not used in this module, but the list in annots above
 is translated to this type before doing anything meaningful with it. *)
 type parsed_annots = {
@@ -157,6 +173,12 @@ type stmt' =
       body: stmt;
     }
 
+  | NuWhile {
+      cond : stmt;
+      annots : while_annots;
+      body : stmt;
+    }
+
   | Introduce {
       slprop:slprop;
       witnesses:list A.term
@@ -243,6 +265,7 @@ let tag_of_stmt (s:stmt) : string =
   | If {} -> "If"
   | Match {} -> "Match"
   | While {} -> "While"
+  | NuWhile {} -> "NuWhile"
   | Introduce {} -> "Introduce"
   | Sequence {} -> "Sequence"
   | Parallel {} -> "Parallel"
@@ -311,6 +334,12 @@ let rec stmt_to_string (s:stmt) : string =
       "guard", stmt_to_string guard;
       "id", show id;
       "invariant", show invariant;
+      "body", stmt_to_string body;
+    ]
+  | NuWhile { cond; annots; body } ->
+    "While " ^ record_string [
+      "cond", stmt_to_string cond;
+      "annots", show annots;
       "body", stmt_to_string body;
     ]
   | Introduce { slprop; witnesses } ->
@@ -571,6 +600,12 @@ and scan_stmt (cbs:A.dep_scan_callbacks) (s:stmt) =
     scan_stmt cbs g;
     scan_slprop cbs i;
     scan_stmt cbs b
+  | NuWhile { cond=c; annots=a; body=b } ->
+    scan_stmt cbs c;
+    iter (fun (a, _) -> match a with
+      | LoopInvariant s -> scan_slprop cbs s) a;
+    scan_stmt cbs b
+
   | Introduce { slprop=s; witnesses=w } ->
     scan_slprop cbs s;
     iter cbs.scan_term w
@@ -636,6 +671,7 @@ let mk_block stmt = Block { stmt }
 let mk_if head join_slprop then_ else_opt = If { head; join_slprop; then_; else_opt }
 let mk_match head returns_annot branches = Match { head; returns_annot; branches }
 let mk_while guard id invariant body = While { guard; id; invariant; body }
+let mk_nuwhile cond annots body = NuWhile { cond; annots; body }
 let mk_intro slprop witnesses = Introduce { slprop; witnesses }
 let mk_sequence s1 s2 = Sequence { s1; s2 }
 let mk_stmt s range = { s; range }

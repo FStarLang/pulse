@@ -18,6 +18,7 @@ module Pulse.Typing.FV
 module RT = FStar.Reflection.Typing
 module R = FStar.Reflection.V2
 module L = FStar.List.Tot
+module RU = Pulse.RuntimeUtils
 open FStar.List.Tot
 open Pulse.Syntax
 open Pulse.Typing
@@ -175,6 +176,11 @@ let rec freevars_close_st_term' (t:st_term) (x:var) (i:index)
 
     | Tm_While { invariant; condition; body } ->
       freevars_close_term' invariant x (i + 1);
+      freevars_close_st_term' condition x i;
+      freevars_close_st_term' body x i
+
+    | Tm_NuWhile { invariant; condition; body } ->
+      freevars_close_term' invariant x i;
       freevars_close_st_term' condition x i;
       freevars_close_st_term' body x i
 
@@ -512,7 +518,7 @@ fun d _cb ->
     freevars_open_comp res arg 0;
     freevars_tm_arrow (as_binder ty) q res
 
-#push-options "--z3rlimit 30"
+#push-options "--z3rlimit 40"
 let st_typing_freevars_return : st_typing_freevars_case T_Return? =
 fun d cb ->
   match d with
@@ -761,6 +767,8 @@ let rec st_typing_freevars
     st_equiv_freevars deq
   | T_While _ _ _ _ _ _ _ ->
     st_typing_freevars_while d st_typing_freevars
+  | T_NuWhile _ _ _ _ _ _ _ ->
+    admit()
   | T_Par _ _ _ _ _ _ _ _ _ _ ->
     st_typing_freevars_par d st_typing_freevars
   | T_Rewrite _ _ _ _ _ ->

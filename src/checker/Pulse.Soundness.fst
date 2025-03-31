@@ -388,6 +388,9 @@ let rec soundness (g:stt_env)
     | T_While _ _ _ _ _ _ _ ->
       While.while_soundness d soundness
 
+    | T_NuWhile _ _ _ _ _ _ _ ->
+      admit()
+
     | T_Par _ _ _ _ _ _ _ _ _ _ ->
       Par.par_soundness d soundness
 

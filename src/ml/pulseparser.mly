@@ -67,6 +67,7 @@ let add_decorations decors ds =
 
 /* pulse specific tokens; rest are inherited from F* */
 %token MUT FN INVARIANT WHILE REF PARALLEL REWRITE FOLD EACH NOREWRITE
+%token NUWHILE
 %token GHOST ATOMIC UNOBSERVABLE
 %token WITH_INVS OPENS  SHOW_PROOF_STATE
 %token PRESERVES
@@ -217,6 +218,16 @@ optional_norewrite:
   | NOREWRITE { true }
   | { false }
 
+pulseWhileAnnot1_:
+  | INVARIANT v=pulseSLProp
+    { PulseSyntaxExtension_Sugar.LoopInvariant v }
+
+pulseWhileAnnot1:
+  | a=pulseWhileAnnot1_ { (a, rr $loc) }
+
+nuwhile_annots:
+  | annots=list(pulseWhileAnnot1) { annots }
+
 pulseStmtNoSeq:
   | OPEN i=quident
     { PulseSyntaxExtension_Sugar.mk_open i }
@@ -240,6 +251,9 @@ pulseStmtNoSeq:
     { s }
   | WHILE LPAREN tm=pulseStmt RPAREN INVARIANT i=lident DOT v=pulseSLProp LBRACE body=pulseStmt RBRACE
     { PulseSyntaxExtension_Sugar.mk_while tm i v body }
+  | NUWHILE LPAREN cond=pulseStmt RPAREN annots=nuwhile_annots LBRACE body=pulseStmt RBRACE
+    { PulseSyntaxExtension_Sugar.mk_nuwhile cond annots body }
+
   | INTRO p=pulseSLProp WITH ws=nonempty_list(indexingTerm)
     { PulseSyntaxExtension_Sugar.mk_intro p ws }
   | PARALLEL REQUIRES p1=pulseSLProp AND p2=pulseSLProp

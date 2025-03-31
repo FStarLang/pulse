@@ -253,6 +253,11 @@ type st_term' =
       condition_var: ppname;
       body:st_term;
     }
+  | Tm_NuWhile {
+      condition : st_term;
+      invariant : slprop;
+      body      : st_term;
+    }
   | Tm_Par {
       pre1:term;
       body1:st_term;

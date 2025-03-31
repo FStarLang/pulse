@@ -67,6 +67,15 @@ let sugar_star_of_list (r:Range.range) (ts : list A.term) : A.term =
   | [] -> sugar_emp r
   | ts -> fold_right1 (fun a b -> sugar_app r (sugar_star r) [a; b]) ts
 
+let parse_while_annots (r:Range.range) (anns : Sugar.while_annots) : err Sugar.slprop =
+  let loopinv =
+    List.fold_right (fun (ann, r) acc ->
+      match ann with
+      | Sugar.LoopInvariant t -> t :: acc
+      | _ -> acc) anns [] |> sugar_star_of_list r
+  in
+  return loopinv
+
 let parse_annots (r:Range.range) (cs : list Sugar.computation_annot) : err Sugar.parsed_annots =
   let open PulseSyntaxExtension.Sugar in
   let pres = filter (fun (a, _) -> Preserves ? a) cs in
@@ -591,6 +600,13 @@ let rec desugar_stmt (env:env_t) (s:Sugar.stmt)
       in
       let! body = desugar_stmt env body in
       return (SW.tm_while guard (id, invariant) body s.range)
+
+    | NuWhile { cond; annots; body } ->
+      let! cond = desugar_stmt env cond in
+      let! loopinv = parse_while_annots s.range annots in
+      let! loopinv = desugar_slprop env loopinv in
+      let! body = desugar_stmt env body in
+      return (SW.tm_nuwhile cond loopinv body s.range)
 
     | Introduce { slprop; witnesses } -> (
       let! vp = desugar_slprop env slprop in

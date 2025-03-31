@@ -171,6 +171,7 @@ type checker_result_t (g:env) (ctxt:slprop) (post_hint:post_hint_opt g) =
     checker_result_inv g post_hint x g1 t ctxt'
   }
 
+(* Explain *)
 type check_t =
   g:env ->
   ctxt:slprop ->
@@ -187,6 +188,7 @@ val match_comp_res_with_post_hint (#g:env) (#t:st_term) (#c:comp_st)
            c':comp_st &
            st_typing g t' c')
 
+(* Explain *)
 val apply_checker_result_k (#g:env) (#ctxt:slprop) (#post_hint:post_hint_for_env g)
   (r:checker_result_t g ctxt (Some post_hint))
   (res_ppname:ppname)

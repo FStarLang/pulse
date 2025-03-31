@@ -385,6 +385,15 @@ let comp_while (x:ppname) (inv:term)
            post=open_term' inv tm_false 0
          }
 
+let comp_nuwhile (invariant cpost : term) 
+  : comp
+  = C_ST {
+           u    = u0;
+           res  = tm_unit;
+           pre  = invariant;
+           post = T.mk_app cpost [(`false, T.Q_Explicit)];
+         }
+
 let mk_tuple2 (u1 u2:universe) (t1 t2:term) : term =
   tm_pureapp (tm_pureapp (tm_uinst (as_fv tuple2_lid) [u1; u2])
                          None
@@ -964,6 +973,21 @@ type st_typing : env -> st_term -> comp -> Type =
                                               body;
                                               condition_var = ppname_default } ))
                   (comp_while ppname_default inv)
+
+  | T_NuWhile:
+      g:env ->
+      invariant:term ->
+      condition:st_term ->
+      cpost:term ->
+      body:st_term ->
+      tot_typing g invariant tm_slprop ->
+      tot_typing g cpost (mk_abs (`bool) T.Q_Explicit tm_slprop) ->
+      // st_typing g cond (comp_nuwhile_cond ppname_default inv) ->
+      // st_typing g body (comp_nuwhile_body ppname_default inv) ->
+      st_typing g (wtag (Some STT)
+                    (Tm_NuWhile { invariant; condition; body; })
+                  )
+                  (comp_nuwhile invariant cpost)
 
   | T_Par:
       g:env ->

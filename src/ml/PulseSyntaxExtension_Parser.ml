@@ -14,6 +14,7 @@ let rewrite_token (tok:FP.token)
     | IDENT "mut" -> PP.MUT
     | IDENT "invariant" -> PP.INVARIANT
     | IDENT "while" -> PP.WHILE
+    | IDENT "nuwhile" -> PP.NUWHILE
     | IDENT "fn" -> PP.FN
     | IDENT "parallel" -> PP.PARALLEL
     | IDENT "each" -> PP.EACH

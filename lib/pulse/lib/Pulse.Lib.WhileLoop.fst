@@ -37,3 +37,24 @@ fn rec while_loop'
 
 let while_loop inv cond body = 
   while_loop' inv (fun _ -> cond) (fun _ -> body)
+
+fn rec nuwhile_loop'
+  (inv    : slprop)
+  (cpost  : bool -> slprop)
+  (cond : unit -> stt bool inv (fun b -> cpost b))
+  (body : unit -> stt unit (cpost true) (fun _ -> inv))
+  requires inv
+  ensures  cpost false
+{
+  let b = cond ();
+  if b {
+    body ();
+    nuwhile_loop' inv cpost cond body;
+  }
+  else {
+    ()
+  }
+}
+
+let nuwhile_loop inv cpost cond body =
+  nuwhile_loop' inv cpost (fun _ -> cond) (fun _ -> body)

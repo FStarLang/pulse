@@ -255,6 +255,9 @@ let rec elab_st_typing (#g:env)
       let body = elab_st_typing body_typing in
       mk_while (mk_abs bool_tm R.Q_Explicit inv) cond body
 
+    | T_NuWhile _ inv _ _ _ cond_typing body_typing ->
+      (`())
+
     | T_Par _ eL cL eR cR _ _ _ eL_typing eR_typing ->
       let ru = comp_u cL in
       let raL = comp_res cL in
