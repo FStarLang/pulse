@@ -8,9 +8,5 @@ include $(PULSE_ROOT)/mk/test.mk
 test-c: verify # reuses cache, needs to run after verify
 	+$(MAKE) -f c.Makefile
 
-.PHONY: test-cbor
-test-cbor: verify
-	+$(MAKE) -C cbor
-
 # Add a dependency for 'all'
-all: test-c test-cbor
+all: test-c
