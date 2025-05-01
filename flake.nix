@@ -1,18 +1,11 @@
 {
   inputs = {
-    devenv.inputs.nixpkgs.follows = "nixpkgs";
-    devenv.url = "github:cachix/devenv";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    fstar.url = "github:FStarLang/FStar/v2025.02.17";
-    nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
+    fstar.url = "github:FStarLang/FStar/v2025.03.25";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
 
-  nixConfig = {
-    extra-trusted-public-keys = "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=";
-    extra-substituters = "https://devenv.cachix.org";
-  };
-
-  outputs = { self, ... }@inputs:
+  outputs = { ... }@inputs:
 
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
 
@@ -24,20 +17,20 @@
         packages.pulse = pkgs.stdenv.mkDerivation rec {
 
           pname = "pulse";
-          version = "84b3fc39e2ba16059408d4df039d4a03efa85b16";
+          version = "9a03472d2c366bde5f7b0497bf3356dd445ce207";
           src = pkgs.fetchFromGitHub {
             owner = "FStarLang";
             repo = pname;
             rev = "${version}";
-            hash = "sha256-Cg6z4pbSbPIaU1Jfcw78XVTxqLq5Jt+CajoyxHaeCVo=";
+            hash = "sha256-YgWxnX+gCVYx+CCIuprDYKewyEaSekqAilB96eyq+fk=";
           };
 
-          inherit (inputs.fstar.packages.${system}.fstar) nativeBuildInputs;
-          buildInputs = inputs.fstar.packages.${system}.fstar.buildInputs ++ [
-            inputs.fstar.packages.${system}.fstar
+          inherit (pkgs.fstar) nativeBuildInputs;
+          buildInputs = pkgs.fstar.buildInputs ++ [
+            pkgs.fstar
             pkgs.which
           ];
-          PATH = "${inputs.fstar.packages.${system}.fstar}/bin:$PATH";
+          PATH = "${pkgs.fstar}/bin:$PATH";
 
           enableParallelBuilding = true;
 
@@ -48,7 +41,7 @@
         };
 
         packages.pulse-exe = pkgs.writeShellScriptBin "pulse.exe" ''
-          exec ${inputs.fstar.packages.${system}.fstar}/bin/fstar.exe "$1" \
+          exec ${pkgs.fstar}/bin/fstar.exe "$1" \
             --include ${config.packages.pulse}/lib/pulse \
             --include ${config.packages.pulse}/lib/pulse/checker \
             --include ${config.packages.pulse}/lib/pulse/extraction \
@@ -61,7 +54,7 @@
 
         packages.rustast-bindings = pkgs.rustPlatform.buildRustPackage rec {
           inherit (config.packages.pulse) version src;
-          inherit (inputs.fstar.packages.${system}.fstar) nativeBuildInputs;
+          inherit (pkgs.fstar) nativeBuildInputs;
           pname = "rustast-bindings";
           sourceRoot = "${src.name}/pulse2rust/src/ocaml";
           cargoLock = {
@@ -83,10 +76,10 @@
           };
           sourceRoot = "source/pulse2rust/src";
           buildInputs = [
-            inputs.fstar.packages.${system}.fstar
+            pkgs.fstar
             pkgs.which
           ];
-          PATH = "${inputs.fstar.packages.${system}.fstar}/bin:$PATH";
+          PATH = "${pkgs.fstar}/bin:$PATH";
 
           installPhase = ''
             mkdir -p $out/ocaml/generated
@@ -99,11 +92,11 @@
           pname = "main";
           sourceRoot = "${src.name}/pulse2rust/src/ocaml";
 
-          nativeBuildInputs = inputs.fstar.packages.${system}.fstar.nativeBuildInputs ++ [ inputs.fstar.packages.${system}.fstar ];
-          buildInputs = inputs.fstar.packages.${system}.fstar.buildInputs ++ [ inputs.fstar.packages.${system}.fstar ];
+          nativeBuildInputs = pkgs.fstar.nativeBuildInputs ++ [ pkgs.fstar ];
+          buildInputs = pkgs.fstar.buildInputs ++ [ pkgs.fstar ];
 
           buildPhase = ''
-            eval $(${inputs.fstar.packages.${system}.fstar}/bin/fstar.exe --ocamlenv)
+            eval $(${pkgs.fstar}/bin/fstar.exe --ocamlenv)
             mkdir -p $out/bin
             dune build main.exe --build-dir=$out/bin
           '';
@@ -119,33 +112,6 @@
           installPhase = '''';
 
           meta.mainProgram = "default/ocaml/main.exe";
-        };
-
-        devShells = {
-          default = inputs.devenv.lib.mkShell {
-            inherit inputs pkgs;
-            modules = [
-              {
-                # https://devenv.sh/reference/options/
-                env.FSTAR_EXE = "${inputs.fstar.packages.${system}.fstar}/bin/fstar.exe";
-                env.FSTAR_HOME = "${inputs.fstar.packages.${system}.fstar}/lib/fstar";
-                env.PULSE_HOME = "${config.packages.pulse}/lib/pulse";
-
-                languages.rust = {
-                  enable = true;
-                };
-              }
-            ];
-          };
-        };
-
-        packages = {
-          default = config.packages.pulse;
-
-          devenv-up = self.devShells.${system}.default.config.procfileScript;
-          devenv-test = self.devShells.${system}.default.config.test;
-
-          inherit (inputs.fstar.packages.${system}) fstar;
         };
 
       };
