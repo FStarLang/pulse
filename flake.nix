@@ -114,6 +114,10 @@
           meta.mainProgram = "default/ocaml/main.exe";
         };
 
+        packages.fstar = pkgs.fstar;
+
+        packages.default = config.packages.pulse;
+
       };
     };
 }
