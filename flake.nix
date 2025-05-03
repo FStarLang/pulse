@@ -66,14 +66,8 @@
         };
 
         packages.extract = pkgs.stdenv.mkDerivation {
+          inherit (config.packages.pulse) version src;
           pname = "extract";
-          inherit (config.packages.pulse) version;
-          src = pkgs.fetchFromGitHub {
-            owner = "FStarLang";
-            repo = "pulse";
-            rev = "42842b823c45f83376b65bc10ffa803ad6f21dc4";
-            hash = "sha256-CRlrfiDXoSn9s0tiU4dunsUsUu00jb8U9/QApfu+Qtw=";
-          };
           sourceRoot = "source/pulse2rust/src";
           buildInputs = [
             pkgs.fstar
@@ -87,7 +81,7 @@
           '';
         };
 
-        packages.pulse2rust = inputs.fstar.inputs.nixpkgs.legacyPackages.${system}.ocaml-ng.ocamlPackages_4_14.buildDunePackage rec {
+        packages.pulse2rust = pkgs.ocaml-ng.ocamlPackages_4_14.buildDunePackage rec {
           inherit (config.packages.pulse) version src;
           pname = "main";
           sourceRoot = "${src.name}/pulse2rust/src/ocaml";
