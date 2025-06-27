@@ -71,7 +71,7 @@ fn pts_to_len (#t:Type) (a:array t) (#p:perm) (#x:FStar.Seq.seq t)
 
 
 
-fn alloc (#elt:Type0) (x:elt) (n:SZ.t)
+fn __alloc (#elt:Type0) (x:elt) (n:SZ.t)
   requires emp
   returns a:array elt
 ensures
@@ -84,7 +84,7 @@ ensures
   fold (pts_to a (Seq.create (SZ.v n) x));
   a
 }
-
+let alloc = __alloc
 
 
 fn op_Array_Access
@@ -128,7 +128,7 @@ ensures
 
 
 
-fn free
+fn __free
     (#elt: Type)
     (a: array elt)
     (#s: Ghost.erased (Seq.seq elt))
@@ -140,7 +140,7 @@ ensures
   unfold (pts_to a s);
   H.free a;
 }
-
+let free = __free
 
 let share #a arr #s #p = H.share arr #(raise_seq s) #p
 
