@@ -42,7 +42,8 @@ val pts_to_timeless (#a:Type) ([@@@mkey] r:ref a) (p:perm) (x:a)
   : Lemma (timeless (pts_to r #p x))
           [SMTPat (timeless (pts_to r #p x))]
 
-[@@deprecated "Reference.alloc is unsound; use Box.alloc instead"]
+(* Not to be called directly. You may want Box.alloc instead. *)
+private
 fn alloc
   (#a:Type)
   (x:a)
@@ -87,8 +88,8 @@ fn op_Colon_Equals
   ensures  r |-> x
 
 
-[@@deprecated "Reference.free is unsound; use Box.free instead"]
-
+(* Not to be called directly. You may want Box.free instead. *)
+private
 fn free
   (#a:Type)
   (r:ref a)
