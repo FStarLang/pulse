@@ -96,6 +96,8 @@ type array'
   }
 let array ([@@@strictly_positive] elt: Type u#1) : Type0 = array'
 let length (#elt: Type) (a: array elt) = a.length
+let base_of #t (a: array t) : base_t = hide (reveal a.p.base_len, a.p.base)
+let offset_of #t (a: array t) : GTot nat = offset a.p
 
 let ptr_of
   (#elt: Type)
@@ -518,6 +520,29 @@ let pts_to_range_timeless (#a:Type) (x:array a) (i j : nat) (p:perm) (s:Seq.seq 
     assert_norm (pts_to_range x i j #p s == (exists* (q:in_bounds i j x). pts_to (array_slice x i j) #p s ** token x q));
     timeless_exists (fun (q: in_bounds i j x) -> pts_to (array_slice x i j) #p s ** token x q)
 
+unobservable
+fn array_of_pts_to_range #elt (a: array elt) (i: SizeT.t) (j: erased nat)
+  requires pts_to_range a (SizeT.v i) j #'pr 'va
+  returns b: array elt
+  ensures pts_to b #'pr 'va
+  ensures pure (is_subarray a (SizeT.v i) j b)
+{
+  unfold pts_to_range a (SizeT.v i) j #'pr 'va;
+  with q. assert (token #(in_bounds (SizeT.v i) j a) a q);
+  unfold (token #(in_bounds (SizeT.v i) j a) a q);
+  elim_in_bounds a q;
+  split_l (split_r a (SizeT.v i)) (j - SizeT.v i)
+}
+
+ghost fn pts_to_range_of_array #elt (b: array elt) (a: array elt) (i j: nat)
+  requires pts_to b #'pr 'vb
+  requires pure (is_subarray a i j b)
+  ensures pts_to_range a i j #'pr 'vb
+{
+  rewrite each b as array_slice a i j;
+  fold token #(in_bounds i j a) a ();
+  fold pts_to_range a i j #'pr 'vb
+}
 
 ghost
 fn pts_to_range_prop'
@@ -732,8 +757,8 @@ let mk_carrier_merge
 = ()
 
 let adjacent (#elt: Type) (a1 a2: array elt) : Tot prop =
-  base (ptr_of a1) == base (ptr_of a2) /\
-  offset (ptr_of a1) + (length a1) == offset (ptr_of a2)
+  base_of a1 == base_of a2 /\
+  offset_of a1 + length a1 == offset_of a2
 
 let merge' (#elt: Type) (a1: array elt) (a2:array elt { adjacent a1 a2 })
 = { p = ptr_of a1; length=Ghost.hide (length a1 + length a2) }
