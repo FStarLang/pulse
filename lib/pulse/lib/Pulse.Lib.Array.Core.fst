@@ -25,8 +25,11 @@ module SZ = FStar.SizeT
 module Seq = FStar.Seq
 module U = FStar.Universe
 
+let base_t = H.base_t
 let array a = H.array (U.raise_t a)
 let length #a x = H.length x
+let base_of x = H.base_of x
+let offset_of x = H.offset_of x
 let is_full_array #a x = H.is_full_array x
 let raise_seq (#a:Type0) (x:FStar.Seq.seq a)
   : FStar.Seq.seq (U.raise_t u#0 u#1 a)
@@ -393,6 +396,28 @@ fn pts_to_range_gather
   fold (pts_to_range arr l r #(p0 +. p1) s0)
 }
 
+unobservable
+fn array_of_pts_to_range #elt (a: array elt) (i: SizeT.t) (j: erased nat)
+  requires pts_to_range a (SizeT.v i) j #'pr 'va
+  returns b: array elt
+  ensures pts_to b #'pr 'va
+  ensures pure (is_subarray a (SizeT.v i) j b)
+{
+  unfold pts_to_range a (SizeT.v i) j #'pr 'va;
+  let b = H.array_of_pts_to_range a i j;
+  fold pts_to b #'pr 'va;
+  b
+}
+
+ghost fn pts_to_range_of_array #elt (b: array elt) (a: array elt) (i j: nat)
+  requires pts_to b #'pr 'vb
+  requires pure (is_subarray a i j b)
+  ensures pts_to_range a i j #'pr 'vb
+{
+  unfold pts_to b #'pr 'vb;
+  H.pts_to_range_of_array b a i j;
+  fold pts_to_range a i j #'pr 'vb;
+}
 
 (* this is universe-polymorphic in ret_t; so can't define it in Pulse yet *)
 let with_local

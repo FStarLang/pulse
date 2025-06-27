@@ -25,9 +25,13 @@ open FStar.Ghost
 module SZ = FStar.SizeT
 module Seq = FStar.Seq
 
+[@@erasable] val base_t : Type0
+
 val array ([@@@strictly_positive] a:Type u#0) : Type u#0
 
 val length (#a:Type u#0) (x:array a) : Ghost nat (requires True) (ensures SZ.fits)
+val base_of #t (a: array t) : base_t
+val offset_of #t (a: array t) : GTot nat
 
 type elseq (a:Type) (l:SZ.t) = s:erased (Seq.seq a) { Seq.length s == SZ.v l }
 
@@ -117,6 +121,24 @@ val pts_to_range
 val pts_to_range_timeless (#a:Type) (x:array a) (i j : nat) (p:perm) (s:Seq.seq a)
   : Lemma (timeless (pts_to_range x i j #p s))
           [SMTPat (timeless (pts_to_range x i j #p s))]
+
+let is_subarray #elt (a: array elt) (i j: nat) (b: array elt) : prop =
+  base_of b == base_of a /\
+  offset_of b == offset_of a + i /\
+  i + length b == j /\
+  j <= length a
+
+unobservable
+fn array_of_pts_to_range #elt (a: array elt) (i: SizeT.t) (j: erased nat)
+  requires pts_to_range a (SizeT.v i) j #'pr 'va
+  returns b: array elt
+  ensures pts_to b #'pr 'va
+  ensures pure (is_subarray a (SizeT.v i) j b)
+
+ghost fn pts_to_range_of_array #elt (b: array elt) (a: array elt) (i j: nat)
+  requires pts_to b #'pr 'vb
+  requires pure (is_subarray a i j b)
+  ensures pts_to_range a i j #'pr 'vb
 
 ghost
 fn pts_to_range_prop
