@@ -25,8 +25,11 @@ module SZ = FStar.SizeT
 module Seq = FStar.Seq
 module U = FStar.Universe
 
+let base_t = H.base_t
 let array a = H.array (U.raise_t a)
 let length #a x = H.length x
+let base_of x = H.base_of x
+let offset_of x = H.offset_of x
 let is_full_array #a x = H.is_full_array x
 let raise_seq (#a:Type0) (x:FStar.Seq.seq a)
   : FStar.Seq.seq (U.raise_t u#0 u#1 a)
@@ -40,6 +43,11 @@ let map_seq_index #a #b (x:FStar.Seq.seq a) (f:a -> b) (i:nat { i < Seq.length x
         [SMTPat (Seq.index (Seq.map_seq f x) i)]
 = FStar.Seq.map_seq_index f x i
 
+let downgrade_val_raise_val (#a: Type u#a) (x: a) :
+  Lemma (U.downgrade_val u#a u#b (U.raise_val x) == x) [SMTPat (U.raise_val u#a u#b x)] = ()
+let raise_val_downgrade_val (#a: Type u#a) (x: U.raise_t u#a u#b a) :
+  Lemma (U.raise_val (U.downgrade_val x) == x) [SMTPat (U.downgrade_val x)] = ()
+
 let raise_seq_len #a (x:FStar.Seq.seq a)
 : Lemma (ensures Seq.length (raise_seq x) == Seq.length x)
         [SMTPat (Seq.length (raise_seq x))]
@@ -50,11 +58,247 @@ let raise_seq_index #a (x:FStar.Seq.seq a) (i:nat)
   (ensures Seq.index (raise_seq x) i == U.raise_val u#0 u#1 (Seq.index x i))
   [SMTPat (Seq.index (raise_seq x) i)]
 =  ()//FStar.Seq.map_seq_index (U.raise_val u#0 u#1) x i
+
+let downgrade_seq #a (x: Seq.seq (U.raise_t u#0 u#1 a)) : Seq.seq a
+= Seq.map_seq U.downgrade_val x
+let raise_seq_downgrade_seq #a (x: Seq.seq (U.raise_t a))
+: Lemma (raise_seq (downgrade_seq x) == x) [SMTPat (raise_seq (downgrade_seq x))]
+= assert Seq.equal (raise_seq (downgrade_seq x)) x
+
+let raise_seq_inv (#elt:Type0) (x:FStar.Seq.seq elt)
+: Lemma (ensures downgrade_seq (raise_seq x)
+                 `Seq.equal` x)
+        [SMTPat (raise_seq x)]
+= ()
+
+let downgrade_seq_inv (#elt:Type0) (x:FStar.Seq.seq (U.raise_t u#0 u#1 elt))
+: Lemma (ensures raise_seq (downgrade_seq x)
+                 `Seq.equal` x)
+        [SMTPat (downgrade_seq x)]
+= ()
+
+let null #a : array a = H.null
+let is_null r = H.is_null r
+
+[@@pulse_unfold]
+let pts_to_mask #t ([@@@mkey] a: array t) (#[full_default()] f: perm) (v: erased (Seq.seq t)) (mask: nat -> prop) : slprop =
+  H.pts_to_mask a #f (raise_seq v) mask
+
+let pts_to_mask_timeless (#a:Type) (x:array a) (p:perm) (s:Seq.seq a) mask =
+  ()
+
+ghost
+fn pts_to_mask_len #t (a:array t) (#p:perm) (#x:Seq.seq t) #mask
+  preserves pts_to_mask a #p x mask
+  ensures pure (length a == Seq.length x)
+{
+  H.pts_to_mask_len a;
+}
+
+ghost
+fn pts_to_mask_not_null #a #p (r:array a) (#v:Seq.seq a) #mask
+  preserves pts_to_mask r #p v mask
+  ensures pure (not (is_null r))
+{
+  H.pts_to_mask_not_null r;
+}
+
+ghost fn mask_vext #t (arr: array t) #f #v v' #mask
+  requires pts_to_mask arr #f v mask
+  requires pure (Seq.length v' == Seq.length v /\
+    (forall (i: nat). mask i /\ i < Seq.length v ==> Seq.index v i == Seq.index v' i))
+  ensures pts_to_mask arr #f v' mask
+{
+  H.mask_vext arr (raise_seq v');
+}
+
+ghost fn mask_mext #t (arr: array t) #f #v #mask (mask': nat -> prop)
+  requires pts_to_mask arr #f v mask
+  requires pure (forall (i: nat). i < Seq.length v ==> (mask i <==> mask' i))
+  ensures pts_to_mask arr #f v mask'
+{
+  H.mask_mext arr mask';
+}
+
+ghost fn mask_ext #t (arr: array t) #f #v #mask v' (mask': nat -> prop)
+  requires pts_to_mask arr #f v mask
+  requires pure (forall (i: nat). i < Seq.length v ==> (mask i <==> mask' i))
+  requires pure (Seq.length v' == Seq.length v /\
+    (forall (i: nat). mask i /\ i < Seq.length v ==> Seq.index v i == Seq.index v' i))
+  ensures pts_to_mask arr #f v' mask'
+{
+  H.mask_ext arr (raise_seq v') mask';
+}
+
+ghost
+fn mask_share #a (arr:array a) (#s: Seq.seq a) #p #mask
+  requires pts_to_mask arr #p s mask
+  ensures pts_to_mask arr #(p /. 2.0R) s mask
+  ensures pts_to_mask arr #(p /. 2.0R) s mask
+{
+  H.mask_share arr;
+}
+
+[@@allow_ambiguous]
+ghost fn mask_gather #t (arr: array t) #p1 #p2 #s1 #s2 #mask1 #mask2
+  requires pts_to_mask arr #p1 s1 mask1
+  requires pts_to_mask arr #p2 s2 mask2
+  requires pure (forall i. mask1 i <==> mask2 i)
+  ensures exists* (v: Seq.seq t). pts_to_mask arr #(p1 +. p2) v mask1 **
+    pure ((Seq.length v == Seq.length s1 /\ Seq.length v == Seq.length s2) /\
+      (forall (i: nat). i < Seq.length v /\ mask1 i ==> Seq.index v i == Seq.index s1 i /\ Seq.index v i == Seq.index s2 i))
+{
+  H.mask_gather arr;
+  H.mask_mext arr mask1;
+  with v. assert H.pts_to_mask arr #(p1 +. p2) v mask1;
+  fold pts_to_mask arr #(p1 +. p2) (downgrade_seq v) mask1;
+}
+
+ghost fn split_mask #t (arr: array t) #f #v #mask (pred: nat -> prop)
+  requires pts_to_mask arr #f v mask
+  ensures pts_to_mask arr #f v (mask_isect mask pred)
+  ensures pts_to_mask arr #f v (mask_diff mask pred)
+{
+  H.split_mask arr pred;
+}
+
+[@@allow_ambiguous]
+ghost fn join_mask #t (arr: array t) #f #v1 #v2 #mask1 #mask2
+  requires pts_to_mask arr #f v1 mask1
+  requires pts_to_mask arr #f v2 mask2
+  requires pure (forall i. ~(mask1 i /\ mask2 i))
+  ensures exists* (v: Seq.seq t).
+    pts_to_mask arr #f v (fun i -> mask1 i \/ mask2 i) **
+    pure (Seq.length v == Seq.length v1 /\ Seq.length v == Seq.length v2 /\
+      (forall (i: nat). i < Seq.length v ==>
+        (mask1 i ==> Seq.index v i == Seq.index v1 i) /\
+        (mask2 i ==> Seq.index v i == Seq.index v2 i)))
+{
+  H.join_mask arr #f #_ #_ #mask1 #mask2;
+  with v. assert H.pts_to_mask arr #f v (fun i -> mask1 i \/ mask2 i);
+  fold pts_to_mask arr #f (downgrade_seq v) (fun i -> mask1 i \/ mask2 i);
+}
+
+[@@allow_ambiguous]
+ghost fn join_mask' #t (arr: array t) #f (#v: erased (Seq.seq t)) #mask1 #mask2
+  requires pts_to_mask arr #f v mask1
+  requires pts_to_mask arr #f v mask2
+  requires pure (forall i. ~(mask1 i /\ mask2 i))
+  ensures pts_to_mask arr #f v (fun i -> mask1 i \/ mask2 i)
+{
+  H.join_mask' arr #_ #_ #mask1 #mask2;
+}
+
+[@@allow_ambiguous]
+ghost
+fn pts_to_mask_injective_eq #a #p0 #p1 #s0 #s1 #mask0 #mask1 (arr:array a)
+  preserves pts_to_mask arr #p0 s0 mask0
+  preserves pts_to_mask arr #p1 s1 mask1
+  ensures pure (Seq.length s0 == Seq.length s1 /\
+    (forall (i: nat). i < Seq.length s0 /\ mask0 i /\ mask1 i ==>
+      Seq.index s0 i == Seq.index s1 i))
+{
+  H.pts_to_mask_injective_eq arr;
+}
+
+fn mask_read #t (a: array t) (i: SZ.t) #p (#s: erased (Seq.seq t) { SZ.v i < Seq.length s }) #mask
+  preserves pts_to_mask a #p s mask
+  requires pure (mask (SZ.v i))
+  returns res: t
+  ensures pure (res == Seq.index s (SZ.v i))
+{
+  U.downgrade_val (H.mask_read a i)
+}
+
+fn mask_write #t (a: array t) (i: SZ.t) (v: t) (#s: erased (Seq.seq t) { SZ.v i < Seq.length s }) #mask
+  requires pts_to_mask a s mask
+  requires pure (mask (SZ.v i))
+  ensures pts_to_mask a (Seq.upd s (SZ.v i) v) mask
+{
+  H.mask_write a i (U.raise_val v);
+  with s'. assert H.pts_to_mask a s' mask;
+  assert pure (Seq.equal s' (raise_seq (Seq.upd s (SZ.v i) v)));
+}
+
+let gsub #t (arr: array t) (i: nat) (j: nat { i <= j /\ j <= length arr }) : GTot (array t) =
+  H.gsub arr i j
+
+ghost fn gsub_intro #t (arr: array t) #f #mask (i j: nat) (#v: erased (Seq.seq t) { i <= j /\ j <= Seq.length v })
+  requires pts_to_mask arr #f v mask
+  requires pure (forall (k: nat). mask k ==> i <= k /\ k < j)
+  returns _: squash (length arr == Seq.length v)
+  ensures pts_to_mask (gsub arr i j) #f (Seq.slice v i j) (fun k -> mask (k + i))
+{
+  H.gsub_intro arr i j;
+  with v'. assert H.pts_to_mask (gsub arr i j) #f v' (fun k -> mask (k + i));
+  assert pure (Seq.equal v' (raise_seq (Seq.slice v i j)));
+}
+
+ghost fn gsub_elim #t (arr: array t) #f (#mask: nat->prop) (i j: nat)
+    (#v: erased (Seq.seq t) { i <= j /\ j <= length arr })
+  requires pts_to_mask (gsub arr i j) #f v mask
+  returns _: squash (j - i == Seq.length v)
+  ensures exists* v'.
+    pts_to_mask arr #f v' (fun k -> i <= k /\ k < j /\ mask (k - i)) **
+    pure (Seq.length v' == length arr /\ (forall (k:nat). k < j - i ==> Seq.index v k == Seq.index v' (k + i)))
+{
+  H.gsub_elim arr i j;
+  with v' mask'. assert H.pts_to_mask arr #f v' mask';
+  assert pts_to_mask arr #f (downgrade_seq v') mask';
+}
+
+unobservable
+fn sub #t (arr: array t) #f #mask (i: SZ.t) (j: SZ.t)
+    (#v: erased (Seq.seq t) { SZ.v i <= SZ.v j /\ SZ.v j <= Seq.length (reveal v) })
+  requires pts_to_mask arr #f v mask
+  returns sub: (sub: array t { length arr == Seq.length (reveal v) })
+  ensures rewrites_to sub (gsub arr (SZ.v i) (SZ.v j))
+  ensures pts_to_mask sub #f (Seq.slice v (SZ.v i) (SZ.v j)) (fun k -> mask (k + SZ.v i))
+  ensures pts_to_mask arr #f v (fun k -> mask k /\ ~(SZ.v i <= k /\ k < SZ.v j))
+{
+  let sub = H.sub arr i j #(raise_seq v);
+  with v' mask'. assert H.pts_to_mask sub #f v' mask';
+  assert pure (Seq.equal v' (raise_seq (Seq.slice v (SZ.v i) (SZ.v j))));
+  sub
+}
+
+[@@allow_ambiguous]
+ghost fn return_sub #t (arr sub: array t) #f (#v #vsub: erased (Seq.seq t)) #mask #masksub (#i: nat) (#j: nat { i <= j /\ j <= length arr })
+  requires pts_to_mask arr #f v mask
+  requires pts_to_mask (gsub arr i j) #f vsub masksub
+  requires pure (forall (k: nat). i <= k /\ k < j ==> ~(mask k))
+  ensures exists* v'. pts_to_mask arr #f v' (fun k -> mask k \/ (i <= k /\ k < j /\ masksub (k - i)))
+    ** pure (Seq.length v == Seq.length v' /\ i + Seq.length vsub == j /\ j <= Seq.length v /\
+      (forall (k: nat). k < Seq.length v' ==>
+      Seq.index v' k == (if i <= k && k < j then Seq.index vsub (k - i) else Seq.index v k)))
+{
+  H.return_sub arr sub;
+  with v' mask'. assert H.pts_to_mask arr #f v' mask';
+  assert pts_to_mask arr #f (downgrade_seq v') mask';
+}
+
 let pts_to #a 
     (r:array a)
     (#[exact (`1.0R)] p:perm)
     (v:FStar.Seq.seq a)
 = H.pts_to r #p (raise_seq v)
+
+ghost fn to_mask #t (arr: array t) #f #v
+  requires arr |-> Frac f v
+  ensures pts_to_mask arr #f v (fun _ -> True)
+{
+  unfold pts_to arr #f v;
+  H.to_mask arr;
+}
+
+ghost fn from_mask #t (arr: array t) #f #v #mask
+  requires pts_to_mask arr #f v mask
+  requires pure (forall i. mask i)
+  ensures arr |-> Frac f v
+{
+  H.from_mask arr;
+  fold pts_to arr #f v;
+}
 
 let pts_to_timeless _ _ _ = ()
 
@@ -140,22 +384,6 @@ ensures
 
 
 let share #a arr #s #p = H.share arr #(raise_seq s) #p
-
-let downgrade_seq (#elt:Type0) (x:FStar.Seq.seq (U.raise_t elt))
-  : Seq.seq elt
-  = FStar.Seq.map_seq (U.downgrade_val u#0 u#1) x
-
-let raise_seq_inv (#elt:Type0) (x:FStar.Seq.seq elt)
-: Lemma (ensures downgrade_seq (raise_seq x)
-                 `Seq.equal` x)
-        [SMTPat (raise_seq x)]
-= ()
-
-let downgrade_seq_inv (#elt:Type0) (x:FStar.Seq.seq (U.raise_t u#0 u#1 elt))
-: Lemma (ensures raise_seq (downgrade_seq x)
-                 `Seq.equal` x)
-        [SMTPat (downgrade_seq x)]
-= ()
 
 
 ghost
@@ -392,7 +620,6 @@ fn pts_to_range_gather
   H.pts_to_range_gather arr;
   fold (pts_to_range arr l r #(p0 +. p1) s0)
 }
-
 
 (* this is universe-polymorphic in ret_t; so can't define it in Pulse yet *)
 let with_local
