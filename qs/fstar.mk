@@ -26,6 +26,8 @@ export FSTAR_EXE
 
 HINTS_ENABLED?=
 
+OTHERFLAGS += --cmi
+
 # This warning is really useless.
 OTHERFLAGS += --warn_error -321
 OTHERFLAGS += --ext optimize_let_vc
