@@ -89,11 +89,11 @@ val box_to_ref  (#a:Type0) (b:box a) : R.ref a
 ghost
 fn to_ref_pts_to (#a:Type0) (b:box a) (#p:perm) (#v:a)
   requires pts_to b #p v
-  ensures  R.pts_to (box_to_ref b) #p v
+  ensures  R.pts_to (box_to_ref b) #p v ** pure (R.is_full_ref (box_to_ref b))
 
 ghost
 fn to_box_pts_to (#a:Type0) (b:box a) (#p:perm) (#v:a)
-  requires R.pts_to (box_to_ref b) #p v
+  requires R.pts_to (box_to_ref b) #p v ** pure (R.is_full_ref (box_to_ref b))
   ensures pts_to b #p v
 
 ghost
