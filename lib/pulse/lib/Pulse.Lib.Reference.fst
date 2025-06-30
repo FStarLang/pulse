@@ -38,7 +38,7 @@ let pts_to
 let pts_to_timeless r p x = H.pts_to_timeless r p (U.raise_val x)
 
 
-fn alloc (#a:Type u#0) (v:a)
+fn __alloc (#a:Type u#0) (v:a)
   requires emp
   returns r:ref a
   ensures pts_to r v
@@ -47,7 +47,7 @@ fn alloc (#a:Type u#0) (v:a)
   fold (pts_to r #1.0R v);
   r
 }
-
+let alloc = __alloc
 
 
 fn read
@@ -83,13 +83,14 @@ fn write
 let op_Colon_Equals = write
 
 
-fn free #a (r:ref a) (#n:erased a)
+fn __free #a (r:ref a) (#n:erased a)
   requires pts_to r #1.0R n
   ensures emp
 {
   unfold (pts_to r #1.0R n);
   H.free r;
 }
+let free = __free
 
 
 
