@@ -6,20 +6,17 @@ open Pulse.Nolib
 assume val p : int -> slprop
 
 fn chk (x : int)
-  requires p x
-  returns  bool
-  ensures  p x
+  preserves p x
+  returns   bool
 { false }
 
 fn use (x : int)
-  requires p x
-  ensures  p x
+  preserves p x
 { () }
 
 ghost
 fn use_ghost (x : int)
-  requires p x
-  ensures  p x
+  preserves p x
 { () }
 
 ghost
@@ -36,8 +33,7 @@ fn nohint()
 }
 
 fn test0 ()
-  requires p 1 ** p 2 ** p 3
-  ensures  p 1 ** p 2 ** p 3
+  preserves p 1 ** p 2 ** p 3
 {
   nuwhile (chk 2)
     (* Invariant is inferred to be the full context: p 1 ** p 2 ** p 3 *)
@@ -54,8 +50,7 @@ fn test0 ()
 }
 
 fn test1 ()
-  requires exists* x. p x
-  ensures  exists* x. p x
+  preserves exists* x. p x
 {
   nuwhile (true)
     (* The invariant (= ctxt) here is inferred to be p x0, with x0 having been
@@ -67,8 +62,7 @@ fn test1 ()
 
 [@@expect_failure]
 fn test2 ()
-  requires exists* x. p x
-  ensures exists* x. p x
+  preserves exists* x. p x
 {
   nuwhile (true)
     (* Same as above, but that invariant does not work as we are
@@ -80,13 +74,12 @@ fn test2 ()
 assume val q : slprop
 
 fn use_q ()
-  requires q
-  ensures  q
+  preserves q
 { () }
 
 fn test3 ()
-  requires q ** (exists* x. p x)
-  ensures  q ** (exists* x. p x)
+  preserves q
+  preserves exists* x. p x
 {
   // with x. assert (p x);
   nuwhile (false)
@@ -112,7 +105,8 @@ fn true_cond ()
 
 fn test_inf_loop ()
 {
-  nuwhile (true_cond ())
-  { () };
+  nuwhile (true_cond ()) {
+    ()
+  };
   assert (pure False);
 }

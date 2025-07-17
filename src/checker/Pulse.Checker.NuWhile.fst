@@ -284,9 +284,10 @@ let check
   in
   admit();
 
-  info_doc g (Some t.range) [
-    text "NUWHILE After body:" ^/^ pp body';
-  ];
+  if debug () then
+    info_doc g (Some t.range) [
+      text "NUWHILE After body:" ^/^ pp body';
+    ];
 
   let d : st_typing g1 _ _ =
     T_NuWhile

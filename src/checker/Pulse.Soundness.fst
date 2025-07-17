@@ -379,16 +379,11 @@ let rec soundness (g:stt_env)
     | T_IntroPure _ _ _ _  ->
       admit()
       
-    | T_ElimExists _ _ _ _ _ _ _ ->
-      Exists.elim_exists_soundness d
+    | T_ElimExists  {} -> Exists.elim_exists_soundness d
+    | T_IntroExists {} -> Exists.intro_exists_soundness d
+    | T_While       {} -> While.while_soundness d soundness
 
-    | T_IntroExists _ _ _ _ _ _ _ _ ->
-      Exists.intro_exists_soundness d
-
-    | T_While _ _ _ _ _ _ _ ->
-      While.while_soundness d soundness
-
-    | T_NuWhile _ _ _ _ _ _ _ ->
+    | T_NuWhile {} ->
       admit()
 
     | T_Par _ _ _ _ _ _ _ _ _ _ ->
