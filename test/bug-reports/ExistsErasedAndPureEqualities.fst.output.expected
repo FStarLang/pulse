@@ -13,11 +13,11 @@
   - Current context:
       ExistsErasedAndPureEqualities.some_pred x v
   - In typing environment:
-      _#758 : Prims.squash (v_ == v),
-      v_#757 : FStar.Ghost.erased Prims.int,
-      _#470 : Prims.squash (v == v),
-      v#116 : FStar.Ghost.erased Prims.int,
-      x#111 : Pulse.Lib.Reference.ref Prims.int
+      _#1090 : Prims.squash (v_ == v),
+      v_#1089 : FStar.Ghost.erased Prims.int,
+      _#802 : Prims.squash (v == v),
+      v#448 : FStar.Ghost.erased Prims.int,
+      x#443 : Pulse.Lib.Reference.ref Prims.int
 
 * Info at ExistsErasedAndPureEqualities.fst(79,4-80,21):
   - Expected failure:
