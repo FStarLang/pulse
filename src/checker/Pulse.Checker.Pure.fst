@@ -208,11 +208,11 @@ let instantiate_term_implicits
     | [] ->
       t, ty
 
-let instantiate_term_implicits_uvs (g:env) (t0:term) =
+let instantiate_term_implicits_uvs (g:env) (t0:term) (inst_extra:bool) =
   let f = elab_env g in
   let rng = RU.range_of_term t0 in
   let f = RU.env_set_range f (Pulse.Typing.Env.get_range g (Some rng)) in
-  let topt, issues = catch_all (fun _ -> rtb_instantiate_implicits g f t0 None false) in (* false? *)
+  let topt, issues = catch_all (fun _ -> rtb_instantiate_implicits g f t0 None inst_extra) in (* false? *)
   match topt with
   | None -> (
     let open Pulse.PP in
