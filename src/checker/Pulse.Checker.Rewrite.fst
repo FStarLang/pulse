@@ -118,8 +118,8 @@ let check
 
   let g = push_context "check_rewrite" t.range g in
   let Tm_Rewrite {t1=p; t2=q; tac_opt} = t.term in
-  let (| p, p_typing |) = check_slprop g p in
-  let (| q, q_typing |) = check_slprop g q in
+  let (| p, p_typing |) = ImpureSpec.purify_spec g pre p in
+  let (| q, q_typing |) = ImpureSpec.purify_spec g pre q in
 
   let equiv_p_q =
     (* If we don't have a tactic, we just call the check_slprop_equiv
