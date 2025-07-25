@@ -49,8 +49,11 @@ instance err_monad : monad err = {
   ( let! ) = bind_err
 }
 
+let fail_doc #a (message:list Pprint.document) (range:R.range) : err a =
+  fun ctr -> Inr (Some (message, range)), ctr
+
 let fail #a (message:string) (range:R.range) : err a =
-  fun ctr -> Inr (Some (FStarC.Errors.mkmsg message, range)), ctr
+  fail_doc (FStarC.Errors.mkmsg message) range
 
 let fail_if (b:bool) (message:string) (range:R.range) : err unit =
   if b then fail message range else return ()
