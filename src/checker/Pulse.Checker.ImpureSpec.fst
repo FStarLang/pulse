@@ -53,6 +53,20 @@ let rec get_rewrites_to_from_post (g: env) xres (post: slprop) : T.Tac (option R
   | _ -> None
 
 let rec maybe_hoist (g:env) (ctxt: slprop) (t:R.term) : T.Tac (bool & R.term) = 
+  match R.inspect_ln t with
+  | R.Tv_Abs bv body ->
+    let b = R.inspect_binder bv in
+    let x = fresh g in
+    let ppname = mk_ppname_no_range (T.unseal b.ppname) in
+    // let px = b.ppname, x in
+    let g' = push_binding g x ppname b.sort in
+    let body = open_term_nv body (ppname, x) in
+    let changed, body = maybe_hoist g' ctxt body in
+    if changed then
+      true, R.pack_ln (R.Tv_Abs bv (close_term body x))
+    else
+      false, t
+  | _ ->
   let head, args = T.collect_app_ln t in
   match args with
   | [] -> false, t //no args to hoist

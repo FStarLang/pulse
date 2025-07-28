@@ -82,7 +82,7 @@ fn op_Array_Access
   requires pts_to a #p s
   returns  res : t
   ensures  pts_to a #p s **
-           pure (res == Seq.index s (SZ.v i))
+           rewrites_to res (Seq.index s (SZ.v i))
 
 (* Written x.(i) <- v *)
 inline_for_extraction
