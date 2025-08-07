@@ -180,6 +180,16 @@ let lax_check_term_with_unknown_universes (g:TcEnv.env) (e:S.term)
     | Some None -> None
     | Some (Some x) -> Some x
 
+let tc_term_phase1 (g:TcEnv.env) (e:S.term) (must_tot:bool) =
+  let issues, res = FStarC_Errors.catch_errors (fun _ ->
+    let open FStarC_Tactics_V2_Basic in
+    let g = TcEnv.set_range g e.pos in
+    let g = {g with phase1=true; admit=true} in
+    let e, t, guard = g.typeof_tot_or_gtot_term g e must_tot in
+    let _ = FStarC_TypeChecker_Rel.resolve_implicits g guard in
+    e, t) in
+  res, issues
+
 let whnf_lax (g:TcEnv.env) (t:S.term) : S.term = 
   FStarC_TypeChecker_Normalize.unfold_whnf' [TcEnv.Unascribe] g t
 

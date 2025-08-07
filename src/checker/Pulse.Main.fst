@@ -50,7 +50,7 @@ let rec mk_abs (g:env) (qbs:list (option qualifier & binder & bv)) (body:st_term
   | [(q, last, last_bv)] -> 
     let body = close_st_term body last_bv.bv_index in
     let comp = close_comp comp last_bv.bv_index in
-    let asc = { annotated = Some comp; elaborated = None } in
+    let asc = Some comp in
     with_range (Pulse.Syntax.Builder.tm_abs last q asc body) body.range
   | (q, b, bv)::qbs ->
     let body = mk_abs g qbs body comp in

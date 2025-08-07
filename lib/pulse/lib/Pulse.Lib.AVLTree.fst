@@ -170,15 +170,15 @@ ensures
 ///////////////////////////////////////////////////////////////////////////////
 
  
-fn rec height (#t:Type0) (x:tree_t t)
-  requires is_tree x 'l
+fn rec height (#t:Type0) (x:tree_t t) (#l: erased (T.tree t))
+  requires is_tree x l
   returns n:nat
-  ensures is_tree x 'l ** pure (n == T.height 'l)
+  ensures is_tree x l ** pure (n == T.height l)
 {
    match x {
     None -> {
        is_tree_case_none None;
-       rewrite is_tree None 'l as is_tree x 'l;
+       rewrite is_tree None l as is_tree x l;
        0
     }
     Some vl -> {
@@ -423,13 +423,13 @@ fn rec mem (#t:eqtype) (x:tree_t t) (v: t) (#ft:G.erased (T.tree t))
 
 
 
-fn get_some_ref (#t:Type) (x:tree_t t)
-  requires is_tree x 'l ** pure (T.Node? 'l)
+fn get_some_ref (#t:Type) (x:tree_t t) (#l: erased (T.tree t))
+  requires is_tree x l ** pure (T.Node? l)
   returns v:node_ptr t
 ensures  
   exists* (node:node t) (ltree:T.tree t) (rtree:T.tree t).
     pure (x == Some v) **
-    pure ('l == T.Node node.data ltree rtree) **
+    pure (l == T.Node node.data ltree rtree) **
     (v |-> node) **
     is_tree node.left ltree **
     is_tree node.right rtree
@@ -549,15 +549,15 @@ fn rotate_left_right (#t:Type0) (tree:tree_t t) (#l:G.erased (T.tree t){ Some? (
 module M = FStar.Math.Lib
 
 
-fn rec is_balanced (#t:Type0) (tree:tree_t t)
-  requires is_tree tree 'l
+fn rec is_balanced (#t:Type0) (tree:tree_t t) (#l: erased (T.tree t))
+  requires is_tree tree l
   returns b:bool
-  ensures is_tree tree 'l ** pure (b <==> (T.is_balanced 'l))
+  ensures is_tree tree l ** pure (b <==> (T.is_balanced l))
 {
   match tree {
     None -> {
       is_tree_case_none None;
-      rewrite is_tree None 'l as is_tree tree 'l;
+      rewrite is_tree None l as is_tree tree l;
       true
     }
     Some vl -> {
@@ -695,10 +695,10 @@ fn rec  rebalance_avl (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t))
 
 
 
-fn rec insert_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
-  requires is_tree tree 'l
+fn rec insert_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t) (#l: erased (T.tree t))
+  requires is_tree tree l
   returns y:tree_t t
-  ensures (is_tree y (T.insert_avl cmp 'l key))
+  ensures (is_tree y (T.insert_avl cmp l key))
 {
   match tree {
     None -> {
@@ -796,15 +796,15 @@ fn rec tree_max_c (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t){T.Node? l})
   }
 }
 
-fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
-  requires is_tree tree 'l
+fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t) (#l: erased (T.tree t))
+  requires is_tree tree l
   returns  y : tree_t t
-  ensures  is_tree y (T.delete_avl cmp 'l key)
+  ensures  is_tree y (T.delete_avl cmp l key)
 {
   match tree {
     None -> {
       is_tree_case_none None;
-      rewrite is_tree None 'l as is_tree tree 'l;
+      rewrite is_tree None l as is_tree tree l;
       tree
     }
     Some vl -> {
@@ -883,7 +883,7 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
                   rewrite is_tree (Some vlr) rtree as is_tree vl'.right rtree;
                 intro_is_tree_node (Some vl) vl #vl';
                 let new_tree = rebalance_avl (Some vl);
-                assert (is_tree new_tree (T.delete_avl cmp 'l key));
+                assert (is_tree new_tree (T.delete_avl cmp l key));
                 new_tree
               }
             }
@@ -913,7 +913,7 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
           intro_is_tree_node (Some vl) vl #vl';
   
           let new_tree = rebalance_avl (Some vl);
-          assert (is_tree new_tree (T.delete_avl cmp 'l key));
+          assert (is_tree new_tree (T.delete_avl cmp l key));
           
           new_tree
         }

@@ -86,8 +86,7 @@ let freevars_proof_hint (ht:proof_hint_type) : Set.set var =
 
 let freevars_ascription (c:comp_ascription) 
   : Set.set var
-  = freevars_opt freevars_comp c.elaborated ++
-    freevars_opt freevars_comp c.annotated
+  = freevars_opt freevars_comp c
 
 let rec freevars_st (t:st_term)
   : Set.set var
@@ -270,8 +269,7 @@ and ln_pattern_args' (p:list (pattern & bool)) (i:int)
 
 let ln_ascription' (c:comp_ascription) (i:int)
   : bool
-  = ln_opt' ln_c' c.elaborated i &&
-    ln_opt' ln_c' c.annotated i
+  = ln_opt' ln_c' c i
 
 let rec ln_st' (t:st_term) (i:int)
   : Tot bool (decreases t)
@@ -522,8 +520,7 @@ let map2_opt (f: 'a -> 'b -> 'c) (x:option 'a) (y:'b)
 
 let subst_ascription (c:comp_ascription) (ss:subst)
   : comp_ascription
-  = { elaborated = map2_opt subst_comp c.elaborated ss;
-       annotated = map2_opt subst_comp c.annotated ss }
+  = map2_opt subst_comp c ss
 
 let rec subst_st_term (t:st_term) (ss:subst)
   : Tot st_term (decreases t)

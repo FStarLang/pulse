@@ -28,14 +28,14 @@ open Pulse.Lib.WithPure
 let pts_to (#elt: Type u#a) (a: array elt) (#p: perm) (s: Seq.seq elt) : Tot slprop =
   pts_to_mask a #p s fun i -> True
 
-ghost fn to_mask u#a (#t: Type u#a) (arr: array t) #f #v
+ghost fn to_mask u#a (#t: Type u#a) (arr: array t) #f (#v: Seq.seq t)
   requires arr |-> Frac f v
   ensures pts_to_mask arr #f v (fun _ -> True)
 {
   unfold pts_to arr #f v;
 }
 
-ghost fn from_mask u#a (#t: Type u#a) (arr: array t) #f #v #mask
+ghost fn from_mask u#a (#t: Type u#a) (arr: array t) #f (#v: Seq.seq t) #mask
   requires pts_to_mask arr #f v mask
   requires pure (forall (i: nat). i < Seq.length v ==> mask i)
   ensures arr |-> Frac f v

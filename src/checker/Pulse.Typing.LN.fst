@@ -208,8 +208,7 @@ let rec open_st_term_ln' (e:st_term)
 
     | Tm_Abs { b; ascription=c; body } ->
       open_term_ln' b.binder_ty x i;
-      map_opt_lemma_2 open_comp_ln' c.annotated x (i + 1);
-      map_opt_lemma_2 open_comp_ln' c.elaborated x (i + 1);
+      map_opt_lemma_2 open_comp_ln' c x (i + 1);
       open_st_term_ln' body x (i + 1)
       
     | Tm_Bind { binder; head; body } ->
@@ -478,8 +477,7 @@ let rec ln_weakening_st (t:st_term) (i j:int)
 
     | Tm_Abs { b; ascription=c; body } ->
       ln_weakening b.binder_ty i j;
-      map_opt_lemma_2 ln_weakening_comp c.annotated (i + 1) (j + 1);
-      map_opt_lemma_2 ln_weakening_comp c.elaborated (i + 1) (j + 1);
+      map_opt_lemma_2 ln_weakening_comp c (i + 1) (j + 1);
       ln_weakening_st body (i + 1) (j + 1)
 
     | Tm_Par { pre1; body1; post1; pre2; body2; post2 } ->
@@ -684,8 +682,7 @@ let rec open_term_ln_inv_st' (t:st_term)
     | Tm_Abs { b; ascription=c; body } ->
       FStar.Pure.BreakVC.break_vc();
       open_term_ln_inv' b.binder_ty x i;
-      map_opt_lemma_2 open_comp_ln_inv' c.annotated x (i + 1);
-      map_opt_lemma_2 open_comp_ln_inv' c.elaborated x (i + 1);
+      map_opt_lemma_2 open_comp_ln_inv' c x (i + 1);
       open_term_ln_inv_st' body x (i + 1)
 
     | Tm_Par { pre1; body1; post1; pre2; body2; post2 } ->
@@ -896,8 +893,7 @@ let rec close_st_term_ln' (t:st_term) (x:var) (i:index)
     | Tm_Abs { b; ascription=c; body } ->
       FStar.Pure.BreakVC.break_vc();
       close_term_ln' b.binder_ty x i;
-      map_opt_lemma_2 close_comp_ln' c.annotated x (i + 1);
-      map_opt_lemma_2 close_comp_ln' c.elaborated x (i + 1);
+      map_opt_lemma_2 close_comp_ln' c x (i + 1);
       close_st_term_ln' body x (i + 1)
 
     | Tm_Par { pre1; body1; post1; pre2; body2; post2 } ->

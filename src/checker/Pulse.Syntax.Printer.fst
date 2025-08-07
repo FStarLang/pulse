@@ -307,13 +307,12 @@ let rec st_term_to_string' (level:string) (t:st_term)
         (st_term_to_string' level body)
   
     | Tm_Abs { b; q; ascription=c; body } ->
-      sprintf "(fun (%s%s)\n%s\n ({\n%s%s\n}%s)"
+      sprintf "(fun (%s%s)\n%s\n ({\n%s%s\n})"
               (qual_to_string q)
               (binder_to_string b)
-              (match c.annotated with | None -> "" | Some c -> comp_to_string c)
+              (match c with | None -> "" | Some c -> comp_to_string c)
               (indent level)
               (st_term_to_string' (indent level) body)
-              (match c.elaborated with | None -> "" | Some c -> " <: " ^ comp_to_string c)
 
     | Tm_If { b; then_; else_ } ->
       sprintf "if (%s)\n%s{\n%s%s\n%s}\n%selse\n%s{\n%s%s\n%s}"

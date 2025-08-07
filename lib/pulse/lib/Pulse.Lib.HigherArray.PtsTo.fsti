@@ -38,11 +38,11 @@ instance has_pts_to_larray (a:Type u#a) (n : nat) : has_pts_to (larray a n) (Seq
   pts_to = pts_to;
 }
 
-ghost fn to_mask u#a (#t: Type u#a) (arr: array t) #f #v
+ghost fn to_mask u#a (#t: Type u#a) (arr: array t) #f (#v: Seq.seq t)
   requires arr |-> Frac f v
   ensures pts_to_mask arr #f v (fun _ -> True)
 
-ghost fn from_mask u#a (#t: Type u#a) (arr: array t) #f #v #mask
+ghost fn from_mask u#a (#t: Type u#a) (arr: array t) #f (#v: Seq.seq t) #mask
   requires pts_to_mask arr #f v mask
   requires pure (forall (i: nat). i < Seq.length v ==> mask i)
   ensures arr |-> Frac f v

@@ -138,7 +138,7 @@ fn pts_to_mask_not_null u#a (#a: Type u#a) #p (r:array a) (#v:Seq.seq a) #mask
   pts_to_mask_props r;
 }
 
-ghost fn mask_vext u#a (#t: Type u#a) (arr: array t) #f #v v' #mask
+ghost fn mask_vext u#a (#t: Type u#a) (arr: array t) #f (#v v': erased (Seq.seq t)) #mask
   requires pts_to_mask arr #f v mask
   requires pure (Seq.length v' == Seq.length v /\
     (forall (i: nat). mask i /\ i < Seq.length v ==> Seq.index v i == Seq.index v' i))
@@ -149,7 +149,7 @@ ghost fn mask_vext u#a (#t: Type u#a) (arr: array t) #f #v v' #mask
   fold pts_to_mask arr #f v' mask;
 }
 
-ghost fn mask_mext u#a (#t: Type u#a) (arr: array t) #f #v #mask (mask': nat -> prop)
+ghost fn mask_mext u#a (#t: Type u#a) (arr: array t) #f (#v: erased (Seq.seq t)) #mask (mask': nat -> prop)
   requires pts_to_mask arr #f v mask
   requires pure (forall (i: nat). i < Seq.length v ==> (mask i <==> mask' i))
   ensures pts_to_mask arr #f v mask'
@@ -159,7 +159,7 @@ ghost fn mask_mext u#a (#t: Type u#a) (arr: array t) #f #v #mask (mask': nat -> 
   fold pts_to_mask arr #f v mask';
 }
 
-ghost fn mask_ext u#a (#t: Type u#a) (arr: array t) #f #v #mask v' (mask': nat -> prop)
+ghost fn mask_ext u#a (#t: Type u#a) (arr: array t) #f (#v: erased (Seq.seq t)) #mask (v': erased (Seq.seq t)) (mask': nat -> prop)
   requires pts_to_mask arr #f v mask
   requires pure (forall (i: nat). i < Seq.length v ==> (mask i <==> mask' i))
   requires pure (Seq.length v' == Seq.length v /\
@@ -204,8 +204,8 @@ let get_mask_idx (m: nat->prop) (l: nat) : GTot (i: nat { mask_nonempty m l ==> 
     0
 
 ghost fn pcm_rw u#a (#t: Type u#a)
-    (a1: array t) p1 s1 m1
-    (a2: array t) p2 s2 m2
+    (a1: array t) p1 (s1: erased (Seq.seq t)) m1
+    (a2: array t) p2 (s2: erased (Seq.seq t)) m2
   requires pts_to_mask #t a1 #p1 s1 m1
   requires pure (
     a1.base_len == a2.base_len /\
@@ -224,12 +224,12 @@ ghost fn pcm_rw u#a (#t: Type u#a)
 }
 
 ghost fn pcm_share u#a (#t: Type u#a)
-    (a: array t) p s m
-    (a1: array t) p1 s1 m1
-    (a2: array t) p2 s2 m2
+    (a: array t) p (s: erased (Seq.seq t)) m
+    (a1: array t) p1 (s1: erased (Seq.seq t)) m1
+    (a2: array t) p2 (s2: erased (Seq.seq t)) m2
   requires pts_to_mask a #p s m
-  requires pure (Seq.length s1 == a1.length)
-  requires pure (Seq.length s2 == a2.length)
+  requires pure (Seq.length s1 == reveal a1.length)
+  requires pure (Seq.length s2 == reveal a2.length)
   requires pure (
     a1.base_len == a.base_len /\ a2.base_len == a.base_len /\
     a1.base_ref == a.base_ref /\ a2.base_ref == a.base_ref /\
@@ -259,10 +259,10 @@ ghost fn pcm_share u#a (#t: Type u#a)
 }
 
 ghost fn pcm_gather u#a (#t: Type u#a)
-    (a: array t) p s m
-    (a1: array t) p1 s1 m1
-    (a2: array t) p2 s2 m2
-  requires pure (Seq.length s == a.length)
+    (a: array t) p (s: erased (Seq.seq t)) m
+    (a1: array t) p1 (s1: erased (Seq.seq t)) m1
+    (a2: array t) p2 (s2: erased (Seq.seq t)) m2
+  requires pure (Seq.length s == reveal a.length)
   requires pure (
     a1.base_len == a.base_len /\ a2.base_len == a.base_len /\
     a1.base_ref == a.base_ref /\ a2.base_ref == a.base_ref /\
@@ -510,7 +510,7 @@ ghost fn return_sub u#a (#t: Type u#a) (arr: array t) #f (#v #vsub: erased (Seq.
   requires pts_to_mask arr #f v mask
   requires pts_to_mask (gsub arr i j) #f vsub masksub
   requires pure (forall (k: nat). i <= k /\ k < j ==> ~(mask k))
-  ensures exists* v'. pts_to_mask arr #f v' (fun k -> mask k \/ (i <= k /\ k < j /\ masksub (k - i)))
+  ensures exists* (v': Seq.seq t). pts_to_mask arr #f v' (fun k -> mask k \/ (i <= k /\ k < j /\ masksub (k - i)))
     ** pure (Seq.length v == Seq.length v' /\ i + Seq.length vsub == j /\ j <= Seq.length v /\
       (forall (k: nat). k < Seq.length v' ==>
       Seq.index v' k == (if i <= k && k < j then Seq.index vsub (k - i) else Seq.index v k)))

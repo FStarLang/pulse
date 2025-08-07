@@ -126,10 +126,7 @@ let close_open_inverse_ascription' (t:comp_ascription)
                                    (x:var { ~(x `Set.mem` freevars_ascription t) } )
                                    (i:index)
   : Lemma (ensures close_ascription' (open_ascription' t (U.term_of_no_name_var x) i) x i == t)
-  = (match t.annotated with
-     | None -> ()
-     | Some c -> close_open_inverse_comp' c x i);
-    (match t.elaborated with
+  = (match t with
      | None -> ()
      | Some c -> close_open_inverse_comp' c x i)
 

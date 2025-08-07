@@ -164,8 +164,7 @@ let eq_hint_type (ht1 ht2:proof_hint_type)
 
 let eq_ascription (a1 a2:comp_ascription) 
  : b:bool { b <==> (a1 == a2) }
- = eq_comp_opt a1.elaborated a2.elaborated &&
-   eq_comp_opt a1.annotated a2.annotated
+ = eq_comp_opt a1 a2
 
 
 let rec eq_st_term (t1 t2:st_term) 

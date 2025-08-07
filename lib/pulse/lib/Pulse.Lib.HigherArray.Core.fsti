@@ -65,18 +65,18 @@ fn pts_to_mask_not_null u#a (#a: Type u#a) #p (r:array a) (#v:Seq.seq a) #mask
   preserves pts_to_mask r #p v mask
   ensures pure (not (is_null r))
 
-ghost fn mask_vext u#a (#t: Type u#a) (arr: array t) #f #v v' #mask
+ghost fn mask_vext u#a (#t: Type u#a) (arr: array t) #f (#v v': erased (Seq.seq t)) #mask
   requires pts_to_mask arr #f v mask
   requires pure (Seq.length v' == Seq.length v /\
     (forall (i: nat). mask i /\ i < Seq.length v ==> Seq.index v i == Seq.index v' i))
   ensures pts_to_mask arr #f v' mask
 
-ghost fn mask_mext u#a (#t: Type u#a) (arr: array t) #f #v #mask (mask': nat -> prop)
+ghost fn mask_mext u#a (#t: Type u#a) (arr: array t) #f (#v: erased (Seq.seq t)) #mask (mask': nat -> prop)
   requires pts_to_mask arr #f v mask
   requires pure (forall (i: nat). i < Seq.length v ==> (mask i <==> mask' i))
   ensures pts_to_mask arr #f v mask'
 
-ghost fn mask_ext u#a (#t: Type u#a) (arr: array t) #f #v #mask v' (mask': nat -> prop)
+ghost fn mask_ext u#a (#t: Type u#a) (arr: array t) #f (#v: erased (Seq.seq t)) #mask (v': erased (Seq.seq t)) (mask': nat -> prop)
   requires pts_to_mask arr #f v mask
   requires pure (forall (i: nat). i < Seq.length v ==> (mask i <==> mask' i))
   requires pure (Seq.length v' == Seq.length v /\
@@ -191,7 +191,7 @@ ghost fn return_sub u#a (#t: Type u#a) (arr: array t) #f (#v #vsub: erased (Seq.
   requires pts_to_mask arr #f v mask
   requires pts_to_mask (gsub arr i j) #f vsub masksub
   requires pure (forall (k: nat). i <= k /\ k < j ==> ~(mask k))
-  ensures exists* v'. pts_to_mask arr #f v' (fun k -> mask k \/ (i <= k /\ k < j /\ masksub (k - i)))
+  ensures exists* (v': Seq.seq t). pts_to_mask arr #f v' (fun k -> mask k \/ (i <= k /\ k < j /\ masksub (k - i)))
     ** pure (Seq.length v == Seq.length v' /\ i + Seq.length vsub == j /\ j <= Seq.length v /\
       (forall (k: nat). k < Seq.length v' ==>
       Seq.index v' k == (if i <= k && k < j then Seq.index vsub (k - i) else Seq.index v k)))

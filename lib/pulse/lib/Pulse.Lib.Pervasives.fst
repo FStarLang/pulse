@@ -163,7 +163,7 @@ fn par (#pf #pg #qf #qg:_)
 
 
 
-fn par_atomic (#is #js #pf #pg #qf #qg:_)
+fn par_atomic (#is #js: inames) (#pf #pg #qf #qg: slprop)
        (f: unit -> stt_atomic unit is pf (fun _ -> qf))
        (g: unit -> stt_atomic unit js pg (fun _ -> qg))
   requires pf ** pg
@@ -179,7 +179,7 @@ fn par_atomic (#is #js #pf #pg #qf #qg:_)
 
 
 
-fn par_atomic_l (#is #pf #pg #qf #qg:_)
+fn par_atomic_l (#is: inames) (#pf #pg #qf #qg: slprop)
        (f: unit -> stt_atomic unit is pf (fun _ -> qf))
        (g: unit -> stt unit pg (fun _ -> qg))
   requires pf ** pg

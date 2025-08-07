@@ -39,7 +39,7 @@ let pts_to_range
 : slprop
 = with_pure (i <= j /\ j <= length x) fun _ -> pts_to (gsub x i j) #p s
 
-ghost fn fold_pts_to_range u#a (#a: Type u#a) (x: array a) (i: nat) (j: nat { i <= j /\ j <= length x }) #p #s0 s #mask
+ghost fn fold_pts_to_range u#a (#a: Type u#a) (x: array a) (i: nat) (j: nat { i <= j /\ j <= length x }) #p (#s0 s: erased (Seq.seq a)) #mask
   requires pts_to_mask (gsub x i j) #p s0 mask
   requires pure (Seq.equal s s0)
   requires pure (forall (k: nat). k < j - i ==> mask k)
@@ -68,15 +68,13 @@ let pts_to_range_timeless (#a: Type u#a) (x:array a) (i j : nat) (p:perm) (s:Seq
 
 ghost
 fn pts_to_range_prop
-  u#a (#elt: Type u#a)
-  (a: array elt)
-  (#i #j: nat)
+  u#a (#elt: Type u#a) (a: array elt) (#i #j: nat)
   (#p: perm)
   (#s: Seq.seq elt)
   requires pts_to_range a i j #p s
-  ensures pts_to_range a i j #p s ** pure (
-      (i <= j /\ j <= length a /\ Seq.length s == j - i)
-    )
+  ensures  pts_to_range a i j #p s ** pure (
+   (i <= j /\ j <= length a /\ eq2 #nat (Seq.length s) (j - i))
+  )
 {
   unfold_pts_to_range a i j #p s;
   pts_to_mask_len (gsub a i j);

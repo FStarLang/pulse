@@ -189,12 +189,8 @@ type proof_hint_type =
   | WILD //with p q r. _
   | SHOW_PROOF_STATE of range //print the proof state and exit
 
-noeq
-type comp_ascription = {
-  annotated:option comp;
-  elaborated:option comp
-}
-let empty_ascription = { annotated=None; elaborated=None }  
+type comp_ascription = option comp
+let empty_ascription : comp_ascription = None
 
 (* terms with STT types *)
 [@@ no_auto_projectors]

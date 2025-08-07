@@ -40,12 +40,14 @@ let debug (g:env) (msg: unit -> T.Tac string) =
   then T.print (print_context g ^ "\n" ^ msg())
 
 let check_ln (g:env) (label:string) (t:R.term) : Tac unit =
-  if not (CheckLN.check_ln t) then
+  // NOTE: CheckLN doesn't compress universe uvars.....
+  if not (CheckLN.check_ln (RU.deep_compress t)) then
+    (debug g (fun _ -> "not nameless\n");
     fail_doc g (Some (RU.range_of_term t)) [
       text "Failure: not locally nameless!";
       text "Aborting before calling" ^/^ pp label;
       text "term" ^/^ equals ^/^ pp t;
-    ]
+    ])
 
 let rtb_core_compute_term_type g f e =
   check_ln g "rtb_compute_term_type" e;
@@ -331,6 +333,17 @@ let tc_with_core g (f:R.env) (e:R.term)
     | None -> None, issues
     | Some (eff, t) ->
       Some (| eff, t, RT.T_Token _ _ _ (FStar.Squash.get_proof _) |), issues
+
+let tc_term_phase1 g (t:term) (must_tot:bool) : T.Tac (term & term)
+  = let fg = elab_env g in
+    let t = RU.deep_transform_to_unary_applications t in
+    let res, issues = catch_all fun _ ->
+      RU.with_context (RU.extend_context "tc_term_phase1" (Some (range_of_term t)) (get_context g)) fun _ ->
+      RU.tc_term_phase1 fg t must_tot in
+    match res with
+    | None ->
+      fail_doc_with_subissues g (Some <| RU.range_of_term t) issues (ill_typed_term t None None)
+    | Some (t, ty) -> (t, ty)
 
 let core_compute_term_type (g:env) (t:term)
   : T.Tac (eff:T.tot_or_ghost &

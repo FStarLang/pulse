@@ -121,12 +121,11 @@ let tm_ghost_return (t:term) r : st_term = PSB.(with_range (tm_return (tm_unknow
 
 let tm_abs (b:binder)
            (q:qualifier option)
-           (c:comp option)
+           (asc:comp option)
            (body:st_term)
            r
   : st_term 
-  = let asc = { annotated = c; elaborated = None } in
-    PSB.(with_range (tm_abs b q asc body) r)
+  = PSB.(with_range (tm_abs b q asc body) r)
 
 let tm_st_app (head:term) (q:S.aqual) (arg:term) r : st_term =
   PSB.(with_range (tm_stapp head (map_aqual q) arg) r)

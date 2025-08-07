@@ -31,6 +31,7 @@ module T = FStar.Tactics.V2
 module R = FStar.Reflection.V2
 module RU = Pulse.RuntimeUtils
 module Env = Pulse.Typing.Env
+module PTU = Pulse.Typing.Util
 module U = Pulse.Syntax.Pure
 
 open Pulse.Show
@@ -39,66 +40,12 @@ let debug_abs g (s: unit -> T.Tac string) : T.Tac unit =
   if RU.debug_at_level (fstar_env g) "pulse.abs"
   then T.print (s ())
 
-(* Infers the the type of the binders from the specification alone, not the body *)
-
-let rec arrow_of_abs (env:_) (prog:st_term { Tm_Abs? prog.term })
-  : T.Tac (term & t:st_term { Tm_Abs? t.term })
-  = let Tm_Abs { b; q; ascription; body } = prog.term in
-    let x = fresh env in
-    let px = b.binder_ppname, x in
-    let env = push_binding env x (fst px) b.binder_ty in
-    let body = open_st_term_nv body px in
-    let annot = ascription.annotated in
-    if Some? ascription.elaborated
-    then Env.fail env (Some prog.range) "Unexpected elaborated annotation on function";
-    if Tm_Abs? body.term
-    then (
-      match annot with
-      | None ->
-        //no meaningful user annotation to process
-        let arr, body = arrow_of_abs env body in
-        let arr = close_term arr x in
-        let body = close_st_term body x in
-        let ty : term = tm_arrow b q (C_Tot arr) in
-        let prog : st_term = { prog with term = Tm_Abs { b; q; ascription; body}} in
-        ty, prog
-
-      | Some c -> ( //we have an annotation
-        let c = open_comp_with c (U.term_of_nvar px) in
-        match c with
-        | C_Tot tannot -> (
-          let t = RU.hnf_lax (elab_env env) tannot in
-          //retain the original annotation, so that we check it wrt the inferred type in maybe_rewrite_body_typing
-          let t = close_term t x in
-          let annot = close_comp c x in
-          let ty : term = tm_arrow b q (C_Tot t) in
-          let ascription = { annotated = Some annot; elaborated = None } in
-          let body = close_st_term body x in
-          let prog : st_term = { prog with term = Tm_Abs { b; q; ascription; body} } in
-          ty, prog
-        )
-
-        | _ ->
-          Env.fail 
-            env 
-            (Some prog.range) 
-            (Printf.sprintf "Unexpected type of abstraction: %s"
-                (P.comp_to_string c))
-      )
-    )
-    else (
-      match annot with
-      | None -> 
-        Env.fail env (Some prog.range) "Unannotated function body"
-      
-      | Some c -> ( //we're taking the annotation as is; remove it from the abstraction to avoid rechecking it
-        let ty : term = tm_arrow b q c in
-        let ascription = empty_ascription in
-        let body = close_st_term body x in
-        let prog : st_term = { prog with term = Tm_Abs { b; q; ascription; body} } in
-        ty, prog
-      )
-    )
+let tc_term_phase1_with_type (g: env) (t:term) (must_tot:bool) (expected_typ: term) : T.Tac term =
+  let t = R.pack_ln (R.Tv_AscribedT t expected_typ None false) in
+  let t, _ = tc_term_phase1 g t must_tot in
+  match R.inspect_ln t with
+  | R.Tv_AscribedT t _ _ _ -> t
+  | _ -> t
 
 let qualifier_compat g r (q:option qualifier) (q':T.aqualv) : T.Tac unit =
   match q, q' with
@@ -135,77 +82,9 @@ let check_qual g (q:qualifier) : T.Tac qualifier =
     Meta t
   | q -> q
 
-let rec rebuild_abs (g:env) (t:st_term) (annot:T.term)
-  : T.Tac (t:st_term { Tm_Abs? t.term })
-  = 
-    debug_abs g (fun _ -> Printf.sprintf "rebuild_abs\n\t%s\n\t%s\n"
-                (P.st_term_to_string t)
-                (T.term_to_string annot));
-    match t.term, R.inspect_ln annot with
-    | Tm_Abs { b; q; ascription=asc; body }, R.Tv_Arrow b' c' -> (
-      let b' = T.inspect_binder b' in
-      qualifier_compat g b.binder_ppname.range q b'.qual;
-      let ty = b'.sort in
-      let comp = R.inspect_comp c' in
-      match comp with
-      | T.C_Total res_ty -> (
-        if Tm_Abs? body.term
-        then (
-          let b = mk_binder_with_attrs ty b.binder_ppname b.binder_attrs in
-          let body = rebuild_abs g body res_ty in
-          let asc = { asc with elaborated = None } in
-          { t with term = Tm_Abs { b; q; ascription=asc; body }}
-        )
-        else (
-          match readback_comp res_ty with
-          | None ->
-            Env.fail g (Some (T.range_of_term res_ty))
-              (Printf.sprintf "Expected a computation type; got %s"
-                  (T.term_to_string res_ty))
-          | Some (C_Tot ty) -> (
-            match T.inspect res_ty with
-            | T.Tv_Arrow b _ ->
-              Env.fail g (Some body.range)
-                         (Printf.sprintf "Expected a binder for %s" (T.binder_to_string b))
-
-            | _ -> 
-                Env.fail g (Some body.range)
-                    (Printf.sprintf 
-                      "Incorrect annotation on function body, expected a stateful computation type; got: %s"
-                      (P.comp_to_string (C_Tot ty)))
-          )
-
-          | Some c ->
-            let b = mk_binder_with_attrs ty b.binder_ppname b.binder_attrs in
-            let asc = { asc with elaborated = Some c } in
-            { t with term = Tm_Abs { b; q; ascription=asc; body }}              
-        )
-      )
-      | _ ->
-        Env.fail g (Some t.range) 
-            (Printf.sprintf "Unexpected type of abstraction: %s"
-                (T.term_to_string annot))
-    )
-
-    | _ -> 
-      Env.fail g (Some t.range) 
-                (Printf.sprintf "Unexpected arity of abstraction: expected a term of type %s"
-                      (T.term_to_string annot))
-
-let preprocess_abs
-      (g:env)
-      (t:st_term{Tm_Abs? t.term})
-  : T.Tac (t:st_term { Tm_Abs? t.term })
-  = let annot, t = arrow_of_abs g t in
-    debug_abs g (fun _ -> Printf.sprintf "arrow_of_abs = %s\n" (P.term_to_string annot));
-    let annot, _ = Pulse.Checker.Pure.instantiate_term_implicits g annot None false in
-    let abs = rebuild_abs g t annot in
-    debug_abs g (fun _ -> Printf.sprintf "rebuild_abs = %s\n" (P.st_term_to_string abs));
-    abs
-
 let sub_effect_comp g r (asc:comp_ascription) (c_computed:comp) : T.Tac (option (c2:comp & lift_comp g c_computed c2)) =
   let nop = None in
-  match asc.elaborated with
+  match asc with
   | None -> nop
   | Some c ->
     match c_computed, c with
@@ -226,7 +105,7 @@ let sub_effect_comp g r (asc:comp_ascription) (c_computed:comp) : T.Tac (option 
 
 let check_effect_annotation g r (asc:comp_ascription) (c_computed:comp) : T.Tac (c2:comp & st_sub g c_computed c2) =
   let nop = (| c_computed, STS_Refl _ _ |) in
-  match asc.elaborated with
+  match asc with
   | None -> nop
   | Some c ->
     match c, c_computed with
@@ -285,7 +164,7 @@ let maybe_rewrite_body_typing
       (d:st_typing g e c)
       (asc:comp_ascription)
   : T.Tac (c':comp & st_typing g e c')
-  = match asc.annotated with
+  = match asc with
     | None ->  (| c, d |)
     | Some (C_Tot t) -> (
       match c with
@@ -318,32 +197,52 @@ let open_ascription (c:comp_ascription) (nv:nvar) : comp_ascription =
 let close_ascription (c:comp_ascription) (nv:nvar) : comp_ascription =
   subst_ascription c [RT.ND (snd nv) 0]
 
-module R = FStar.Reflection.V2
-#push-options "--z3rlimit_factor 20 --fuel 0 --ifuel 1 --split_queries no --query_stats"
-#restart-solver
+let preprocess_post g ret_ty_opt post =
+  let x = fresh g in
+  let ret_ty =
+      match ret_ty_opt with
+      | None -> wr RT.unit_ty FStar.Range.range_0
+      | Some t -> t
+  in
+  let ret_ty = tc_term_phase1_with_type g ret_ty true (tm_type u_unknown) in
+  let post = tc_term_phase1_with_type (push_binding g x ppname_default ret_ty) (open_term_nv post (v_as_nv x)) true tm_slprop in
+  let post' = close_term post x in
+  post'
+
+let set_inames inames (c:comp) : comp =
+  match c with
+  | C_STAtomic _ obs st -> C_STAtomic inames obs st
+  | C_STGhost  _ st     -> C_STGhost inames st
+  | _ -> c
+
+#push-options "--admit_smt_queries true"
 let rec check_abs_core
   (g:env)
   (t:st_term{Tm_Abs? t.term})
   (check:check_t)
-  : T.Tac (t:st_term & c:comp & st_typing g t c) =
+  #fin_res_t (finalize: unit -> T.Tac fin_res_t)
+  : T.Tac (fin_res_t & t:st_term & c:comp & st_typing g t c) =
   //warn g (Some t.range) (Printf.sprintf "check_abs_core, t = %s" (P.st_term_to_string t));
   let range = t.range in
-  match t.term with  
-  | Tm_Abs { b = {binder_ty=t;binder_ppname=ppname;binder_attrs}; q=qual; ascription=asc; body } -> //pre=pre_hint; body; ret_ty; post=post_hint_body } ->
-    let qual = T.map_opt (check_qual g) qual in
+  debug_abs g (fun _ -> Printf.sprintf "check_abs_core\n\t%s\n"
+              (P.st_term_to_string t));
+  let Tm_Abs { b = {binder_ty=t;binder_ppname=ppname;binder_attrs}; q=qual; ascription=asc; body } = t.term in //pre=pre_hint; body; ret_ty; post=post_hint_body } =
     (*  (fun (x:t) -> {pre_hint} body : t { post_hint } *)
-    let (| t, _, _ |) = compute_tot_term_type g t in //elaborate it first
-    let (| u, t_typing |) = check_universe g t in //then check that its universe ... We could collapse the two calls
+    let t = tc_term_phase1_with_type g t true (tm_type u_unknown) in
     let x = fresh g in
     let px = ppname, x in
     let var = tm_var {nm_ppname=ppname;nm_index=x} in
     let g' = push_binding g x ppname t in
     let body_opened = open_st_term_nv body px in
-    let asc = open_ascription asc px in 
+    let asc = open_ascription asc px in
     match body_opened.term with
     | Tm_Abs _ ->
       (* Check the opened body *)
-      let (| body, c_body, body_typing |) = check_abs_core g' body_opened check in
+      let (| (fr, (| u, t_typing |)), body, c_body, body_typing |) = check_abs_core g' body_opened check fun _ ->
+        let fr = finalize () in
+        let _ = tc_term_phase1_with_type g t true (tm_type u_unknown) in // wtf?? otherwise unresolved universe uvars with ticked args
+        let chk_univ_res = check_universe g t in
+        (fr, chk_univ_res) in
 
       (* First lift into annotated effect *)
       let (| c_body, body_typing |) : ( c_body:comp & st_typing g' body c_body ) =
@@ -375,12 +274,13 @@ let rec check_abs_core
         |> FStar.Sealed.seal in
 
       let b = {binder_ty=t;binder_ppname=ppname;binder_attrs} in
+      let qual = T.map_opt (check_qual g) qual in
       let tt = T_Abs g x qual b u body_closed c_body t_typing body_typing in
       let tres = tm_arrow {binder_ty=t;binder_ppname=ppname;binder_attrs} qual (close_comp c_body x) in
-      (| _, C_Tot tres, tt |)
+      (| fr, _, C_Tot tres, tt |)
     | _ ->
       let elab_c, pre_opened, inames_opened, ret_ty, post_hint_body =
-        match asc.elaborated with
+        match asc with
         | None ->
           Env.fail g (Some body.range)
               "Missing annotation on a function body"
@@ -396,6 +296,7 @@ let rec check_abs_core
           let inames_opened =
             if C_STGhost? c || C_STAtomic? c then
              let inames = open_term_nv (comp_inames c) px in
+             let inames = tc_term_phase1_with_type g' inames true tm_inames in
              let inames = T.norm_well_typed_term (elab_env g)
                [primops; iota; zeta; delta_attr ["Pulse.Lib.Core.unfold_check_opens"]]
                inames
@@ -404,18 +305,21 @@ let rec check_abs_core
            else
              tm_emp_inames
           in
-          let set_inames inames (c:comp) : comp =
-            match c with
-            | C_STAtomic _ obs st -> C_STAtomic inames obs st
-            | C_STGhost  _ st     -> C_STGhost inames st
-            | _ -> c
-          in
           set_inames inames_opened c,
           open_term_nv (comp_pre c) px,
           inames_opened,
           Some (open_term_nv (comp_res c) px),
           Some (open_term' (comp_post c) var 1)
       in
+
+      let pre_opened = tc_term_phase1_with_type g' pre_opened true tm_slprop in
+      let post_hint_body = T.map_opt (preprocess_post g' ret_ty) post_hint_body in
+      let fr = finalize () in
+      let t = tc_term_phase1_with_type g t true (tm_type u_unknown) in // wtf?? otherwise unresolved universe uvars with ticked args
+      let (| u, t_typing |) = check_universe g t in
+
+      let qual = T.map_opt (check_qual g) qual in
+
       let (| pre_opened, pre_typing |) =
         (* In some cases F* can mess up the range in error reporting and make it
          point outside of this term. Bound it here. See e.g. Bug59, if we remove
@@ -455,7 +359,7 @@ let rec check_abs_core
       let (| body, c_body, body_typing |) : st_typing_in_ctxt g' pre_opened post =
         apply_checker_result_k #_ #_ #(PostHint?.v post) r ppname_ret in
 
-      let c_opened : comp_ascription = { annotated = None; elaborated = Some (open_comp_nv elab_c px) } in
+      let c_opened : comp_ascription = Some (open_comp_nv elab_c px) in
 
       (* First lift into annotated effect *)
       let (| c_body, body_typing |) : ( c_body:comp & st_typing g' body c_body ) =
@@ -469,7 +373,7 @@ let rec check_abs_core
       let (| c_body, d_sub |) = check_effect_annotation g' body.range c_opened c_body in
       let body_typing = T_Sub _ _ _ _ body_typing d_sub in
 
-      let (| c_body, body_typing |) = maybe_rewrite_body_typing body_typing asc in
+      // let (| c_body, body_typing |) = maybe_rewrite_body_typing body_typing asc in
 
       FV.st_typing_freevars body_typing;
       let body_closed = close_st_term body x in
@@ -478,10 +382,12 @@ let rec check_abs_core
       let tt = T_Abs g x qual b u body_closed c_body t_typing body_typing in
       let tres = tm_arrow {binder_ty=t;binder_ppname=ppname;binder_attrs} qual (close_comp c_body x) in
 
-      (| _, C_Tot tres, tt |)
+      (| fr, _, C_Tot tres, tt |)
 #pop-options
 
 let check_abs (g:env) (t:st_term{Tm_Abs? t.term}) (check:check_t)
   : T.Tac (t:st_term & c:comp & st_typing g t c) =
-  let t = preprocess_abs g t in
-  check_abs_core g t check
+  let (| _, t, c, t_typing |) =
+    check_abs_core g t check fun _ ->
+      debug_abs g fun _ -> "phase2 type checking of abs signature..." in
+  (| t, c, t_typing |)
