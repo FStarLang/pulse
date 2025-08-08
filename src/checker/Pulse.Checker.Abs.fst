@@ -316,7 +316,7 @@ let check_abs_core_body
 
   (| fr, _, c_body, body_typing |)
 
-let cod_of_comp (g: env) (c: comp) (r: range) px : T.Tac comp =
+let cod_of_comp (g: env) (c: comp) (r: range) px : T.Tac (option binder & comp) =
   let fail () =
     let open Pulse.PP in
     Env.fail_doc g (Some r) [
@@ -327,10 +327,13 @@ let cod_of_comp (g: env) (c: comp) (r: range) px : T.Tac comp =
   | C_Tot t ->
     (match R.inspect_ln t with
     | R.Tv_Arrow tb tc ->
+      let tb = R.inspect_binder tb in
       (match R.inspect_comp tc with
       | R.C_Total tc ->
         let tc = open_term_nv tc px in
-        C_Tot tc
+        Some { binder_ppname = { name = tb.ppname; range = RU.range_of_term tb.sort };
+            binder_attrs = T.seal tb.attrs; binder_ty = tb.sort },
+          C_Tot tc
       | _ -> fail ())
     | _ -> fail ())
   | _ -> fail ()
@@ -380,10 +383,21 @@ let rec check_abs_core
     check_abs_core_body g t expected_comp check finalize
   else
     let Tm_Abs { b={binder_ty=t; binder_ppname=ppname; binder_attrs}; q=qual; ascription=asc; body } = t.term in
-    let t, _ = tc_type_phase1 g t true in
     let x = fresh g in
     let px = ppname, x in
-    let expected_comp = expected_comp |> T.map_opt fun c -> cod_of_comp g c body.range px in
+    let expected_var, expected_comp =
+      match expected_comp with
+      | Some c ->
+        let v, c = cod_of_comp g c body.range px in
+        v, Some c
+      | None -> None, None in
+    let t, _ =
+      // it would be so nice if we could unify here...
+      (match expected_var, R.inspect_ln t with
+        | Some {binder_ty=et}, R.Tv_Unknown ->
+          tc_type_phase1 g et true
+        | _ ->
+          tc_type_phase1 g t true) in
     let var = tm_var {nm_ppname=ppname;nm_index=x} in
     let g' = push_binding g x ppname t in
     let body = open_st_term_nv body px in
