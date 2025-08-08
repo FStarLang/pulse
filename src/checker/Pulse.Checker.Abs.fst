@@ -47,6 +47,24 @@ let tc_term_phase1_with_type (g: env) (t:term) (must_tot:bool) (expected_typ: te
   | R.Tv_AscribedT t _ _ _ -> t
   | _ -> t
 
+let tc_type_phase1 (g: env) (t: term) (must_tot: bool) : T.Tac (term & universe) =
+  let t = R.pack_ln (R.Tv_AscribedT t (tm_type u_unknown) None false) in
+  let t, sort = tc_term_phase1 g t must_tot in
+  let t = match R.inspect_ln t with
+    | R.Tv_AscribedT t _ _ _ -> t
+    | _ -> t in
+  let u = match R.inspect_ln sort with
+    | R.Tv_Type u -> u
+    | _ ->
+      let open Pulse.PP in
+      T.fail_doc_at [
+        text "Expected Type, got:";
+        pp sort;
+        text "This is the type of:";
+        pp t;
+      ] (Some (RU.range_of_term t)) in
+  t, u
+
 let qualifier_compat g r (q:option qualifier) (q':T.aqualv) : T.Tac unit =
   match q, q' with
   | None, T.Q_Explicit -> ()
@@ -158,7 +176,6 @@ let check_effect_annotation g r (asc:comp_ascription) (c_computed:comp) : T.Tac 
       ]
 
 
-#push-options "--z3rlimit_factor 2 --fuel 0 --ifuel 1"
 let maybe_rewrite_body_typing
       (#g:_) (#e:st_term) (#c:comp)
       (d:st_typing g e c)
@@ -166,30 +183,24 @@ let maybe_rewrite_body_typing
   : T.Tac (c':comp & st_typing g e c')
   = match asc with
     | None ->  (| c, d |)
-    | Some (C_Tot t) -> (
-      match c with
-      | C_Tot t' -> (
-        let t, _ = Pulse.Checker.Pure.instantiate_term_implicits g t None false in
-        let (| u, t_typing |) = Pulse.Checker.Pure.check_universe g t in
-        match Pulse.Checker.Base.norm_st_typing_inverse
-                 #_ #_ #t' d t t_typing [hnf;delta]
-        with
-        | None -> 
-          Env.fail g (Some e.range) "Inferred type is incompatible with annotation"
-        | Some d -> 
-          debug_abs g 
-            (fun _ -> Printf.sprintf "maybe_rewrite_body_typing:{\nfrom %s\nto %s}\n" 
-              (P.comp_to_string c)
-              (P.comp_to_string (C_Tot t)));
-          (| C_Tot t, d |)
-      )
-      | _ -> 
-      Env.fail g (Some e.range) "Inferred type is incompatible with annotation"
+    | Some asc -> (
+      let t = elab_comp asc in
+      let t' = elab_comp c in
+      if T.unify_env (elab_env g) t t' then
+        (debug_abs g 
+          (fun _ -> Printf.sprintf "maybe_rewrite_body_typing:{\nfrom %s\nto %s}\n" 
+            (P.comp_to_string c)
+            (P.comp_to_string (C_Tot t)));
+        let typing : st_typing g e asc = RU.magic () in
+        (| asc, typing |))
+      else
+        let open Pulse.PP in
+        Env.fail_doc g (Some e.range) [
+          text "Inferred type is incompatible with annotation";
+          text "inferred:" ^/^ pp t;
+          text "annotated:" ^/^ pp t';
+        ]
     )
-    | Some c -> 
-      let st = st_comp_of_comp c in
-      Env.fail g (Some (RU.range_of_term st.pre)) "Unexpected annotation on a function body"
-#pop-options
 
 let open_ascription (c:comp_ascription) (nv:nvar) : comp_ascription =
   let t = term_of_nvar nv in
@@ -204,7 +215,7 @@ let preprocess_post g ret_ty_opt post =
       | None -> wr RT.unit_ty FStar.Range.range_0
       | Some t -> t
   in
-  let ret_ty = tc_term_phase1_with_type g ret_ty true (tm_type u_unknown) in
+  let ret_ty, _ = tc_type_phase1 g ret_ty true in
   let post = tc_term_phase1_with_type (push_binding g x ppname_default ret_ty) (open_term_nv post (v_as_nv x)) true tm_slprop in
   let post' = close_term post x in
   post'
@@ -215,179 +226,220 @@ let set_inames inames (c:comp) : comp =
   | C_STGhost  _ st     -> C_STGhost inames st
   | _ -> c
 
-#push-options "--admit_smt_queries true"
-let rec check_abs_core
+let check_abs_core_body
   (g:env)
-  (t:st_term{Tm_Abs? t.term})
+  (t:st_term)
+  (expected_comp: option comp) // assumed to be already phase1-checked
   (check:check_t)
   #fin_res_t (finalize: unit -> T.Tac fin_res_t)
   : T.Tac (fin_res_t & t:st_term & c:comp & st_typing g t c) =
-  //warn g (Some t.range) (Printf.sprintf "check_abs_core, t = %s" (P.st_term_to_string t));
+  let fr = finalize () in
+
   let range = t.range in
-  debug_abs g (fun _ -> Printf.sprintf "check_abs_core\n\t%s\n"
-              (P.st_term_to_string t));
-  let Tm_Abs { b = {binder_ty=t;binder_ppname=ppname;binder_attrs}; q=qual; ascription=asc; body } = t.term in //pre=pre_hint; body; ret_ty; post=post_hint_body } =
-    (*  (fun (x:t) -> {pre_hint} body : t { post_hint } *)
+  let c, pre, inames, ret_ty, post_hint_body =
+    match expected_comp with
+    | None ->
+      Env.fail g (Some t.range)
+          "Missing annotation on a function body"
+
+    | Some (C_Tot r) -> (
+      Env.fail g (Some t.range)
+                  (Printf.sprintf 
+                    "Incorrect annotation on a function, expected a computation type, got: %s"
+                    (P.comp_to_string (C_Tot r)))
+    )
+
+    | Some c -> 
+      let inames = if C_STGhost? c || C_STAtomic? c then comp_inames c else tm_emp_inames in
+      c, comp_pre c, inames, Some (comp_res c), Some (comp_post c)
+  in
+  let inames = T.norm_well_typed_term (elab_env g)
+    [primops; iota; zeta; delta_attr ["Pulse.Lib.Core.unfold_check_opens"]]
+    inames
+  in
+
+  let (| pre, pre_typing |) =
+    (* In some cases F* can mess up the range in error reporting and make it
+      point outside of this term. Bound it here. See e.g. Bug59, if we remove
+      this bound then the range points to the span between the 'x' and 'y' binders. *)
+    RU.with_error_bound (T.range_of_term pre) (fun () -> check_slprop g pre)
+  in
+
+  let pre = pre in
+  let post : post_hint_opt g =
+    match post_hint_body with
+    | None ->
+      NoHint
+    | Some post ->
+      let post_hint_typing
+        : post_hint_t
+        = Pulse.Checker.Base.intro_post_hint
+              (push_context "post_hint_typing" range g)
+              (effect_annot_of_comp c)
+              ret_ty
+              post
+      in
+      PostHint post_hint_typing
+  in
+
+  let ppname_ret = mk_ppname_no_range "_fret" in
+  let r  = check g pre pre_typing post ppname_ret t in
+  let (| post, r |) : (ph:post_hint_opt g & checker_result_t g pre ph) =
+    match post with
+    | PostHint _ -> (| post, r |)
+    | _ ->
+      (* we support inference of postconditions for functions,
+          but this functionality is still unusable from the front end,
+          which expects functions to be annotated *)
+      let ph = Pulse.Checker.Base.infer_post r in
+      let r = Pulse.Checker.Prover.prove_post_hint r (PostHint ph) t.range in
+      (| PostHint ph, r |)
+  in
+
+  let (| body, c_body, body_typing |) : st_typing_in_ctxt g pre post =
+    apply_checker_result_k #_ #_ #(PostHint?.v post) r ppname_ret in
+
+  (* First lift into annotated effect *)
+  let (| c_body, body_typing |) : ( c_body:comp & st_typing g body c_body ) =
+    match sub_effect_comp g body.range (Some c) c_body with
+    | None -> (| c_body, body_typing |)
+    | Some (| c_body, lift |) ->
+      let body_typing = T_Lift _ _ _ _ body_typing lift in
+      (| c_body, body_typing |)
+  in
+
+  let (| c_body, d_sub |) = check_effect_annotation g body.range (Some c) c_body in
+  let body_typing = T_Sub _ _ _ _ body_typing d_sub in
+  let (| c_body, body_typing |) = maybe_rewrite_body_typing body_typing (Some c) in
+
+  FV.st_typing_freevars body_typing;
+
+  (| fr, _, c_body, body_typing |)
+
+let cod_of_comp (g: env) (c: comp) (r: range) px : T.Tac comp =
+  let fail () =
+    let open Pulse.PP in
+    Env.fail_doc g (Some r) [
+      text "Incorrect annotation on a function, expected an arrow, got:";
+      pp c;
+    ] in
+  match c with
+  | C_Tot t ->
+    (match R.inspect_ln t with
+    | R.Tv_Arrow tb tc ->
+      (match R.inspect_comp tc with
+      | R.C_Total tc ->
+        let tc = open_term_nv tc px in
+        C_Tot tc
+      | _ -> fail ())
+    | _ -> fail ())
+  | _ -> fail ()
+
+let preproc_ascription (g: env) (c: comp) : T.Tac comp =
+  let preproc_inames is : T.Tac R.term =
+    let is = tc_term_phase1_with_type g is true tm_inames in
+    let is = T.norm_well_typed_term (elab_env g)
+      [primops; iota; zeta; delta_attr ["Pulse.Lib.Core.unfold_check_opens"]]
+      is in
+    is in
+  let preproc_stcomp (c: st_comp) : T.Tac st_comp = 
+    let {u;res;pre;post} = c in
+    let res, u = tc_type_phase1 g res true in
+    let pre = tc_term_phase1_with_type g pre true tm_slprop in
+    let x = fresh g in
+    let post = tc_term_phase1_with_type (push_binding g x ppname_default res) (open_term_nv post (v_as_nv x)) true tm_slprop in
+    let post = close_term post x in
+    {u;res;pre;post} in
+  match c with
+  | C_Tot t -> C_Tot (tc_term_phase1_with_type g t true (tm_type u_unknown))
+  | C_ST c -> C_ST (preproc_stcomp c)
+  | C_STGhost is c -> C_STGhost (preproc_inames is) (preproc_stcomp c)
+  | C_STAtomic is obs c -> C_STAtomic (preproc_inames is) obs (preproc_stcomp c)
+
+#push-options "--split_queries always --z3rlimit 20"
+let rec check_abs_core
+  (g:env)
+  (t:st_term)
+  (expected_comp: option comp) // assumed to be already phase1-checked
+  (check:check_t)
+  #fin_res_t (finalize: unit -> T.Tac fin_res_t)
+  : T.Tac (fin_res_t & t:st_term & c:comp & st_typing g t c) =
+  let range = t.range in
+  debug_abs g (fun _ ->
+    Printf.sprintf "check_abs_core, expected: %s\n\t%s\n"
+      (show expected_comp) (P.st_term_to_string t));
+  let expected_comp =
+    match expected_comp with
+    | Some (C_Tot t) ->
+      let t = RU.whnf_lax (elab_env g) t in
+      (match Pulse.Readback.readback_comp t with
+      | Some c -> Some (c <: comp)
+      | None -> Some (C_Tot t))
+    | _ -> expected_comp in
+  if not (Tm_Abs? t.term) then
+    check_abs_core_body g t expected_comp check finalize
+  else
+    let Tm_Abs { b={binder_ty=t; binder_ppname=ppname; binder_attrs}; q=qual; ascription=asc; body } = t.term in
     let t = tc_term_phase1_with_type g t true (tm_type u_unknown) in
     let x = fresh g in
     let px = ppname, x in
+    let expected_comp = expected_comp |> T.map_opt fun c -> cod_of_comp g c body.range px in
     let var = tm_var {nm_ppname=ppname;nm_index=x} in
     let g' = push_binding g x ppname t in
-    let body_opened = open_st_term_nv body px in
+    let body = open_st_term_nv body px in
     let asc = open_ascription asc px in
-    match body_opened.term with
-    | Tm_Abs _ ->
-      (* Check the opened body *)
-      let (| (fr, (| u, t_typing |)), body, c_body, body_typing |) = check_abs_core g' body_opened check fun _ ->
-        let fr = finalize () in
-        let _ = tc_term_phase1_with_type g t true (tm_type u_unknown) in // wtf?? otherwise unresolved universe uvars with ticked args
-        let chk_univ_res = check_universe g t in
-        (fr, chk_univ_res) in
 
-      (* First lift into annotated effect *)
-      let (| c_body, body_typing |) : ( c_body:comp & st_typing g' body c_body ) =
-        match sub_effect_comp g' body.range asc c_body with
-        | None -> (| c_body, body_typing |)
-        | Some (| c_body, lift |) ->
-          let body_typing = T_Lift _ _ _ _ body_typing lift in
-          (| c_body, body_typing |)
-      in
+    let asc = T.map_opt (preproc_ascription g') asc in
 
-      (* Check if it matches annotation (if any, likely not), and adjust derivation
-      if needed. Currently this only subtypes the invariants. *)
-      let (| c_body, d_sub |) = check_effect_annotation g' body.range asc c_body in
-      let body_typing = T_Sub _ _ _ _ body_typing d_sub in
-      (* Similar to above, fixes the type of the computation if we need to match
-      its annotation. TODO: merge these two by adding a tot subtyping (or equiv)
-      case to the st_sub judg. *)
-      let (| c_body, body_typing |) = maybe_rewrite_body_typing body_typing asc in
+    let expected_comp =
+      (match asc, expected_comp with
+      | Some asc, Some expected_comp ->
+        let open Pulse.PP in
+        Env.fail_doc g' (Some body.range) [
+          text "Incorrect annotations, got two:";
+          pp asc;
+          pp expected_comp;
+        ]
+      | Some asc, None -> Some asc
+      | None, Some expected_comp -> Some expected_comp
+      | None, None -> None) in
 
-      FV.st_typing_freevars body_typing;
-      let body_closed = close_st_term body x in
-      assume (open_st_term body_closed x == body);
-
-      // instantiate implicits in the attributes
-      let binder_attrs =
-        binder_attrs
-        |> T.unseal
-        |> T.map (fun attr -> attr |> (fun t -> instantiate_term_implicits g t None false) |> fst)
-        |> FStar.Sealed.seal in
-
-      let b = {binder_ty=t;binder_ppname=ppname;binder_attrs} in
-      let qual = T.map_opt (check_qual g) qual in
-      let tt = T_Abs g x qual b u body_closed c_body t_typing body_typing in
-      let tres = tm_arrow {binder_ty=t;binder_ppname=ppname;binder_attrs} qual (close_comp c_body x) in
-      (| fr, _, C_Tot tres, tt |)
-    | _ ->
-      let elab_c, pre_opened, inames_opened, ret_ty, post_hint_body =
-        match asc with
-        | None ->
-          Env.fail g (Some body.range)
-              "Missing annotation on a function body"
-
-        | Some (C_Tot r) -> (
-          Env.fail g (Some body.range)
-                     (Printf.sprintf 
-                       "Incorrect annotation on a function, expected a computation type, got: %s"
-                        (P.comp_to_string (C_Tot r)))
-        )
-
-        | Some c -> 
-          let inames_opened =
-            if C_STGhost? c || C_STAtomic? c then
-             let inames = open_term_nv (comp_inames c) px in
-             let inames = tc_term_phase1_with_type g' inames true tm_inames in
-             let inames = T.norm_well_typed_term (elab_env g)
-               [primops; iota; zeta; delta_attr ["Pulse.Lib.Core.unfold_check_opens"]]
-               inames
-             in
-             inames
-           else
-             tm_emp_inames
-          in
-          set_inames inames_opened c,
-          open_term_nv (comp_pre c) px,
-          inames_opened,
-          Some (open_term_nv (comp_res c) px),
-          Some (open_term' (comp_post c) var 1)
-      in
-
-      let pre_opened = tc_term_phase1_with_type g' pre_opened true tm_slprop in
-      let post_hint_body = T.map_opt (preprocess_post g' ret_ty) post_hint_body in
+    let (| (fr, (| u, t_typing |)), body, c_body, body_typing |) = check_abs_core g' body expected_comp check fun _ ->
       let fr = finalize () in
-      let t = tc_term_phase1_with_type g t true (tm_type u_unknown) in // wtf?? otherwise unresolved universe uvars with ticked args
-      let (| u, t_typing |) = check_universe g t in
+      let _ = tc_term_phase1_with_type g t true (tm_type u_unknown) in // wtf?? otherwise unresolved universe uvars with ticked args
+      let chk_univ_res = check_universe g t in
+      (fr, chk_univ_res) in
 
-      let qual = T.map_opt (check_qual g) qual in
+    (* Check if it matches annotation (if any, likely not), and adjust derivation
+    if needed. Currently this only subtypes the invariants. *)
+    let (| c_body, d_sub |) = check_effect_annotation g' body.range asc c_body in
+    let body_typing = T_Sub _ _ _ _ body_typing d_sub in
+    (* Similar to above, fixes the type of the computation if we need to match
+    its annotation. TODO: merge these two by adding a tot subtyping (or equiv)
+    case to the st_sub judg. *)
+    let (| c_body, body_typing |) = maybe_rewrite_body_typing body_typing asc in
 
-      let (| pre_opened, pre_typing |) =
-        (* In some cases F* can mess up the range in error reporting and make it
-         point outside of this term. Bound it here. See e.g. Bug59, if we remove
-         this bound then the range points to the span between the 'x' and 'y' binders. *)
-        RU.with_error_bound (T.range_of_term pre_opened) (fun () -> check_slprop g' pre_opened)
-      in
-      let pre = close_term pre_opened x in
-      let post : post_hint_opt g' =
-        match post_hint_body with
-        | None ->
-          NoHint
-        | Some post ->
-          let post_hint_typing
-            : post_hint_t
-            = Pulse.Checker.Base.intro_post_hint
-                  (push_context "post_hint_typing" range g')
-                  (effect_annot_of_comp elab_c)
-                  ret_ty
-                  post
-          in
-          PostHint post_hint_typing
-      in
+    FV.st_typing_freevars body_typing;
+    let body_closed = close_st_term body x in
+    assume (open_st_term body_closed x == body);
 
-      let ppname_ret = mk_ppname_no_range "_fret" in
-      let r  = check g' pre_opened pre_typing post ppname_ret body_opened  in
-      let (| post, r |) : (ph:post_hint_opt g' & checker_result_t g' pre_opened ph) =
-        match post with
-        | PostHint _ -> (| post, r |)
-        | _ ->
-          (* we support inference of postconditions for functions,
-             but this functionality is still unusable from the front end,
-             which expects functions to be annotated *)
-          let ph = Pulse.Checker.Base.infer_post r in
-          let r = Pulse.Checker.Prover.prove_post_hint r (PostHint ph) (T.range_of_term t) in
-          (| PostHint ph, r |)
-      in
-      let (| body, c_body, body_typing |) : st_typing_in_ctxt g' pre_opened post =
-        apply_checker_result_k #_ #_ #(PostHint?.v post) r ppname_ret in
+    // instantiate implicits in the attributes
+    let binder_attrs =
+      binder_attrs
+      |> T.unseal
+      |> T.map (fun attr -> attr |> (fun t -> instantiate_term_implicits g t None false) |> fst)
+      |> FStar.Sealed.seal in
 
-      let c_opened : comp_ascription = Some (open_comp_nv elab_c px) in
-
-      (* First lift into annotated effect *)
-      let (| c_body, body_typing |) : ( c_body:comp & st_typing g' body c_body ) =
-        match sub_effect_comp g' body.range c_opened c_body with
-        | None -> (| c_body, body_typing |)
-        | Some (| c_body, lift |) ->
-          let body_typing = T_Lift _ _ _ _ body_typing lift in
-          (| c_body, body_typing |)
-      in
-
-      let (| c_body, d_sub |) = check_effect_annotation g' body.range c_opened c_body in
-      let body_typing = T_Sub _ _ _ _ body_typing d_sub in
-
-      // let (| c_body, body_typing |) = maybe_rewrite_body_typing body_typing asc in
-
-      FV.st_typing_freevars body_typing;
-      let body_closed = close_st_term body x in
-      assume (open_st_term body_closed x == body);
-      let b = {binder_ty=t;binder_ppname=ppname;binder_attrs} in
-      let tt = T_Abs g x qual b u body_closed c_body t_typing body_typing in
-      let tres = tm_arrow {binder_ty=t;binder_ppname=ppname;binder_attrs} qual (close_comp c_body x) in
-
-      (| fr, _, C_Tot tres, tt |)
+    let b = {binder_ty=t;binder_ppname=ppname;binder_attrs} in
+    let qual = T.map_opt (check_qual g) qual in
+    let tt = T_Abs g x qual b u body_closed c_body t_typing body_typing in
+    let tres = tm_arrow {binder_ty=t;binder_ppname=ppname;binder_attrs} qual (close_comp c_body x) in
+    (| fr, _, C_Tot tres, tt |)
 #pop-options
 
 let check_abs (g:env) (t:st_term{Tm_Abs? t.term}) (check:check_t)
   : T.Tac (t:st_term & c:comp & st_typing g t c) =
   let (| _, t, c, t_typing |) =
-    check_abs_core g t check fun _ ->
+    check_abs_core g t None check fun _ ->
       debug_abs g fun _ -> "phase2 type checking of abs signature..." in
   (| t, c, t_typing |)

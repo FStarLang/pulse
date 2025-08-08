@@ -777,7 +777,7 @@ fn rec sep_last
   returns  tailp' : erased (node_ptr t)
   ensures  is_deque_suffix headp ys prev tailp' (Some tailp) **
            (exists* v. pts_to tailp v
-                    ** pure (v.value == y /\ v.dprev == Some (reveal tailp') /\ v.dnext == last))
+                    ** pure (v.value == reveal y /\ v.dprev == Some (reveal tailp') /\ v.dnext == last))
   decreases length ys
 {
   let y1 = Cons?.hd ys;

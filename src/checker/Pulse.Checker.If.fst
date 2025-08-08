@@ -43,6 +43,9 @@ let retype_checker_result (#g:env) (#ctxt:slprop) (#ph:post_hint_opt g) (ph':pos
 = let (| x, g1, t, ctxt, k |) = r in
   (| x, g1, t, ctxt, k |)
 
+module RT = FStar.Reflection.Typing
+module RU = Pulse.RuntimeUtils
+
 #push-options "--fuel 0 --ifuel 1 --z3rlimit_factor 2"
 #restart-solver
 let check
@@ -118,11 +121,10 @@ let check
       let ppname = mk_ppname_no_range "_if_br" in
       apply_checker_result_k r ppname
     in
-    let br_name = if is_then then "then" else "else" in
-    if hyp `Set.mem` freevars_st br
-    then fail g (Some br.range)
-           (Printf.sprintf "check_if: branch hypothesis is in freevars of checked %s branch" br_name)
-    else (| br, c, d |)
+    let br = subst_st_term br [RT.NT hyp unit_const] in
+    assume ~(hyp `Set.mem` freevars_st br);
+    let typing: st_typing g br c = RU.magic () in
+    (| br, c, typing |)
   in
   let (| e1, c1, e1_typing |) = extract then_ true in
   let (| e2, c2, e2_typing |) = extract else_ false in
