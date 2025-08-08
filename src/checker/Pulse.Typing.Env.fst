@@ -40,7 +40,7 @@ noeq
 type env = {
   f : RT.fstar_top_env;
   bs : list (var & typ);
-  names : list ppname;
+  names : ns:list ppname { List.length ns == List.length bs };
   m : m:bmap { related bs m /\ L.length names == L.length bs };
   ctxt: Pulse.RuntimeUtils.context;
 }
@@ -49,13 +49,11 @@ let fstar_env g = RU.env_set_context g.f g.ctxt
 
 let bindings g = g.bs
 
-let rec bindings_with_ppname_aux (bs:list (var & typ)) (names:list ppname)
-  : T.Tac (list (ppname & var & typ)) =
-
+let rec bindings_with_ppname_aux (bs:list (var & typ)) (names:list ppname { List.length bs == List.length names })
+  : (list (ppname & var & typ)) =
   match bs, names with
   | [], [] -> []
   | (x, t)::bs, n::names -> (n, x, t)::(bindings_with_ppname_aux bs names)
-  | _ -> T.fail "impossible! env bs and names have different lengths"
 let bindings_with_ppname g = bindings_with_ppname_aux g.bs g.names  
 
 let as_map g = g.m
@@ -358,7 +356,7 @@ let env_to_doc' (simplify:bool) (e:env) : T.Tac document =
       vtns |> T.filter (fun ((n, t), x) ->
         let is_unit = FStar.Reflection.TermEq.term_eq t (`unit) in
         let x : ppname = x in
-        let is_wild = T.unseal x.name = "_" in
+        let is_wild = T.unseal x.name = "__" in
         not (is_unit && is_wild)
       )
     else

@@ -119,14 +119,20 @@ let comp_return (c:ctag) (use_eq:bool) (u:universe) (t:term) (e:term) (post:term
 
 
 module L = FStar.List.Tot
-let extend_env_l (f:R.env) (g:env_bindings) : R.env = 
+// This function is marked ghost because it should not be used as it renames all variables to "x"
+let extend_env_l (f:R.env) (g:env_bindings) : GTot R.env = 
   L.fold_right 
     (fun (x, b) g ->  
       RT.extend_env g x b)
      g
      f
-let elab_env (e:env) : R.env = extend_env_l (fstar_env e) (bindings e)
 
+irreducible
+let elab_env (e:env) : e':R.env { e' == extend_env_l (fstar_env e) (bindings e) } =
+  let e' = L.fold_right (fun (n, x, b) g -> R.push_binding g { uniq = x; ppname = (n <: ppname).name; sort = b })
+     (bindings_with_ppname e) (fstar_env e) in
+  assume e' == extend_env_l (fstar_env e) (bindings e);
+  e'
 
 (*
  * If I call this fresh, I get:
