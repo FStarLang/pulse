@@ -29,7 +29,7 @@ module T = FStar.Tactics.V2
 module P = Pulse.Syntax.Printer
 module Metatheory = Pulse.Typing.Metatheory
 module Abs = Pulse.Checker.Abs
-module RU = Pulse.Reflection.Util
+module RU = Pulse.RuntimeUtils
 
 #push-options "--z3rlimit_factor 4 --split_queries no"
 let check_bind_fn
@@ -51,7 +51,12 @@ let check_bind_fn
     then fail g (Some t.range) "check_bind: please annotate the postcondition";
 
     let x = fresh g in
-    let b = { binder with binder_ty = comp_res c } in
+    let b =
+      let ty = comp_res c in
+      // Without this laundering, SMT queries, unification, etc. randomly fails after a bind..
+      let (| ty, _, _ |) = compute_tot_term_type g ty in
+      assume ty == comp_res c;
+      { binder with binder_ty = ty } in
     let g' = push_binding g x (binder.binder_ppname) b.binder_ty in
     let ctxt_typing' : tot_typing g' ctxt tm_slprop =
       Metatheory.tot_typing_weakening_single ctxt_typing x b.binder_ty in

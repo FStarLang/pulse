@@ -351,7 +351,7 @@ let preproc_ascription (g: env) (c: comp) : T.Tac comp =
     let post = close_term post x in
     {u;res;pre;post} in
   match c with
-  | C_Tot t -> C_Tot (tc_term_phase1_with_type g t true (tm_type u_unknown))
+  | C_Tot t -> C_Tot (fst (tc_type_phase1 g t true))
   | C_ST c -> C_ST (preproc_stcomp c)
   | C_STGhost is c -> C_STGhost (preproc_inames is) (preproc_stcomp c)
   | C_STAtomic is obs c -> C_STAtomic (preproc_inames is) obs (preproc_stcomp c)
@@ -380,7 +380,7 @@ let rec check_abs_core
     check_abs_core_body g t expected_comp check finalize
   else
     let Tm_Abs { b={binder_ty=t; binder_ppname=ppname; binder_attrs}; q=qual; ascription=asc; body } = t.term in
-    let t = tc_term_phase1_with_type g t true (tm_type u_unknown) in
+    let t, _ = tc_type_phase1 g t true in
     let x = fresh g in
     let px = ppname, x in
     let expected_comp = expected_comp |> T.map_opt fun c -> cod_of_comp g c body.range px in
@@ -406,7 +406,7 @@ let rec check_abs_core
 
     let (| (fr, (| u, t_typing |)), body, c_body, body_typing |) = check_abs_core g' body expected_comp check fun _ ->
       let fr = finalize () in
-      let _ = tc_term_phase1_with_type g t true (tm_type u_unknown) in // wtf?? otherwise unresolved universe uvars with ticked args
+      let _ = tc_type_phase1 g t true in // wtf?? otherwise unresolved universe uvars with ticked args
       let chk_univ_res = check_universe g t in
       (fr, chk_univ_res) in
 
