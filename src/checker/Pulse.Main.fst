@@ -70,7 +70,10 @@ let check_fndefn
   let rng = body.range in
   debug_main g (fun _ -> Printf.sprintf "\nbody after mk_abs:\n%s\n" (P.st_term_to_string body));
 
-  let (| body, c, t_typing |) = Pulse.Checker.Abs.check_abs g body Pulse.Checker.check in
+  let (| body, c, t_typing |) =
+   stats_record "top_level check_abs" fun () ->
+   Pulse.Checker.Abs.check_abs g body Pulse.Checker.check
+  in
 
   Pulse.Checker.Prover.Util.debug_prover g
     (fun _ -> Printf.sprintf "\ncheck call returned in main with:\n%s\nat type %s\n"
@@ -89,6 +92,7 @@ let check_fndefn
   let cur_module = T.cur_module () in
 
   let maybe_add_impl t (se: RT.sigelt_for (fstar_env g) t) : Tac (RT.sigelt_for (fstar_env g) t) =
+    stats_record "pulse_extraction" fun () ->
     let open Pulse.Extract.Main in begin
     if T.ext_enabled "pulse.noextract" then (
       T.print ">>>>>Skipping extraction\n";
