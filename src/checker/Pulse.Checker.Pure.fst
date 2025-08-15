@@ -40,7 +40,8 @@ let debug (g:env) (msg: unit -> T.Tac string) =
   then T.print (print_context g ^ "\n" ^ msg())
 
 let check_ln (g:env) (label:string) (t:R.term) : Tac unit =
-  if not (CheckLN.check_ln t) then
+  // NOTE: CheckLN doesn't compress universe uvars.....
+  if not (CheckLN.check_ln (RU.deep_compress t)) then
     fail_doc g (Some (RU.range_of_term t)) [
       text "Failure: not locally nameless!";
       text "Aborting before calling" ^/^ pp label;
@@ -208,11 +209,11 @@ let instantiate_term_implicits
     | [] ->
       t, ty
 
-let instantiate_term_implicits_uvs (g:env) (t0:term) =
+let instantiate_term_implicits_uvs (g:env) (t0:term) (inst_extra:bool) =
   let f = elab_env g in
   let rng = RU.range_of_term t0 in
   let f = RU.env_set_range f (Pulse.Typing.Env.get_range g (Some rng)) in
-  let topt, issues = catch_all (fun _ -> rtb_instantiate_implicits g f t0 None false) in (* false? *)
+  let topt, issues = catch_all (fun _ -> rtb_instantiate_implicits g f t0 None inst_extra) in (* false? *)
   match topt with
   | None -> (
     let open Pulse.PP in
@@ -331,6 +332,43 @@ let tc_with_core g (f:R.env) (e:R.term)
     | None -> None, issues
     | Some (eff, t) ->
       Some (| eff, t, RT.T_Token _ _ _ (FStar.Squash.get_proof _) |), issues
+
+let tc_term_phase1 g (t:term) (must_tot:bool) : T.Tac (term & term)
+  = let fg = elab_env g in
+    let t = RU.deep_transform_to_unary_applications t in
+    let instantiate_imps = true in
+    let res, issues = catch_all fun _ ->
+      RU.with_context (RU.extend_context "tc_term_phase1" (Some (range_of_term t)) (get_context g)) fun _ ->
+      RU.tc_term_phase1 fg t must_tot instantiate_imps in
+    match res with
+    | None ->
+      fail_doc_with_subissues g (Some <| RU.range_of_term t) issues (ill_typed_term t None None)
+    | Some (t, ty) -> (t, ty)
+
+let tc_term_phase1_with_type (g: env) (t:term) (must_tot:bool) (expected_typ: term) : T.Tac term =
+  let t = R.pack_ln (R.Tv_AscribedT t expected_typ None false) in
+  let t, _ = tc_term_phase1 g t must_tot in
+  match R.inspect_ln t with
+  | R.Tv_AscribedT t _ _ _ -> t
+  | _ -> t
+
+let tc_type_phase1 (g: env) (t: term) (must_tot: bool) : T.Tac (term & universe) =
+  let t = R.pack_ln (R.Tv_AscribedT t (tm_type u_unknown) None false) in
+  let t, sort = tc_term_phase1 g t must_tot in
+  let t = match R.inspect_ln t with
+    | R.Tv_AscribedT t _ _ _ -> t
+    | _ -> t in
+  let u = match R.inspect_ln sort with
+    | R.Tv_Type u -> u
+    | _ ->
+      let open Pulse.PP in
+      T.fail_doc_at [
+        text "Expected Type, got:";
+        pp sort;
+        text "This is the type of:";
+        pp t;
+      ] (Some (RU.range_of_term t)) in
+  t, u
 
 let core_compute_term_type (g:env) (t:term)
   : T.Tac (eff:T.tot_or_ghost &
