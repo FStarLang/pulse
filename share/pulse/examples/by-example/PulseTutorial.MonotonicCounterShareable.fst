@@ -41,7 +41,7 @@ ensures c.inv 0
     fn next (i:erased int)
     requires inv ii (inv_core x mr) ** MR.snapshot mr i
     returns j:int
-    ensures (inv ii (inv_core x mr) ** MR.snapshot mr j) ** pure (i < j)
+    ensures no_extrude <| (inv ii (inv_core x mr) ** MR.snapshot mr j) ** pure (i < j)
     {
         with_invariants ii {
             later_elim_timeless _;
@@ -58,8 +58,9 @@ ensures c.inv 0
     };
     ghost
     fn dup (i:erased int)
-    requires inv ii (inv_core x mr) ** MR.snapshot mr i
-    ensures (inv ii (inv_core x mr) ** MR.snapshot mr i) **
+    requires no_extrude <| inv ii (inv_core x mr) ** MR.snapshot mr i
+    ensures no_extrude <|
+            (inv ii (inv_core x mr) ** MR.snapshot mr i) **
             (inv ii (inv_core x mr) ** MR.snapshot mr i)
     {
         MR.dup_snapshot mr;
