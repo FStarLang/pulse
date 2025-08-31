@@ -60,6 +60,7 @@ fn alloc u#a (#a:Type u#a) {| inst: small_type u#a |} (#pcm:pcm a) (x:a{pcm.refi
   big_alloc #(U.raise_t a) #(raise pcm) (U.raise_val x);
 }
 
+#push-options "--print_implicits"
 fn read u#a (#a:Type u#a) (#p:pcm a) (r:pcm_ref p) (x:erased a)
     (f:(v:a{compatible p x v} -> GTot (y:a{compatible p y v /\ frame_compatible p x v y})))
   requires pcm_pts_to r x
@@ -108,5 +109,8 @@ ghost fn gather u#a (#a:Type u#a) (#pcm:pcm a) (r:pcm_ref pcm) (v0:a) (v1:a)
   let inst = pts_to_small r v0;
   with inst'. assert big_pcm_pts_to #_ #(raise #a #inst' pcm) r (U.raise_val #a #inst' v1);
   drop_amb (small_token u#a inst');
+  with inst'. // canonize instance
+    rewrite big_pcm_pts_to #(U.raise_t #inst' a) #(raise #a #inst' pcm) r (U.raise_val #a #inst' v0)
+    as big_pcm_pts_to #(U.raise_t #inst a) #(raise #a #inst pcm) r (U.raise_val v0);
   big_gather #(U.raise_t #inst a) #(raise #a #inst pcm) r (U.raise_val #a #inst v0) (U.raise_val #a #inst v1);
 }

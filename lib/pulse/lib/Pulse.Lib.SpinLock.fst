@@ -202,11 +202,9 @@ fn free (#v:slprop) (l:lock)
   unfold (lock_inv l.r l.gr v);
   unfold (lock_inv_aux l.r l.gr v);
   B.free l.r;
-  GR.gather l.gr;
+  GR.gather l.gr #_ #1ul;
+  with v. assert l.gr |-> v; rewrite each v as 1ul; // awkward
   GR.free l.gr;
-  with i. assert (if (i = 0ul) then v else emp); // awkward
-  rewrite (if (i = 0ul) then v else emp) as emp;
-  ()
 }
 
 

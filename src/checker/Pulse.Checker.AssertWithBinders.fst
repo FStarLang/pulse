@@ -30,6 +30,7 @@ module PC = Pulse.Checker.Pure
 module P = Pulse.Syntax.Printer
 module PS = Pulse.Checker.Prover.Substs
 module Prover = Pulse.Checker.Prover
+open Pulse.Checker.Prover.Normalize
 module Env = Pulse.Typing.Env
 open Pulse.Show
 module RU = Pulse.RuntimeUtils
@@ -78,6 +79,24 @@ let infer_binder_types (g:env) (bs:list binder) (v:slprop)
     in
     let inst_abstraction, _ = PC.instantiate_term_implicits g (wr abstraction v_rng) None true in
     refl_abs_binders inst_abstraction []
+
+let rec open_binders_with_uvars (g:env) (bs:list binder) (v:term) (body:st_term) (us: list term)
+  : T.Tac (uvs: list term & term & st_term) =
+
+  match bs with
+  | [] -> (| List.rev us, v, body |)
+  | b::bs ->
+    // these binders are only lax checked so far
+    // let _ = PC.check_universe (push_env g uvs) b.binder_ty in
+    let u, _ = PC.tc_term_phase1_with_type g tm_unknown b.binder_ty in
+    // let x = fresh (push_env g in
+    let ss = [ RT.DT 0 u ] in
+    let bs = L.mapi (fun i b ->
+      assume (i >= 0);
+      subst_binder b (shift_subst_n i ss)) bs in
+    let v = subst_term v (shift_subst_n (L.length bs) ss) in
+    let body = subst_st_term body (shift_subst_n (L.length bs) ss) in
+    open_binders_with_uvars g bs v body (u::us)
 
 let rec open_binders (g:env) (bs:list binder) (uvs:env { disjoint uvs g }) (v:term) (body:st_term)
   : T.Tac (uvs:env { disjoint uvs g } & term & st_term) =
@@ -219,22 +238,10 @@ let visit_and_rewrite (p: (R.term & R.term)) (t:term) : T.Tac term =
 let visit_and_rewrite_conjuncts (p: (R.term & R.term)) (tms:list term) : T.Tac (list term) =
   T.map (visit_and_rewrite p) tms
 
-(* is_source: was this rewrite written in the source by the user? *)
-let visit_and_rewrite_conjuncts_all (is_source:bool) (g:env) (p: list (R.term & R.term)) (goal:term) : T.Tac (term & term) =
+let visit_and_rewrite_conjuncts_all (g:env) (p: list (R.term & R.term)) (goal:term) : T.Tac term =
   let tms = slprop_as_list goal in
   let tms' = T.fold_left (fun tms p -> visit_and_rewrite_conjuncts p tms) tms p in
-  assume (L.length tms' == L.length tms);
-  let lhs, rhs =
-    T.fold_left2 
-      (fun (lhs, rhs) t t' ->  
-        if eq_tm t t' then lhs, rhs
-        else (t::lhs, t'::rhs))
-      ([], [])
-      tms tms'
-  in
-  if is_source && Nil? lhs then
-    warn_nop g goal;
-  list_as_slprop lhs, list_as_slprop rhs
+  list_as_slprop tms'
 
 let disjoint (dom:list var) (cod:Set.set var) =
   L.for_all (fun d -> not (Set.mem d cod)) dom
@@ -263,15 +270,15 @@ let rec as_subst (p : list (term & term))
 
 
 
-let rewrite_all (is_source:bool) (g:env) (p: list (term & term)) (t:term) tac_opt : T.Tac (term & term) =
+let rewrite_all (is_source:bool) (g:env) (p: list (term & term)) (t:term) tac_opt : T.Tac (term & list (term & term)) =
   (* We only use the rewrites_to substitution if there is no tactic attached to the
   rewrite. Otherwise, tactics may become brittle as the goal is changed unexpectedly
   by other things in the context. See tests/Match.fst. *)
   let use_rwr = None? tac_opt in
-  let norm (t:term) : T.Tac term = dfst <| Pulse.Checker.Prover.normalize_slprop g t use_rwr in
+  let norm (t:term) : T.Tac term = dfst <| normalize_slprop g t use_rwr in
   let t =
     let t, _ = Pulse.Checker.Pure.instantiate_term_implicits g t None true in
-    let t = dfst <| Pulse.Checker.Prover.normalize_slprop g t use_rwr in
+    let t = dfst <| normalize_slprop g t use_rwr in
     t
   in
   let elab_pair (lhs rhs : R.term) : T.Tac (R.term & R.term) =
@@ -287,21 +294,47 @@ let rewrite_all (is_source:bool) (g:env) (p: list (term & term)) (t:term) tac_op
     let t' = subst_term t s in
     if is_source && eq_tm t t' then
       warn_nop g t;
-    t, t'
+    t', p
   | _ ->
-    let lhs, rhs = visit_and_rewrite_conjuncts_all is_source g p t in
-    debug_log g (fun _ -> Printf.sprintf "Rewrote %s to %s" (P.term_to_string lhs) (P.term_to_string rhs));
-    lhs, rhs
+    let rhs = visit_and_rewrite_conjuncts_all g p t in
+    if is_source && eq_tm t rhs then
+      warn_nop g t;
+    debug_log g (fun _ -> Printf.sprintf "Rewrote %s to %s" (P.term_to_string t) (P.term_to_string rhs));
+    rhs, p
+
+open Pulse.PP
+let check_pair (g:env) rng (lhs rhs:term) : T.Tac unit =
+  let (| _, ty, _ |) = PC.core_compute_term_type g lhs in
+  let (| _, _ |) = PC.core_check_term_at_type g rhs ty in
+  let res, issues = Pulse.Typing.Util.check_equiv_now (elab_env g) lhs rhs in
+  match res with
+  | None -> 
+    fail_doc_with_subissues g (Some rng) issues [
+      text "rename: could not prove equality of";
+      pp lhs;
+      pp rhs;
+    ]
+  | Some token ->
+    ()
+
+let rec check_pairs (g:env) rng (ps: list (term & term)) : T.Tac unit =
+  match ps with
+  | [] -> ()
+  | (lhs,rhs)::ps -> check_pair g rng lhs rhs; check_pairs g rng ps
 
 let check_renaming 
     (g:env)
     (pre:term)
+    (pre_typing:tot_typing g pre tm_slprop)
+    (post_hint:post_hint_opt g)
+    (res_ppname:ppname)
     (st:st_term { 
         match st.term with
         | Tm_ProofHintWithBinders { hint_type = RENAME _ } -> true
         | _ -> false
     })
-: T.Tac st_term
+  (check:check_t)
+: T.Tac (checker_result_t g pre post_hint)
 = let Tm_ProofHintWithBinders ht = st.term in
   let { hint_type=RENAME { pairs; goal; tac_opt }; binders=bs; t=body } = ht in
   match bs, goal with
@@ -316,6 +349,7 @@ let check_renaming
    // ...
    let body = {st with term = Tm_ProofHintWithBinders { ht with binders = [] };
                        source = Sealed.seal false; } in
+   check g pre pre_typing post_hint res_ppname
    { st with
        term = Tm_ProofHintWithBinders { hint_type=ASSERT { p = goal; elaborated = true }; binders=bs; t=body };
        source = Sealed.seal false;
@@ -323,19 +357,19 @@ let check_renaming
 
   | [], None ->
     // if there is no goal, take the goal to be the full current pre
-    let lhs, rhs = rewrite_all (T.unseal st.source) g pairs pre tac_opt in
-    let t = { st with term = Tm_Rewrite { t1 = lhs; t2 = rhs; tac_opt; elaborated = true };
-                      source = Sealed.seal false; } in
-    { st with
-        term = Tm_Bind { binder = as_binder tm_unit; head = t; body };
-        source = Sealed.seal false;
-    }
+    let rhs, pairs = rewrite_all (T.unseal st.source) g pairs pre tac_opt in
+    check_pairs g st.range pairs;
+    let h2: slprop_equiv g rhs pre = RU.magic () in
+    let h1: tot_typing g rhs tm_slprop = RU.magic () in
+    let (| x, g', ty, ctxt', k |) = check g rhs h1 post_hint res_ppname body in
+    (| x, g', ty, ctxt', k_elab_equiv k h2 (VE_Refl _ _) |)
 
   | [], Some goal -> (
       let goal, _ = PC.instantiate_term_implicits g goal None false in
-      let lhs, rhs = rewrite_all (T.unseal st.source) g pairs goal tac_opt in
-      let t = { st with term = Tm_Rewrite { t1 = lhs; t2 = rhs; tac_opt; elaborated = true };
+      let rhs, _ = rewrite_all (T.unseal st.source) g pairs goal tac_opt in
+      let t = { st with term = Tm_Rewrite { t1 = goal; t2 = rhs; tac_opt; elaborated = true };
                         source = Sealed.seal false; } in
+      check g pre pre_typing post_hint res_ppname
       { st with term = Tm_Bind { binder = as_binder tm_unit; head = t; body };
                 source = Sealed.seal false;
       }
@@ -436,8 +470,7 @@ let check
     fail_doc_env true g (Some r) msg
 
   | RENAME {} ->
-    let st = check_renaming g pre st in
-    check g pre pre_typing post_hint res_ppname st
+    check_renaming g pre pre_typing post_hint res_ppname st check
 
   | REWRITE { t1; t2; tac_opt; elaborated } -> (
     match bs with
@@ -455,25 +488,20 @@ let check
   | ASSERT { p = v; elaborated } ->
     FStar.Tactics.BreakVC.break_vc(); // Some stabilization
     let bs = infer_binder_types g bs v in
-    let (| uvs, v_opened, body_opened |) = open_binders g bs (mk_env (fstar_env g)) v body in
-    let v, body = v_opened, body_opened in
+    let (| uvs, v, body |) = open_binders_with_uvars g bs v body [] in
     let ctxt = Pulse.Checker.ImpureSpec.({ctxt_now = pre; ctxt_old = None}) in
-    let (| v, d |) =
+    let v =
       if elaborated then
-        PC.check_slprop (push_env g uvs) v
+        fst (PC.tc_term_phase1_with_type g v tm_slprop)
       else
-        ImpureSpec.purify_and_check_spec (push_env g uvs) ctxt v in
-    let (| g1, nts, _, pre', k_frame |) = Prover.prove false pre_typing uvs d in
-    //
-    // No need to check effect labels for the uvs solution here,
-    //   since we are checking the substituted body anyway,
-    //   if some of them are ghost when they shouldn't be,
-    //   it will get caught
-    //
+        ImpureSpec.purify_spec g ctxt v in
+    let (| g1, pre', k_frame |) = Prover.prove st.range g pre v false in
+    let v = RU.deep_compress_safe v in
+    let body = body in // TODO compress
+    let h: tot_typing g1 v tm_slprop = PC.core_check_term _ _ _ _ in
+    let h: tot_typing g1 (tm_star v pre') tm_slprop = RU.magic () in // TODO: propagate through prover
     let (| x, x_ty, pre'', g2, k |) =
-      check g1 (tm_star (PS.nt_subst_term v nts) pre')
-              (RU.magic ()) 
-              post_hint res_ppname (PS.nt_subst_st_term body nts) in
+      check g1 (tm_star v pre') h post_hint res_ppname body in
     (| x, x_ty, pre'', g2, k_elab_trans k_frame k |)
 
 

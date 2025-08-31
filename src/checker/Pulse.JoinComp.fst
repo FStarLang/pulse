@@ -22,6 +22,7 @@ open Pulse.Typing.Combinators
 open Pulse.Checker.Pure
 open Pulse.Checker.Base
 open Pulse.Checker.Prover
+open Pulse.Checker.Prover.Normalize
 open FStar.List.Tot
 open Pulse.Show
 module T = FStar.Tactics.V2
@@ -232,13 +233,13 @@ let join_post #g #hyp #b
   let x = fresh g in
   let p1_post = open_term_nv p1.post (ppname_default, x) in
   let (| p1_post, _ |) = 
-    Pulse.Checker.Prover.normalize_slprop 
+    normalize_slprop 
       (push_binding_def g x p1.ret_ty) 
       p1_post true 
   in
   let p2_post = open_term_nv p2.post (ppname_default, x) in
   let (| p2_post, _ |) =
-    Pulse.Checker.Prover.normalize_slprop 
+    normalize_slprop 
       (push_binding_def g x p1.ret_ty) 
       p2_post true 
   in

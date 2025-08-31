@@ -136,6 +136,8 @@ let deep_transform_to_unary_applications (t:S.term) =
     t
 
 let deep_compress (t:S.term) = FStarC_Syntax_Compress.deep_compress_uvars t
+let deep_compress_safe (t:S.term) = FStarC_Syntax_Compress.deep_compress true true t
+let no_uvars_in_term = FStarC_Tactics_V2_Basic.no_uvars_in_term
 let map_seal (t:'a) (f:'a -> 'b) : 'b = f t
 let float_one = FStarC_Util.float_of_string "1.0"
 module TcEnv = FStarC_TypeChecker_Env
