@@ -290,6 +290,8 @@ fn move_next (#t:Type) (x:llist t)
     let node = !np;
     intro_yields_cons np;
     rewrite each (Some np) as x;
+    with tl. rewrite trade (is_list node.tail tl) (is_list x (node.head :: tl))
+                  as trade (is_list node.tail tl) (is_list x 'l);
     node.tail
 }
 

@@ -66,8 +66,8 @@ fn read u#a (#a:Type u#a) (#p:pcm a) (r:pcm_ref p) (x:erased a)
   returns v:(v:a {compatible p x v /\ p.refine v})
   ensures pcm_pts_to r (f v)
 {
-  let inst = pts_to_small r _;
-  U.downgrade_val (big_read #(U.raise_t a) #(raise p) r (hide (U.raise_val (reveal x))) (raise_refine p x f));
+  with inst. assert small_token inst;
+  U.downgrade_val (big_read #(U.raise_t a) #(raise #a #inst p) r (hide (U.raise_val (reveal x))) (raise_refine p x f));
 }
 
 fn write u#a (#a:Type u#a) (#p:pcm a) (r:pcm_ref p) (x y:erased a)
@@ -75,8 +75,8 @@ fn write u#a (#a:Type u#a) (#p:pcm a) (r:pcm_ref p) (x y:erased a)
   requires pcm_pts_to r x
   ensures pcm_pts_to r y
 {
-  let inst = pts_to_small r _;
-  big_write #(U.raise_t a) #(raise p) r (hide (U.raise_val (reveal x))) (hide (U.raise_val (reveal y)))
+  with inst. assert small_token inst;
+  big_write #(U.raise_t a) #(raise #a #inst p) r (hide (U.raise_val (reveal x))) (hide (U.raise_val (reveal y)))
     (raise_upd f)
 }
 
@@ -86,9 +86,9 @@ ghost fn share u#a (#a:Type u#a) (#pcm:pcm a) (r:pcm_ref pcm)
   ensures pcm_pts_to r v0
   ensures pcm_pts_to r v1
 {
-  let inst = pts_to_small r _;
+  with inst. assert small_token inst;
   fold small_token inst;
-  big_share #(U.raise_t a) #(raise pcm) r (U.raise_val v0) (U.raise_val v1);
+  big_share #(U.raise_t a) #(raise #a #inst pcm) r (U.raise_val v0) (U.raise_val v1);
 }
 
 [@@allow_ambiguous]
@@ -108,5 +108,8 @@ ghost fn gather u#a (#a:Type u#a) (#pcm:pcm a) (r:pcm_ref pcm) (v0:a) (v1:a)
   let inst = pts_to_small r v0;
   with inst'. assert big_pcm_pts_to #_ #(raise #a #inst' pcm) r (U.raise_val #a #inst' v1);
   drop_amb (small_token u#a inst');
+  with inst'. // canonize instance
+    rewrite big_pcm_pts_to #(U.raise_t #inst' a) #(raise #a #inst' pcm) r (U.raise_val #a #inst' v0)
+    as big_pcm_pts_to #(U.raise_t #inst a) #(raise #a #inst pcm) r (U.raise_val v0);
   big_gather #(U.raise_t #inst a) #(raise #a #inst pcm) r (U.raise_val #a #inst v0) (U.raise_val #a #inst v1);
 }
