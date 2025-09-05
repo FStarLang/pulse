@@ -424,21 +424,20 @@ let check_wild
       in
       peel_binders k ex
 #pop-options
+
 //
 // v is a partially applied slprop with type t
 // add uvars for the remaining arguments
 //
-let rec add_rem_uvs (g:env) (t:typ) (uvs:env { Env.disjoint g uvs }) (v:slprop)
-  : T.Tac (uvs:env { Env.disjoint g uvs } & slprop) =
+let rec add_rem_uvs (g:env) (t:typ) (v:term)
+  : T.Tac slprop =
   match is_arrow t with
-  | None -> (| uvs, v |)
+  | None -> v
   | Some (b, qopt, c) ->
-    let x = fresh (push_env g uvs) in
-    let ppname = ppname_for_uvar b.binder_ppname in
-    let ct = open_comp_nv c (ppname, x) in
-    let uvs = Env.push_binding uvs x ppname b.binder_ty in
-    let v = tm_pureapp v qopt (tm_var {nm_index = x; nm_ppname = ppname}) in
-    add_rem_uvs g (comp_res ct) uvs v
+    let u, _ = PC.tc_term_phase1_with_type g tm_unknown b.binder_ty in
+    let ct = open_comp' c u 0 in
+    let v = tm_pureapp v qopt u in
+    add_rem_uvs g (comp_res ct) v
 
 let check
   (g:env)
@@ -508,61 +507,38 @@ let check
   | UNFOLD { p=v }
   | FOLD { p=v } ->
 
-    let (| uvs, v_opened, body_opened |) =
-      let bs = infer_binder_types g bs v in
-      open_binders g bs (mk_env (fstar_env g)) v body in
+    let bs = infer_binder_types g bs v in
 
     check_unfoldable g v;
 
-    let v_opened, t_rem = PC.instantiate_term_implicits (push_env g uvs) v_opened None false in
+    let ctxt = Pulse.Checker.ImpureSpec.({ctxt_now = pre; ctxt_old = None}) in
+    let v = ImpureSpec.purify_term g ctxt v in
+    let v =
+      let v, t, _ = PC.tc_term_phase1 g v in
+      add_rem_uvs g t v in
 
-    let uvs, v_opened =
-      let (| uvs_rem, v_opened |) =
-        add_rem_uvs (push_env g uvs) t_rem (mk_env (fstar_env g)) v_opened in
-      push_env uvs uvs_rem, v_opened in
-
-    let lhs, rhs, tac =
+    let lhs, rhs =
       match hint_type with      
       | UNFOLD _ ->
-        let rhs, head_sym = unfold_defs (push_env g uvs) None v_opened in
-        v_opened, rhs, Pulse.Reflection.Util.slprop_equiv_unfold_tm head_sym
+        let rhs, head_sym = unfold_defs g None v in
+        v, rhs
       | FOLD { names=ns } -> 
-        let lhs, head_sym = unfold_defs (push_env g uvs) ns v_opened in
-        lhs, v_opened, Pulse.Reflection.Util.slprop_equiv_fold_tm head_sym
+        let lhs, head_sym = unfold_defs g ns v in
+        lhs, v
     in
 
-    let uvs_bs = uvs |> bindings_with_ppname |> L.rev in
-    let uvs_closing = uvs_bs |> closing in
-    let lhs = subst_term lhs uvs_closing in
-    let rhs = subst_term rhs uvs_closing in
-    let body = subst_st_term body_opened uvs_closing in
-    let bs = close_binders uvs_bs in
-    (* Since this rewrite is easy enough to show by unification, we always
-    mark them with the slprop_equiv_norm tactic. *)
-    FStar.Tactics.BreakVC.break_vc ();
-    if RU.debug_at_level (fstar_env g) "fold" then begin
-      (* If we're running interactively, print out the context
-      and environment. *)
-      let open FStar.Pprint in
-      let open Pulse.PP in
-      let msg = [
-        text "Elaborated fold/unfold to rewrite";
-        prefix 2 1 (text "lhs:") (pp lhs);
-        prefix 2 1 (text "rhs:") (pp rhs);
-      ] in
-      info_doc_env g (Some st.range) msg
-    end;
-    let rw = mk_term (Tm_Rewrite { t1 = lhs; t2 = rhs; tac_opt = Some tac; elaborated = true }) st.range in
-    let rw = { rw with effect_tag = as_effect_hint STT_Ghost } in
+    let (| g', pre_remaining, k |) = Prover.prove st.range g pre lhs false in
 
-    let st = mk_term (Tm_Bind { binder = as_binder (wr (`unit) st.range); head = rw; body }) st.range in
-    let st = { st with effect_tag = body.effect_tag } in
+    let norm t = T.norm_term_env (elab_env g') [primops; iota] (RU.deep_compress_safe t) in
+    // Clean up beta-redexes introduced by unification
+    let rhs' = norm rhs in
+    let v' = norm v in
 
-    let st =
-      match bs with
-      | [] -> st
-      | _ ->
-        let t = mk_term (Tm_ProofHintWithBinders { hint_type = ASSERT { p = lhs; elaborated = true }; binders = bs; t = st }) st.range in
-        { t with effect_tag = st.effect_tag }
-    in
-    check g pre pre_typing post_hint res_ppname st
+    let _: tot_typing g v' tm_slprop = PC.check_slprop_with_core g v' in
+
+    let h1: tot_typing g' (tm_star pre_remaining rhs') tm_slprop = RU.magic () in
+    let h2: slprop_equiv g' (tm_star pre_remaining rhs') (tm_star lhs pre_remaining) = RU.magic () in
+
+    let (| x, g'', ty, ctxt', k' |) =
+      check g' (tm_star pre_remaining rhs') h1 post_hint res_ppname body in
+    (| x, g'', ty, ctxt', k_elab_trans k (k_elab_equiv k' h2 (VE_Refl _ _)) |)
