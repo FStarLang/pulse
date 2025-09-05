@@ -39,57 +39,14 @@ let is_host_term (t:R.term) = not (R.Tv_Unknown? (R.inspect_ln t))
 
 let debug_log = Pulse.Typing.debug_log "with_binders"
 
-let option_must (f:option 'a) (msg:string) : T.Tac 'a =
-  match f with
-  | Some x -> x
-  | None -> T.fail msg
-
-let rec refl_abs_binders (t:R.term) (acc:list binder) : T.Tac (list binder) =
-  let open R in
-  match inspect_ln t with
-  | Tv_Abs b body ->
-    let {sort; ppname} = R.inspect_binder b in
-    refl_abs_binders body
-     ((mk_binder_ppname sort (mk_ppname ppname (RU.range_of_term t)))::acc)
-  | _ -> L.rev acc  
-
-let infer_binder_types (g:env) (bs:list binder) (v:slprop)
-  : T.Tac (list binder) =
-  match bs with
-  | [] -> []
-  | _ ->
-    let v_rng = Pulse.RuntimeUtils.range_of_term v in
-    let g = push_context g "infer_binder_types" v_rng in
-    let as_binder (b:binder) : R.binder =
-      let open R in
-      let bv : binder_view = 
-        { sort = b.binder_ty;
-          ppname = b.binder_ppname.name;
-          qual = Q_Explicit;
-          attrs = [] } in
-      pack_binder bv
-    in
-    let abstraction = 
-      L.fold_right 
-        (fun b (tv:term) -> 
-         let b = as_binder b in
-         R.pack_ln (R.Tv_Abs b tv))
-        bs
-        v
-    in
-    let inst_abstraction, _ = PC.instantiate_term_implicits g (wr abstraction v_rng) None true in
-    refl_abs_binders inst_abstraction []
-
 let rec open_binders_with_uvars (g:env) (bs:list binder) (v:term) (body:st_term) (us: list term)
   : T.Tac (uvs: list term & term & st_term) =
 
   match bs with
   | [] -> (| List.rev us, v, body |)
-  | b::bs ->
-    // these binders are only lax checked so far
-    // let _ = PC.check_universe (push_env g uvs) b.binder_ty in
-    let u, _ = PC.tc_term_phase1_with_type g tm_unknown b.binder_ty in
-    // let x = fresh (push_env g in
+  | {binder_ty}::bs ->
+    let binder_ty, _ = PC.tc_type_phase1 g binder_ty in
+    let u, _ = PC.tc_term_phase1_with_type g tm_unknown binder_ty in
     let ss = [ RT.DT 0 u ] in
     let bs = L.mapi (fun i b ->
       assume (i >= 0);
@@ -97,41 +54,6 @@ let rec open_binders_with_uvars (g:env) (bs:list binder) (v:term) (body:st_term)
     let v = subst_term v (shift_subst_n (L.length bs) ss) in
     let body = subst_st_term body (shift_subst_n (L.length bs) ss) in
     open_binders_with_uvars g bs v body (u::us)
-
-let rec open_binders (g:env) (bs:list binder) (uvs:env { disjoint uvs g }) (v:term) (body:st_term)
-  : T.Tac (uvs:env { disjoint uvs g } & term & st_term) =
-
-  match bs with
-  | [] -> (| uvs, v, body |)
-  | b::bs ->
-    // these binders are only lax checked so far
-    let _ = PC.check_universe (push_env g uvs) b.binder_ty in
-    let x = fresh (push_env g uvs) in
-    let ss = [ RT.DT 0 (tm_var {nm_index=x;nm_ppname=b.binder_ppname}) ] in
-    let bs = L.mapi (fun i b ->
-      assume (i >= 0);
-      subst_binder b (shift_subst_n i ss)) bs in
-    let v = subst_term v (shift_subst_n (L.length bs) ss) in
-    let body = subst_st_term body (shift_subst_n (L.length bs) ss) in
-    open_binders g bs (push_binding uvs x b.binder_ppname b.binder_ty) v body
-
-let closing (bs:list (ppname & var & typ)) : subst =
-  L.fold_right (fun (_, x, _) (n, ss) ->
-    n+1,
-    (RT.ND x n)::ss
-  ) bs (0, []) |> snd
-
-let rec close_binders (bs:list (ppname & var & typ))
-  : Tot (list binder) (decreases L.length bs) =
-  match bs with
-  | [] -> []
-  | (name, x, t)::bs ->
-    let bss = L.mapi (fun n (n1, x1, t1) ->
-      assume (n >= 0);
-      n1, x1, subst_term t1 [RT.ND x n]) bs in
-    let b = mk_binder_ppname t name in
-    assume (L.length bss == L.length bs);
-    b::(close_binders bss)
 
 let unfold_all (g : env) (names : list string) (t:term)
   : T.Tac term
@@ -486,7 +408,6 @@ let check
   
   | ASSERT { p = v; elaborated } ->
     FStar.Tactics.BreakVC.break_vc(); // Some stabilization
-    let bs = infer_binder_types g bs v in
     let (| uvs, v, body |) = open_binders_with_uvars g bs v body [] in
     let ctxt = Pulse.Checker.ImpureSpec.({ctxt_now = pre; ctxt_old = None}) in
     let v =
@@ -506,8 +427,6 @@ let check
 
   | UNFOLD { p=v }
   | FOLD { p=v } ->
-
-    let bs = infer_binder_types g bs v in
 
     check_unfoldable g v;
 
