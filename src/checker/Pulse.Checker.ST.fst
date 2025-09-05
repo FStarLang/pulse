@@ -82,10 +82,6 @@ let check
       pp t
     ];
   let e, ty, eff = tc_term_phase1 g e in
-  // let g' : env = push_env g uvs in
-  // assert (g' `env_extends` g);
-  // let post_hint: post_hint_opt g' = post_hint in
-  // let (| e, eff, ty, typing |) = Pulse.Checker.Pure.compute_term_type g' e in
   match Pulse.Readback.readback_comp ty with
   | None -> fail g (Some range) (Printf.sprintf "readback of %s failed" (show ty))
   | Some (C_Tot _) ->
