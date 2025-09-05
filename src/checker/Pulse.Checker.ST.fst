@@ -32,35 +32,6 @@ open Pulse.Show
 let should_allow_ambiguous (t:term) : T.Tac bool =
   Pulse.Reflection.Util.head_has_attr_string "Pulse.Lib.Core.allow_ambiguous" t
 
-// HACK: Instantiates implicits at the end with uvs
-// If we let instantiate_term_implicits_uvs instantiate these implicits,
-// then it will instantiate squash arguments with ().
-// The () will usually only type-check after running the prover,
-// however the prover requires a type-correct term.
-// Therefore we manually instantiate these implicits...
-let instantiate_term_implicits_uvs (g:env) (t:term)
-  : T.Tac (uvs:env { disjoint g uvs } & term & term) =
-  let (| uvs, t, ty |) = Pulse.Checker.Pure.instantiate_term_implicits_uvs g t false in
-  let rec add_implicits (uvs: env { disjoint g uvs }) (t ty:term)
-    : T.Tac (uvs:env { disjoint g uvs } & term & term) =
-    match inspect_ln_unascribe ty with
-    | R.Tv_Arrow b c ->
-      (match R.inspect_comp c with
-      | C_Total ty ->
-        let b = R.inspect_binder b in
-        if Q_Implicit? b.qual then
-          let x = fresh uvs in
-          let px = ppname_default, x in
-          let uvs = push_binding uvs x (fst px) b.sort in
-          assume disjoint g uvs;
-          let ty = open_term_nv ty px in
-          add_implicits uvs (pack_ln (R.Tv_App t (term_of_nvar px, b.qual))) ty
-        else
-          (| uvs, t, ty |)
-      | _ -> (| uvs, t, ty |))
-    | _ -> (| uvs, t, ty |) in
-  add_implicits uvs t ty
-
 open Pulse.PP
 
 let check
