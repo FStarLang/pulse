@@ -370,7 +370,7 @@ let rec mk_bind (g:env)
   let _, x = px in
   let b = nvar_as_binder px (comp_res c1) in
   let fail_bias (#a:Type) tag
-  : T.TacH a (requires fun _ -> True) (ensures fun _ r -> FStar.Tactics.Result.Failed? r)
+  : T.TacH a (requires fun _ -> True) (ensures fun _ r -> False)
   = let open Pulse.PP in
     fail_doc g (Some e1.range)
       [text "Cannot compose computations in this " ^/^ text tag ^/^ text " block:";

@@ -212,7 +212,8 @@ let norm_well_typed_term_aux
       (steps:FStarC_NormSteps.norm_step list)
   = let steps = FStarC_TypeChecker_Cfg.translate_norm_steps steps in
     let t' = FStarC_TypeChecker_Normalize.normalize (TcEnv.Unascribe::steps) g t in
-    FStar_Pervasives.Mkdtuple3 (t', (), ())
+    Obj.magic (* we need a bit of magic to convert between Fstar_pluginlib.FStar_Pervasives.dtuple3 and Fstarcompiler.FStar_Pervasives.dtuple3 *)
+      (FStar_Pervasives.Mkdtuple3 (t', (), ()))
 
 let norm_well_typed_term      
       (g:TcEnv.env)
