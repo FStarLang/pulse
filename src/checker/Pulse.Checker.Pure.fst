@@ -192,7 +192,7 @@ let instantiate_term_implicits
   let rng = RU.range_of_term t0 in
   let f = RU.env_set_range f (Pulse.Typing.Env.get_range g (Some rng)) in
   let topt, issues = catch_all (fun _ -> rtb_instantiate_implicits g f t0 expected inst_extra) in
-  let fail #a issues : Tac a =
+  let fail issues : Tac _ = 
     fail_doc_with_subissues g (Some rng) issues []
   in
   match topt with
