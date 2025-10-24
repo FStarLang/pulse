@@ -23,6 +23,7 @@ open Pulse.Lib.Task
 open FStar.Real
 open Pulse.Lib.Pledge
 open Pulse.Lib.OnRange
+open Pulse.Lib.SendSync
 
 module P = Pulse.Lib.Pledge
 module R = Pulse.Lib.Reference
@@ -226,8 +227,8 @@ fn rec redeem_range
 
 fn
 parallel_for
-  (pre : (nat -> slprop))
-  (post : (nat -> slprop))
+  (pre : (nat -> slprop)) {| (x:nat -> is_send (pre x)) |}
+  (post : (nat -> slprop)) {| (x:nat -> is_send (post x)) |}
   (f : (i:nat -> stt unit (pre i) (fun () -> (post i))))
   (n : pos)
   requires on_range pre 0 n
@@ -279,8 +280,8 @@ spawning sequentially. *)
 
 fn
 parallel_for_alt
-  (pre : (nat -> slprop))
-  (post : (nat -> slprop))
+  (pre : (nat -> slprop)) {| (x:nat -> is_send (pre x)) |}
+  (post : (nat -> slprop)) {| (x:nat -> is_send (post x)) |}
   (f : (i:nat -> stt unit (pre i) (fun () -> (post i))))
   (n : pos)
   requires on_range pre 0 n
@@ -377,8 +378,8 @@ fn rec funfold
 
 fn
 parallel_for_wsr
-  (pre : (nat -> slprop))
-  (post : (nat -> slprop))
+  (pre : (nat -> slprop)) {| (x:nat -> is_send (pre x)) |}
+  (post : (nat -> slprop)) {| (x:nat -> is_send (post x)) |}
   (full_pre : (nat -> slprop))
   (full_post : (nat -> slprop))
   (f : (i:nat -> stt unit (pre i) (fun () -> post i)))
@@ -406,8 +407,8 @@ val frame_stt_left
 fn rec h_for_task
   (p:pool)
   (e:perm)
-  (pre : (nat -> slprop))
-  (post : (nat -> slprop))
+  (pre : (nat -> slprop)) {| (x:nat -> is_send (pre x)) |}
+  (post : (nat -> slprop)) {| (x:nat -> is_send (post x)) |}
   (f : (i:nat -> stt unit (pre i) (fun () -> post i)))
   (lo hi : nat)
   (_:unit)

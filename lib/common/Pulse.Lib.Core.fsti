@@ -226,11 +226,6 @@ val frame_stt
   (e:stt a pre post)
 : stt a (pre ** frame) (fun x -> post x ** frame)
 
-val fork
-  (#pre:slprop)
-  (f:unit -> stt unit pre (fun _ -> emp))
-: stt unit pre (fun _ -> emp)
-
 val sub_stt (#a:Type u#a)
             (#pre1:slprop)
             (pre2:slprop)
@@ -441,6 +436,48 @@ val sub_invs_ghost
     (_ : squash (inames_subset opens1 opens2))
 : stt_ghost a opens2 pre post
 
+////////////////////////////////////////////////////////////////////
+// Locations
+////////////////////////////////////////////////////////////////////
+
+[@@erasable] val loc_id : Type0
+
+val process_of : loc_id -> loc_id
+val process_of_idem (l:loc_id) : Lemma (process_of (process_of l) == process_of l)
+  [SMTPat (process_of (process_of l))]
+
+inline_for_extraction instance non_informative_loc_id
+  : NonInformative.non_informative loc_id
+  = { reveal = (fun x -> reveal x) <: NonInformative.revealer loc_id }
+
+val loc : loc_id -> slprop
+
+val loc_get () : stt_ghost loc_id emp_inames emp (fun l -> loc l)
+val loc_dup l : stt_ghost unit emp_inames (loc l) (fun _ -> loc l ** loc l)
+val loc_gather l #l' : stt_ghost unit emp_inames (loc l ** loc l') (fun _ -> loc l ** pure (l == l'))
+
+val on : loc_id -> slprop -> slprop
+val on_intro #l p : stt_ghost unit emp_inames (loc l ** p) (fun _ -> loc l ** on l p)
+val on_elim #l p : stt_ghost unit emp_inames (loc l ** on l p) (fun _ -> loc l ** p)
+
+[@@Tactics.Typeclasses.tcclass; erasable]
+type placeless (p: slprop) =
+  l:loc_id -> l':loc_id -> stt_ghost unit emp_inames (on l p) (fun _ -> on l' p)
+
+instance val placeless_emp : placeless emp
+instance val placeless_star (a b: slprop) {| placeless a, placeless b |} : placeless (a ** b)
+instance val placeless_pure (p: prop) : placeless (pure p)
+instance val placeless_exists #a (p: a -> slprop) {| ((x:a) -> placeless (p x)) |} :
+  placeless (op_exists_Star p)
+instance val placeless_on (l: loc_id) (p: slprop) : placeless (on l p)
+instance val placeless_inv (i: iname) (p: slprop) : placeless (inv i p)
+
+val ghost_impersonate
+  (#[T.exact (`emp_inames)] is: inames)
+  (l: loc_id) (pre post: slprop) {| placeless pre, placeless post |}
+  (f: unit -> stt_ghost unit is (loc l ** pre) (fun _ -> loc l ** post))
+  : stt_ghost unit is pre (fun _ -> post)
+
 //////////////////////////////////////////////////////////////////////////
 // Later
 //////////////////////////////////////////////////////////////////////////
@@ -502,6 +539,8 @@ val null_slprop_ref : slprop_ref
 
 val slprop_ref_pts_to ([@@@mkey]x: slprop_ref) (y: slprop) : slprop
 
+instance val placeless_slprop_ref_pts_to x y : placeless (slprop_ref_pts_to x y)
+
 val slprop_ref_alloc (y: slprop)
 : stt_ghost slprop_ref emp_inames emp fun x -> slprop_ref_pts_to x y
 
@@ -519,7 +558,7 @@ val slprop_ref_gather (x: slprop_ref) (#y1 #y2: slprop)
 val dup_inv (i:iname) (p:slprop)
   : stt_ghost unit emp_inames (inv i p) (fun _ -> inv i p ** inv i p)
 
-val new_invariant (p:slprop)
+val new_invariant (p:slprop) {| placeless p |}
 : stt_ghost iname emp_inames p (fun i -> inv i p)
 
 val fresh_invariant
@@ -574,6 +613,11 @@ let non_info_tac () : T.Tac unit =
 //////////////////////////////////////////////////////////////////////////
 // Some basic actions and ghost operations
 //////////////////////////////////////////////////////////////////////////
+
+val fork
+  (pre:slprop) {| placeless pre |} #l
+  (f: (l':loc_id { process_of l' == process_of l } -> stt unit (loc l' ** pre) (fun _ -> emp)))
+: stt unit (loc l ** pre) (fun _ -> emp)
 
 val rewrite (p:slprop) (q:slprop) (_:slprop_equiv p q)
 : stt_ghost unit emp_inames p (fun _ -> q)

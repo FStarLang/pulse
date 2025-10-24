@@ -30,13 +30,48 @@ instance non_informative_cinv = {
   reveal = (fun r -> Ghost.reveal r) <: NonInformative.revealer cinv;
 }
 
+let placeless_tag p (inst: placeless p) = emp
+let somewhere v = exists* l inst. placeless_tag v inst ** on l v
+
+ghost fn somewhere_intro v {| inst: placeless v |}
+  requires v
+  ensures somewhere v
+{
+  loc_get ();
+  on_intro v;
+  fold placeless_tag v inst;
+  fold somewhere v;
+  drop_ (loc _);
+}
+
+ghost fn somewhere_elim v
+  requires somewhere v
+  returns inst: placeless v
+  ensures v
+{
+  unfold somewhere v; with l inst. _;
+  let inst = inst;
+  loc_get (); with l0. assert loc l0;
+  inst l l0;
+  on_elim v;
+  drop_ (loc l0);
+  unfold placeless_tag v inst;
+  inst
+}
+
 let cinv_vp_aux (r:GR.ref bool) (v:slprop) :slprop =
   exists* (b:bool). pts_to r #0.5R b **
-                    (if b then v else emp)
+                    somewhere (cond b v emp)
+
+irreducible instance placeless_cond c a b {| da: placeless a, db: placeless b |} :
+    placeless (cond c a b) =
+  if c then da else db
 
 let cinv_vp c v = cinv_vp_aux c.r v
 
 let active c p = pts_to c.r #(p /. 2.0R) true
+
+let placeless_active c p = Tactics.Typeclasses.solve
 
 let active_timeless p c = ()
 
@@ -44,17 +79,18 @@ let iname_of c = c.i
 
 
 ghost
-fn new_cancellable_invariant (v:slprop)
+fn new_cancellable_invariant (v:slprop) {| inst: placeless v |}
   requires v
   opens []
   returns c:cinv
   ensures inv (iname_of c) (cinv_vp c v) ** active c 1.0R
 {
   let r = GR.alloc true;
-  rewrite v as (if true then v else emp);
+  rewrite v as cond true v emp;
+  somewhere_intro (cond true v emp) #_;
   GR.share r;
   fold (cinv_vp_aux r v);
-  let i = new_invariant (cinv_vp_aux r v);
+  let i = new_invariant (cinv_vp_aux r v) #_;
   let c = {i;r};
   rewrite (inv i (cinv_vp_aux r v)) as (inv (iname_of c) (cinv_vp c v));
   with _p _v. rewrite (pts_to r #_p _v) as (active c 1.0R);
@@ -62,7 +98,7 @@ fn new_cancellable_invariant (v:slprop)
 }
 
 
-let unpacked c _v = pts_to c.r #0.5R true
+let unpacked c v = exists* inst. pts_to c.r #0.5R true ** placeless_tag v inst
 
 ghost
 fn unpack_cinv_vp (#p:perm) (#v:slprop) (c:cinv)
@@ -72,11 +108,14 @@ fn unpack_cinv_vp (#p:perm) (#v:slprop) (c:cinv)
 {
   unfold cinv_vp;
   unfold cinv_vp_aux;
-  with b. assert (pts_to c.r #0.5R b ** (if b then v else emp));
+  with b. assert somewhere (cond b v emp);
+  let inst = somewhere_elim (cond b v emp);
+  assert (pts_to c.r #0.5R b ** (cond b v emp));
   unfold active;
   GR.pts_to_injective_eq c.r;
-  rewrite (if b then v else emp) as v;
+  rewrite cond b v emp as v;
   fold (active c p);
+  fold placeless_tag v inst;
   fold (unpacked c v)
 }
 
@@ -89,7 +128,10 @@ fn pack_cinv_vp (#v:slprop) (c:cinv)
   opens []
 {
   unfold unpacked;
-  rewrite v as (if true then v else emp);
+  with inst. assert placeless_tag v inst; let inst = inst;
+  drop_ (placeless_tag v inst);
+  rewrite v as cond true v emp;
+  somewhere_intro (cond true v emp) #_;
   fold (cinv_vp_aux c.r v);
   fold (cinv_vp c v)
 }
@@ -132,14 +174,17 @@ fn cancel_ (#v:slprop) (c:cinv)
 {
   unfold cinv_vp;
   unfold cinv_vp_aux;
-  with b. assert (pts_to c.r #0.5R b ** (if b then v else emp));
+  with b. assert somewhere (cond b v emp);
+  let inst = somewhere_elim (cond b v emp);
+  // with b. assert (pts_to c.r #0.5R b ** (if b then v else emp));
   unfold active;
   GR.pts_to_injective_eq c.r;
-  rewrite (if b then v else emp) as v;
+  rewrite cond b v emp as v;
   GR.gather c.r;
   GR.(c.r := false);
-  rewrite emp as (if false then v else emp);
   GR.share c.r;
+  rewrite emp as (cond false v emp);
+  somewhere_intro (cond false v emp) #_;
   fold (cinv_vp_aux c.r v);
   fold (cinv_vp c v);
   drop_ (pts_to c.r #0.5R _)

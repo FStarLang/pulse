@@ -82,6 +82,7 @@ let null_core_ghost_pcm_ref = PulseCore.Action.core_ghost_ref_null
 
 let ghost_pcm_pts_to #a #p r v = PulseCore.Action.ghost_pts_to #a #p r v
 let timeless_ghost_pcm_pts_to #a #p r v = PulseCore.Action.timeless_ghost_pts_to #a #p r v
+let placeless_ghost_pcm_pts_to #a #p r v = admit ()
 let ghost_pts_to_not_null #a #p r v = A.ghost_pts_to_not_null #a #p r v
 let ghost_alloc = A.ghost_alloc
 let ghost_read = A.ghost_read

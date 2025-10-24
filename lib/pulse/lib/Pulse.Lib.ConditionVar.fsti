@@ -17,6 +17,8 @@
 module Pulse.Lib.ConditionVar
 #lang-pulse
 open Pulse.Lib.Pervasives
+open Pulse.Lib.SendSync
+
 val cvar_t : Type0
 
 val inv_name (c:cvar_t) : iname
@@ -25,22 +27,25 @@ val send (c:cvar_t) (p:slprop) : slprop
 
 val recv (c:cvar_t) (p:slprop) : slprop
 
+instance val is_sync_send c p : is_sync (send c p)
+instance val is_sync_recv c p : is_sync (recv c p)
+
 fn create (p:slprop)
   requires emp
   returns c:cvar_t
   ensures send c p ** recv c p
 
 atomic
-fn signal_atomic (c:cvar_t) (#p:slprop)
+fn signal_atomic (c:cvar_t) (#p:slprop) {| is_send p |}
   requires send c p ** p ** later_credit 1
   ensures emp
   opens [ inv_name c ]
 
-fn signal (c:cvar_t) (#p:slprop)
+fn signal (c:cvar_t) (#p:slprop) {| is_send p |}
   requires send c p ** p
   ensures emp
 
-fn wait (b:cvar_t) (#p:slprop)
+fn wait (b:cvar_t) (#p:slprop) {| is_send p |}
   requires recv b p
   ensures p
 

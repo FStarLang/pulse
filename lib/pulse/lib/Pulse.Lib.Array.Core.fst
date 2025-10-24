@@ -98,6 +98,8 @@ let pts_to_mask #t ([@@@mkey] a: array t) (#[full_default()] f: perm) (v: erased
   pcm_pts_to (lptr_of a) (mk_carrier' a f v mask) **
   pure (Seq.length v == reveal a.length /\ (mask_nonempty mask a.length ==> f <=. 1.0R) /\ squash' t)
 
+let is_send_pts_to_mask _ _ _ = admit ()
+
 let pts_to_mask_timeless _ _ _ _ = ()
 
 ghost

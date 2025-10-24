@@ -51,7 +51,7 @@ returns l:lock
 ensures protects l p
 {
    let r = Box.alloc 0ul; 
-   let i = new_invariant (lock_inv r p);
+   let i = new_invariant (lock_inv r p) #_;
    ({r; i})
 }
 

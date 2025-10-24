@@ -47,6 +47,13 @@ val pts_to
     (v:a)
 : slprop
 
+instance val pts_to_placeless
+    (#a:Type)
+    (#p:pcm a)
+    (r:gref p)
+    (v:a)
+: placeless (pts_to r v)
+
 val pts_to_is_timeless
     (#a:Type)
     (#p:pcm a)

@@ -32,6 +32,10 @@ let small_token (inst: small_type u#a) = emp
 let pts_to (#a:Type u#a) (#p:pcm a) ([@@@mkey] r:ghost_pcm_ref p) (v:a) : slprop =
   exists* (inst: small_type u#a). C.ghost_pcm_pts_to #_ #(raise p) r (U.raise_val v) ** small_token inst
 
+instance pts_to_placeless #a #p r v =
+  placeless_exists _ #(fun inst ->
+    placeless_star _ _ #(C.placeless_ghost_pcm_pts_to #_ #(raise p) r (U.raise_val v)) #_)
+
 let pts_to_is_timeless #a #p r v =
   assert_norm (pts_to r v ==
     op_exists_Star fun (inst: small_type u#a) ->

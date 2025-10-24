@@ -30,7 +30,7 @@ fn lock_ref (r:R.ref int) (#v_:Ghost.erased int)
   returns l:lock
   ensures lock_alive l (exists* v. R.pts_to r v)
 {
-  new_lock (exists* v. R.pts_to r v)
+  new_lock (exists* v. R.pts_to r v) #_
 }
 
 
@@ -41,7 +41,7 @@ fn create_and_lock_ref ()
   ensures emp
 {
   let mut r = 0;
-  let my_lock = new_lock (exists* v. R.pts_to r v);
+  let my_lock = new_lock (exists* v. R.pts_to r v) #_;
   ()
 }
 

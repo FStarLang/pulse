@@ -159,6 +159,9 @@ val timeless_ghost_pcm_pts_to
 : Lemma (timeless (ghost_pcm_pts_to r v))
         [SMTPat (timeless (ghost_pcm_pts_to r v))]
 
+instance val placeless_ghost_pcm_pts_to #a #p r v :
+    placeless (ghost_pcm_pts_to #a #p r v)
+
 val ghost_pts_to_not_null
     (#a:Type)
     (#p:pcm a)

@@ -26,7 +26,7 @@ fn test_invariants_and_later ()
   requires emp
   ensures emp
 {
-  let i = new_invariant emp;
+  let i = new_invariant emp #_;
   later_credit_buy 1;
   with_invariants i
     returns _: unit

@@ -18,6 +18,7 @@ module Pulse.Lib.Mutex
 #lang-pulse
 
 open Pulse.Lib.Pervasives
+open Pulse.Lib.SendSync
 
 module T = FStar.Tactics.V2
 
@@ -34,6 +35,8 @@ val mutex_live
   (m:mutex a)
   (#[T.exact (`1.0R)] p:perm)
   (v:a -> slprop)  : slprop
+
+instance val is_sync_mutex_live #a m #p v : is_sync (mutex_live #a m #p v)
 
 //
 // mutex_guard is a ref-like type
@@ -55,7 +58,7 @@ fn replace (#a:Type0) (mg:mutex_guard a) (y:a) (#x:erased a)
   returns r: _
   ensures mg `pts_to` y ** rewrites_to r (reveal x)
 
-fn new_mutex (#a:Type0) (v:a -> slprop) (x:a)
+fn new_mutex (#a:Type0) (v:a -> slprop) (x:a) {| (x:a -> is_send (v x)) |}
   requires v x
   returns m:mutex a
   ensures mutex_live m v

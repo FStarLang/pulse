@@ -74,7 +74,7 @@ fn attempt (x:ref int)
 requires pts_to x 'i
 ensures exists* v. pts_to x v
 {
-  let l = L.new_lock (exists* v. pts_to x v);
+  let l = L.new_lock (exists* (v: int). pts_to x v) #_;
   fn incr ()
   requires L.lock_alive l #0.5R (exists* v. pts_to x v)
   ensures L.lock_alive l #0.5R (exists* v. pts_to x v)
@@ -164,7 +164,7 @@ ensures  pts_to x ('i + 2)
   GR.share right;
   fold (contributions left right 'i 'i);
   fold (lock_inv x 'i left right);
-  let lock = L.new_lock (lock_inv x 'i left right);
+  let lock = L.new_lock (lock_inv x 'i left right) #_;
   L.share lock;
   par (fun _ -> incr_left x lock)
       (fun _ -> incr_right x lock);
@@ -224,7 +224,7 @@ ensures pts_to x ('i + 2)
     let lock = L.new_lock (
       exists* (v:int).
         pts_to x v ** contributions left right 'i v
-    );
+    ) #_;
     ghost
     fn step
         (lr:GR.ref int)
@@ -395,7 +395,7 @@ ensures pts_to x ('i + 2)
       exists* (v:int).
           pts_to x v **
           contributions left right 'i v
-    );
+    ) #_;
     ghost
     fn step
         (lr:GR.ref int)

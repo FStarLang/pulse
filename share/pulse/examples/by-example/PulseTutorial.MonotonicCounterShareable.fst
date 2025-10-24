@@ -42,7 +42,7 @@ ensures c.inv 0
     let mr : MR.mref increases = MR.alloc #int #increases 0;
     MR.take_snapshot mr #1.0R 0;
     fold (inv_core x mr);
-    let ii = new_invariant (inv_core x mr);
+    let ii = new_invariant (inv_core x mr) #_;
     with inv. assert pure (inv == (fun (i: int) ->
         Pulse.Lib.Core.inv ii (inv_core x mr) ** MR.snapshot mr i));
     fn next (#_:unit) : next_f inv = i {

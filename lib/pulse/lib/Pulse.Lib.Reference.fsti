@@ -23,6 +23,7 @@ open FStar.Ghost
 open Pulse.Class.PtsTo
 open Pulse.Lib.Array.Basic
 open Pulse.Lib.SmallType
+open Pulse.Lib.SendSync
 module T = FStar.Tactics
 val ref ([@@@unused]a:Type) : Type0
 
@@ -31,6 +32,26 @@ val null #a : ref a
 val is_null #a (r : ref a) : b:bool{b <==> r == null #a}
 
 val pts_to (#a:Type u#a) ([@@@mkey]r:ref a) (#[T.exact (`1.0R)] p:perm) (n:a) : slprop
+
+instance val is_send_pts_to #a r #p n : is_send (pts_to #a r #p n)
+
+val atomic_loc #a (l: loc_id) (x: ref a) : l':loc_id { process_of l' == process_of l }
+
+ghost fn elim_atomic_loc u#a (#a: Type u#a) (l: loc_id) (x: ref a) (p: slprop)
+  requires on (atomic_loc l x) p
+  ensures on (process_of l) p
+
+[@@deprecated "UNSAFE"]
+ghost fn unsafe_attest_atomic_released u#a (#a: Type u#a) (p: slprop) {| is_send p |} (#l:loc_id) (x: ref a)
+  preserves loc l
+  requires p
+  requires on (atomic_loc l x) p
+
+[@@deprecated "UNSAFE"]
+ghost fn unsafe_attest_atomic_acquired u#a (#a: Type u#a) (p: slprop) {| is_send p |} (#l:loc_id) (x: ref a)
+  preserves loc l
+  requires on (atomic_loc l x) p
+  ensures p
 
 [@@pulse_unfold]
 instance has_pts_to_ref (a:Type u#a) : has_pts_to (ref a) a = {
