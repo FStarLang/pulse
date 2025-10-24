@@ -18,6 +18,7 @@ module PulseCore.IndirectionTheorySep
 module F = FStar.FunctionalExtensionality
 module PM = PulseCore.MemoryAlt
 module B = PulseCore.BaseHeapSig
+open Pulse.Lib.Loc
 open FStar.Ghost 
 
 let timeless_mem : Type u#4 = PM.mem u#0
@@ -26,9 +27,12 @@ val mem: Type u#4
 val timeless_mem_of: mem -> timeless_mem
 val level (k:mem) : GTot nat
 val credits (k:mem) : GTot nat
+val current_loc (k:mem) : loc_id
 let budget (m: mem) : GTot int = level m - credits m - 1
 val update_timeless_mem (m: mem) (p: timeless_mem) :
-  n:mem { timeless_mem_of n == p /\ level m == level n /\ credits m == credits n }
+  n:mem { timeless_mem_of n == p /\ level m == level n /\ credits m == credits n /\ current_loc m == current_loc n }
+val update_loc (m:mem) (l:loc_id) :
+  n:mem { timeless_mem_of n == timeless_mem_of m /\ level m == level n /\ credits m == credits n /\ current_loc n == l }
 
 [@@erasable] val slprop : Type u#4
 
@@ -451,6 +455,7 @@ val fresh_slprop_ref
     interp (slprop_ref_pts_to i p `star` mem_invariant GhostSet.empty m') m' /\
     hogs_dom m' == GhostSet.empty /\
     timeless_mem_of m' == B.empty_mem /\
+    current_loc m' == current_loc m /\
     credits m' == 0
   }
 

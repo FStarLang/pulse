@@ -18,6 +18,7 @@ module Pulse.Lib.Mutex
 #lang-pulse
 
 open Pulse.Lib.Pervasives
+open Pulse.Lib.SendSync
 
 module T = FStar.Tactics.V2
 
@@ -34,6 +35,8 @@ val mutex_live
   ([@@@mkey] m:mutex a)
   (#[T.exact (`1.0R)] p:perm)
   (v:a -> slprop)  : slprop
+
+instance val is_send_mutex_live #a m #p v {| (x:a -> is_send (v x)) |} : is_send (mutex_live #a m #p v)
 
 //
 // mutex_guard is a ref-like type

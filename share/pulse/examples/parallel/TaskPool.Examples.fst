@@ -20,9 +20,13 @@ module TaskPool.Examples
 open Pulse.Lib.Pervasives
 open Pulse.Lib.Pledge
 open Pulse.Lib.Task
+open Pulse.Lib.SendSync
 
 assume
 val qsv : nat -> slprop
+[@@Tactics.Typeclasses.tcinstance]
+assume
+val is_send_qsv n : is_send (qsv n)
 assume
 val qsc : n:nat -> stt unit emp (fun _ -> qsv n)
 
@@ -111,7 +115,6 @@ fn qs12_par (#e:perm) (p:pool)
     ()
   }
 
-
 fn qsh_par (n:nat)
   requires emp
   returns _:unit
@@ -119,7 +122,7 @@ fn qsh_par (n:nat)
 {
   let p = setup_pool 42;
   share_alive p _;
-  spawn_ p (fun () -> qs12_par p);
+  spawn_ p (fun () -> qs12_par #(1.0R/.2.0R) p);
   spawn_ p (fun () -> qsc 3);
   spawn_ p (fun () -> qsc 4);
   join_pledge #emp_inames #(pool_done p) (qsv 3) (qsv 4);

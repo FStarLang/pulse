@@ -1,6 +1,7 @@
 module Pulse.Lib.WithPure
 #lang-pulse
 open Pulse.Lib.Core
+open Pulse.Lib.SendSync
 open Pulse.Main
 
 val with_pure
@@ -14,6 +15,13 @@ val with_pure_timeless
 : Lemma (requires forall s. timeless (v s))
         (ensures  timeless (with_pure p v))
         [SMTPat (timeless (with_pure p v))]
+
+instance val is_send_across_with_pure #b #g (p:prop) v {| (x:squash p -> is_send_across #b g (v x)) |} : is_send_across g (with_pure p v)
+instance placeless_with_pure (p:prop) v {| inst: (x:squash p -> placeless (v x)) |} : placeless (with_pure p v) =
+  is_send_across_with_pure p v #inst
+instance is_send_with_pure (p:prop) v {| inst: (x:squash p -> is_send (v x)) |} : is_send (with_pure p v) =
+  is_send_across_with_pure p v #inst
+
 ghost
 fn intro_with_pure
   (p : prop)

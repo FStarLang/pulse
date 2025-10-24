@@ -20,6 +20,7 @@ open FStar.FunctionalExtensionality
 module F = FStar.FunctionalExtensionality
 module PM = PulseCore.MemoryAlt
 module H2 = PulseCore.Heap2
+friend Pulse.Lib.Loc
 open FStar.Ghost {erased, hide, reveal}
 
 let timeless_heap_le (a b: B.mem) : prop =
@@ -34,6 +35,7 @@ let mem_le' (a b: premem) : prop =
   level_ a == level_ b /\
   (forall i. hogs_val_le (read a i) (read b i)) /\
   timeless_heap_le (timeless_heap_of a) (timeless_heap_of b) /\
+  current_loc_ a == current_loc_ b /\
   credits_ a <= credits_ b
 
 [@@"opaque_to_smt"] let mem_le = mem_le'
@@ -85,10 +87,12 @@ let mem = w:premem { mem_ok w }
 let timeless_mem_of m = timeless_heap_of m
 let level (w: mem) : GTot nat = level_ w
 let credits (w: mem) : GTot nat = credits_ w
+let current_loc (w: mem) : loc_id = current_loc_ w
 
 let unpack (x: premem) : premem2 = {
   saved_credits = credits_ x;
   timeless_heap = timeless_heap_of x;
+  current_loc = current_loc_ x;
   hogs = read x;
 }
 
@@ -97,6 +101,9 @@ let update_timeless_mem m p =
 
 let update_credits m c =
   pack (level m) { unpack m with saved_credits = c }
+
+let update_loc m c =
+  pack (level m) { unpack m with current_loc = c }
 
 let slprop = p:mem_pred { slprop_ok p }
 let mk_slprop (p: premem -> prop { slprop_ok' p }) : slprop =
@@ -111,6 +118,7 @@ let reveal_mem (m: erased premem) (h: B.mem { h == timeless_heap_of m }) : m': p
   let m' = pack (level_ m) {
     timeless_heap = h;
     saved_credits = (unpack m).saved_credits;
+    current_loc = (unpack m).current_loc;
     hogs = (unpack m).hogs
   } in
   mem_ext m m' (fun _ -> ());
@@ -163,15 +171,18 @@ let disjoint_hogs_of_le (m1 m2: premem) :
     Lemma (requires mem_le m1 m2) (ensures disjoint_hogs m1 m2) =
   reveal_mem_le ()
 
-let empty n : mem =
+let empty n l : mem =
   pack n {
     timeless_heap = B.empty_mem;
     saved_credits = 0;
+    current_loc = l;
     hogs = (fun _ -> None);
   }
 
-let age_to_empty (m n: erased nat) : Lemma (age_to (empty n) m == empty m) [SMTPat (age_to (empty n) m)] =
-  mem_ext (age_to (empty n) m) (empty m) fun a -> read_age_to_ (empty n) m a
+let empty_for m = empty (level_ m) (current_loc_ m)
+
+let age_to_empty (m n: erased nat) (l: loc_id) : Lemma (age_to (empty n l) m == empty m l) [SMTPat (age_to (empty n l) m)] =
+  mem_ext (age_to (empty n l) m) (empty m l) fun a -> read_age_to_ (empty n l) m a
 
 let emp : slprop =
   mk_slprop fun w -> True
@@ -182,12 +193,14 @@ let pure p : slprop =
 let disjoint_mem (w0 w1:premem)
 : prop 
 = disjoint_hogs w0 w1 /\
+  current_loc_ w0 == current_loc_ w1 /\
   B.disjoint_mem (timeless_heap_of w0) (timeless_heap_of w1)
 
 let join_premem (is0:premem) (is1:premem { disjoint_mem is0 is1 }) =
   pack (level_ is0) {
     saved_credits = credits_ is0 + credits_ is1;
     timeless_heap = B.join_mem (timeless_heap_of is0) (timeless_heap_of is1);
+    current_loc = current_loc_ is0;
     hogs = on _ (fun a ->
       match read is0 a, read is1 a with
       | None, None -> None
@@ -244,6 +257,7 @@ let mem_le_iff (w1 w2: premem) :
     let w3 = pack (level_ w2) {
       timeless_heap = ph3;
       saved_credits = sc3;
+      current_loc = current_loc_ w1;
       hogs = (fun a -> read w2 a);
     } in
     mem_ext (join_premem w1 w3) w2 fun a -> ()
@@ -367,20 +381,20 @@ let star_assoc (x y z:slprop)
 : Lemma (star x (star y z) == star (star x y) z)
 = star__assoc x y z
 
-let disjoint_empty w : squash (disjoint_mem w (empty (level_ w)) /\ disjoint_mem (empty (level_ w)) w) =
+let disjoint_empty w : squash (disjoint_mem w (empty_for w) /\ disjoint_mem (empty_for w) w) =
   H2.join_empty (timeless_heap_of w);
-  join_premem_commutative w (empty (level_ w))
+  join_premem_commutative w (empty_for w)
 
-let join_empty w : squash (disjoint_mem (empty (level_ w)) w /\ join_premem (empty (level_ w)) w == w) =
+let join_empty w : squash (disjoint_mem (empty_for w) w /\ join_premem (empty_for w) w == w) =
   disjoint_empty w;
   H2.join_empty (timeless_heap_of w);
   H2.join_commutative (timeless_heap_of w) B.empty_mem;
-  mem_ext (join_premem (empty (level_ w)) w) w fun a -> ()
+  mem_ext (join_premem (empty_for w) w) w fun a -> ()
 
 let star_emp (x: slprop) : squash (star x emp == x) =
   mem_pred_ext (star x emp) x fun w ->
     introduce x w ==> star x emp w with _. (
-      let w2 = empty (level_ w) in
+      let w2 = empty_for w in
       join_empty w;
       join_premem_commutative w2 w;
       star__intro x emp w w w2
@@ -419,6 +433,7 @@ let clear_except_hogs_ (w: premem) : v:premem { disjoint_mem w v /\ w == join_pr
   let v = pack (level_ w) {
     saved_credits = 0;
     timeless_heap = B.empty_mem;
+    current_loc = current_loc_ w;
     hogs = (fun a -> read w a);
   } in
   H2.join_empty (timeless_heap_of w);
@@ -586,6 +601,7 @@ let rejuvenate1 (m: premem) (m': premem { mem_le m' (age1_ m) }) :
   let m'' = pack (level_ m) {
     saved_credits = credits_ m';
     timeless_heap = timeless_heap_of m';
+    current_loc = current_loc_ m';
     hogs = (fun a -> if None? (read m' a) then None else read m a)
   } in
   mem_ext (age1_ m'') m' (fun _ -> ());
@@ -621,7 +637,7 @@ let later_star (p q: slprop) : squash (later (star p q) == star (later p) (later
     ) else (
       assert later (star p q) w;
       join_empty w;
-      star_intro (later p) (later q) w (empty (level_ w)) w
+      star_intro (later p) (later q) w (empty_for w) w
     )
 
 let timeless_star p q =
@@ -669,7 +685,7 @@ let interp_equiv_star (p q r: slprop) m :
   );
   introduce equiv p q m /\ r m ==> star (equiv p q) r m with _. (
     join_empty m;
-    star_intro (equiv p q) r m (empty (level_ m)) m
+    star_intro (equiv p q) r m (empty_for m) m
   )
 
 let equiv_elim (p q: slprop) : squash (equiv p q `star` p == equiv p q `star` q) =
@@ -844,6 +860,7 @@ let spend_mem m =
   let m' = pack (level m) {
     hogs = (fun a -> read m a);
     timeless_heap = timeless_heap_of m;
+    current_loc = current_loc_ m;
     saved_credits = if credits_ m > 0 then credits_ m - 1 else 0;
   } in
   GS.lemma_equal_intro (hogs_dom m) (hogs_dom m');
@@ -1065,24 +1082,25 @@ let mem_invariant_age e m0 m1 =
 let mem_invariant_spend e m =
   hogs_invariant_congr2 e m (spend m)
 
-let hogs_single n (a: iref) (p: slprop) : mem =
+let hogs_single n l (a: iref) (p: slprop) : mem =
   let m = pack n {
     saved_credits = 0;
     timeless_heap = B.empty_mem;
+    current_loc = l;
     hogs = (fun b -> if reveal a = reveal b then Inv p else None)
   } in
   assert fresh_addr m (a+1);
   reveal_mem_le (); reveal_slprop_ok ();
   m
 
-let rec hogs_single_invariant_ n a p f : squash (hogs_invariant_ (single a) (hogs_single n a p) f == emp) =
+let rec hogs_single_invariant_ n l a p f : squash (hogs_invariant_ (single a) (hogs_single n l a p) f == emp) =
   if reveal f = 0 then
     ()
   else
-    hogs_single_invariant_ n a p (f - 1)
+    hogs_single_invariant_ n l a p (f - 1)
 
-let hogs_single_invariant n a p : Lemma (hogs_invariant (single a) (hogs_single n a p) == emp) =
-  hogs_single_invariant_ n a p (some_fresh_addr (hogs_single n a p))
+let hogs_single_invariant n l a p : Lemma (hogs_invariant (single a) (hogs_single n l a p) == emp) =
+  hogs_single_invariant_ n l a p (some_fresh_addr (hogs_single n l a p))
 
 let hogs_fresh_inv (p: slprop) (is: mem) (a: iref { None? (read is a) }) :
     is':mem {
@@ -1091,14 +1109,14 @@ let hogs_fresh_inv (p: slprop) (is: mem) (a: iref { None? (read is a) }) :
       hogs_invariant (single a) is' == emp /\
       GS.disjoint (hogs_dom is) (hogs_dom is')
     } =
-  let is' = hogs_single (level_ is) a p in
-  hogs_single_invariant (level_ is) a p;
+  let is' = hogs_single (level_ is) (current_loc_ is) a p in
+  hogs_single_invariant (level_ is) (current_loc_ is) a p;
   is'
 
 let buy1_mem m =
   PM.ghost_action_preorder ();
   join_empty m;
-  let m' = update_credits (empty (level m)) 1 in
+  let m' = update_credits (empty_for m) 1 in
   introduce forall (e: inames). mem_invariant e m == mem_invariant e (join_mem m' m) with
     hogs_invariant_congr2 e m (join_mem m' m);
   m'
@@ -1141,7 +1159,7 @@ let fresh_inv p m ctx =
   let i = fresh_inv_name m ctx in
   let m': mem = hogs_fresh_inv p m i in
   let _: squash (inv i p `star` mem_invariant (single i) m' == inv i p) =
-    hogs_single_invariant (level m) i p;
+    hogs_single_invariant (level m) (current_loc m) i p;
     sep_laws () in
   Classical.forall_intro (H2.join_empty u#3);
   PM.ghost_action_preorder u#3 ();
@@ -1173,34 +1191,35 @@ let slprop_ref_pts_to x y =
       read m x == Pred y' /\
       eq_at (level_ m) y y'
 
-let single_slprop_pts_to n (i: slprop_ref) (p: slprop) : mem =
+let single_slprop_pts_to n l (i: slprop_ref) (p: slprop) : mem =
   let m = pack n {
     timeless_heap = B.empty_mem;
     saved_credits = 0;
+    current_loc = l;
     hogs = (fun a -> if reveal a = reveal i then Pred p else None);
   } in
   assert fresh_addr m (i+1);
   reveal_mem_le (); reveal_slprop_ok ();
   m
 
-let rec hogs_invariant__single_slprop_pts_to ex (n: nat) i p f :
-    squash (hogs_invariant_ ex (single_slprop_pts_to n i p) f == emp) =
+let rec hogs_invariant__single_slprop_pts_to ex (n: nat) l i p f :
+    squash (hogs_invariant_ ex (single_slprop_pts_to n l i p) f == emp) =
   if reveal f = 0 then
     ()
   else
     let f': nat = f - 1 in
     sep_laws ();
-    hogs_invariant__single_slprop_pts_to ex n i p f'
-let hogs_invariant_single_slprop_pts_to ex (n: nat) i p :
-    squash (hogs_invariant ex (single_slprop_pts_to n i p) == emp) =
-  hogs_invariant__single_slprop_pts_to ex n i p (some_fresh_addr (single_slprop_pts_to n i p))
+    hogs_invariant__single_slprop_pts_to ex n l i p f'
+let hogs_invariant_single_slprop_pts_to ex (n: nat) l i p :
+    squash (hogs_invariant ex (single_slprop_pts_to n l i p) == emp) =
+  hogs_invariant__single_slprop_pts_to ex n l i p (some_fresh_addr (single_slprop_pts_to n l i p))
 
 let fresh_slprop_ref p m =
   let i = indefinite_description_ghost slprop_ref fun i -> fresh_addr m i in
-  let m' = single_slprop_pts_to (level_ m) i p in
+  let m' = single_slprop_pts_to (level_ m) (current_loc_ m) i p in
   assert slprop_ref_pts_to i p m';
   let _: squash (slprop_ref_pts_to i p `star` mem_invariant GS.empty m' == slprop_ref_pts_to i p) =
-    hogs_invariant_single_slprop_pts_to GS.empty (level_ m) i p;
+    hogs_invariant_single_slprop_pts_to GS.empty (level_ m) (current_loc_ m) i p;
     star_emp emp;
     star_emp (slprop_ref_pts_to i p) in
   Classical.forall_intro (H2.join_empty u#3);

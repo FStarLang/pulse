@@ -16,7 +16,6 @@
 
 module Pulse.Lib.Array.Core
 #lang-pulse
-open FStar.Tactics.V2
 open Pulse.Lib.Core
 open Pulse.Main
 open Pulse.Class.PtsTo
@@ -24,6 +23,7 @@ open PulseCore.FractionalPermission
 open FStar.Ghost
 module SZ = FStar.SizeT
 open Pulse.Lib.SmallType
+open Pulse.Lib.SendSync
 
 [@@erasable] val base_t : Type0
 
@@ -44,6 +44,8 @@ val null #a : array a
 val is_null #a (r: array a) : b:bool {b <==> r == null #a}
 
 val pts_to_mask (#t: Type u#a) ([@@@mkey] a: array t) (#[full_default()] f: perm) (v: erased (Seq.seq t)) (mask: nat -> prop) : slprop
+
+instance val is_send_pts_to_mask #a r #p n m : is_send (pts_to_mask #a r #p n m)
 
 val pts_to_mask_timeless (#a:Type u#a) (x:array a) (p:perm) (s:Seq.seq a) mask
   : Lemma (timeless (pts_to_mask x #p s mask))

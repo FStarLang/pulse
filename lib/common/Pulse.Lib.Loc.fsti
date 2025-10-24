@@ -14,21 +14,15 @@
    limitations under the License.
 *)
 
-module Pulse.Checker.Par
+module Pulse.Lib.Loc
+open FStar.Ghost
 
-open Pulse.Syntax
-open Pulse.Typing
-open Pulse.Checker.Base
+[@@erasable] val loc_id : Type0
 
-module T = FStar.Tactics.V2
+val process_of : loc_id -> loc_id
+val process_of_idem (l:loc_id) : Lemma (process_of (process_of l) == process_of l)
+  [SMTPat (process_of (process_of l))]
 
-val check
-  (g:env)
-  (pre:term)
-  (pre_typing:tot_typing g pre tm_slprop)
-  (post_hint:post_hint_opt g)
-  (res_ppname:ppname)
-  (t:st_term{Tm_Par? t.term})
-  (check:check_t)
-
-  : T.Tac (checker_result_t g pre post_hint)
+inline_for_extraction instance non_informative_loc_id
+  : NonInformative.non_informative loc_id
+  = { reveal = (fun x -> reveal x) <: NonInformative.revealer loc_id }

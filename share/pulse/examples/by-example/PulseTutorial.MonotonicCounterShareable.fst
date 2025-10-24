@@ -1,6 +1,7 @@
 module PulseTutorial.MonotonicCounterShareable
 #lang-pulse
 open Pulse.Lib.Pervasives
+open Pulse.Lib.Par
 open FStar.Preorder
 module MR = Pulse.Lib.MonotonicGhostRef
 module B = Pulse.Lib.Box
@@ -44,10 +45,10 @@ ensures c.inv 0
     fold (inv_core x mr);
     let ii = new_invariant (inv_core x mr);
     with inv. assert pure (inv == (fun (i: int) ->
-        Pulse.Lib.Core.inv ii (inv_core x mr) ** MR.snapshot mr i));
+        Pulse.Lib.Inv.inv ii (inv_core x mr) ** MR.snapshot mr i));
     fn next (#_:unit) : next_f inv = i {
-        with_invariants ii {
-            later_elim_timeless _;
+        with_invariants int emp_inames ii (inv_core x mr) (MR.snapshot mr i)
+            (fun j -> MR.snapshot mr j ** pure (i < j)) fn _ {
             unfold inv_core;
             let res = incr_atomic_box x;
             MR.recall_snapshot mr;
@@ -55,7 +56,6 @@ ensures c.inv 0
             drop_ (MR.snapshot mr i);
             MR.take_snapshot mr #1.0R res;
             fold (inv_core);
-            later_intro (inv_core x mr);
             res
         }
     };

@@ -139,8 +139,6 @@ let join_emp is =
   GhostSet.lemma_equal_intro (join_inames is emp_inames) is;
   GhostSet.lemma_equal_intro (join_inames emp_inames is) is
 
-let inv i p = Act.(inv i p)
-let inames_live = Sep.inames_live
 let add_already_there i is = GhostSet.lemma_equal_intro (add_inv is i) is
 
 ////////////////////////////////////////////////////////////////////
@@ -150,7 +148,6 @@ let stt = I.stt
 let return_stt_noeq = I.return
 let bind_stt = I.bind
 let frame_stt = I.frame
-let fork f = I.fork (f ())
 let sub_stt = I.sub
 let conv_stt pf1 pf2 = I.conv #_ _ _ _ _ pf1 pf2
 let hide_div = I.hide_div
@@ -181,11 +178,33 @@ let frame_ghost = A.frame_ghost
 let sub_ghost = A.sub_ghost
 let sub_invs_ghost = A.sub_invs_stt_ghost
 
+////////////////////////////////////////////////////////////////////
+// Locations
+////////////////////////////////////////////////////////////////////
+
+let loc l = emp
+let loc_get () = admit ()
+let loc_dup l = admit ()
+let loc_gather l = admit ()
+
+let on l p = p
+let on_intro p = admit ()
+let on_elim p = admit ()
+
+let timeless_on = admit ()
+
+let on_star_eq = admit ()
+let on_on_eq = admit ()
+let on_loc_eq = admit ()
+
+let ghost_impersonate_core l pre post f = admit ()
+
 //////////////////////////////////////////////////////////////////////////
 // Later
 //////////////////////////////////////////////////////////////////////////
 
 let later_credit = later_credit
+let on_later_credit_eq = admit ()
 let timeless_later_credit amt = Sep.timeless_later_credit amt
 let later_credit_zero _ = PulseCore.InstantiatedSemantics.later_credit_zero ()
 let later_credit_add a b = PulseCore.InstantiatedSemantics.later_credit_add a b
@@ -216,6 +235,8 @@ let exists_later #t f =
   let h: squash ((exists* x. later (f x)) `implies` later (exists* x. f x)) = h in
   A.implies_elim _ _
 
+let on_later_eq = admit ()
+
 //////////////////////////////////////////////////////////////////////////
 // Equivalence
 //////////////////////////////////////////////////////////////////////////
@@ -224,6 +245,7 @@ let rewrite_eq p q (pf:squash (p == q))
   = slprop_equiv_elim p q;
     A.noop q
 let equiv = I.equiv
+let on_equiv_eq = admit ()
 let equiv_dup a b = A.equiv_dup a b
 let equiv_refl a = A.equiv_refl a
 let equiv_comm a b = rewrite_eq (equiv a b) (equiv b a) (Sep.equiv_comm a b)
@@ -241,27 +263,16 @@ let later_equiv = Sep.later_equiv
 let slprop_ref = PulseCore.Action.slprop_ref
 let null_slprop_ref = PulseCore.Action.null_slprop_ref
 let slprop_ref_pts_to x y = PulseCore.Action.slprop_ref_pts_to x y
+let on_slprop_ref_pts_to_eq = admit ()
 let slprop_ref_alloc x = A.slprop_ref_alloc x
 let slprop_ref_share x #y = A.slprop_ref_share x y
 let slprop_ref_gather x #y1 #y2 = A.slprop_ref_gather x y1 y2
 
-////////////////////////////////////////////////////////////////////
-// Invariants
-////////////////////////////////////////////////////////////////////
-let dup_inv = A.dup_inv
-let new_invariant = A.new_invariant
-let fresh_invariant = A.fresh_invariant
-let inames_live_inv = A.inames_live_inv
-let inames_live_empty _ = rewrite_eq emp (inames_live emp_inames) (Sep.inames_live_empty ())
-let share_inames_live i j = rewrite_eq (inames_live (GhostSet.union i j)) (inames_live i ** inames_live j) (Sep.inames_live_union i j)
-let gather_inames_live i j = rewrite_eq (inames_live i ** inames_live j) (inames_live (GhostSet.union i j)) (Sep.inames_live_union i j)
-let with_invariant = A.with_invariant
-let with_invariant_g = A.with_invariant_g
-let invariant_name_identifies_invariant #p #q i j = A.invariant_name_identifies_invariant p q i j
-
 //////////////////////////////////////////////////////////////////////////
 // Some basic actions and ghost operations
 //////////////////////////////////////////////////////////////////////////
+
+let fork_core pre #l f = I.fork (f l)
 
 let rewrite p q (pf:slprop_equiv p q)
   : stt_ghost unit emp_inames p (fun _ -> q)
@@ -306,7 +317,7 @@ let elim_false (a:Type) (p:a -> slprop) =
     (A.noop (pure False))
     (fun _ -> A.bind_ghost (A.elim_pure False) unreachable )
 
-let as_atomic #a pre post (e:stt a pre post) = admit () // intentional since it is an assumption
+let as_atomic #a pre post e = admit () // intentional since it is an assumption
 
 let unfold_check_opens = ()
 
