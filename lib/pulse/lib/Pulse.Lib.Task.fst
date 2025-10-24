@@ -23,7 +23,6 @@ open FStar.Tactics
 open FStar.Preorder
 open Pulse.Lib.Pledge
 open Pulse.Lib.Trade
-open Pulse.Lib.Shift
 open Pulse.Class.Duplicable
 open Pulse.Class.Introducable
 
@@ -270,6 +269,65 @@ let task_spotted
     AR.snapshot p.g_runnable v_runnable **
     pure (List.memP t v_runnable)
 
+let shift_tag p q extra (inst1: placeless extra) (inst2: duplicable extra)
+    (f: unit -> stt_ghost unit emp_inames (extra ** p) (fun _ -> q)) =
+  emp
+let shift p q = exists* extra inst1 inst2 f. shift_tag p q extra inst1 inst2 f ** extra
+
+fn introducable_shift_aux u#a (t: Type u#a) is
+    hyp extra concl {| inst1 : placeless extra |} {| inst2: duplicable extra |} {| introducable emp_inames (extra ** hyp) concl t |} (k: t) :
+    stt_ghost unit is extra (fun _ -> shift hyp concl) = {
+  ghost fn f () norewrite requires extra ** hyp ensures concl {
+    intro concl #(extra ** hyp) (fun _ -> k);
+  };
+  fold shift_tag hyp concl extra inst1 inst2 f;
+  fold shift hyp concl;
+}
+
+instance introducable_shift (t: Type u#a) is
+    hyp extra concl {| placeless extra, duplicable extra |} {| introducable emp_inames (extra ** hyp) concl t |} :
+    introducable is extra (shift hyp concl) t =
+  { intro_aux = introducable_shift_aux t is hyp extra concl }
+
+ghost fn dup_shift p q () : duplicable_f (shift p q) = {
+  unfold shift p q;
+  with e i1 i2 f. assert shift_tag p q e i1 i2 f;
+  fold shift_tag p q e i1 i2 f;
+  let i2=i2; dup e ();
+  fold shift p q;
+  fold shift p q;
+}
+instance duplicable_shift p q : duplicable (shift p q) =
+  { dup_f = dup_shift p q }
+
+ghost fn elim_shift p q
+  requires p
+  requires shift p q
+  ensures q
+{
+  unfold shift p q;
+  with e i1 i2 f. assert shift_tag p q e i1 i2 f;
+  unfold shift_tag p q e i1 i2 f;
+  let f = f;
+  f ()
+}
+
+ghost fn placeless_shift' p q : placeless (shift p q) = l1 l2 {
+  ghost_impersonate l1 (on l1 (shift p q)) (on l2 (shift p q)) fn _ {
+    on_elim (shift p q);
+    unfold shift p q;
+    with e i1 i2 f. assert shift_tag p q e i1 i2 f;
+    on_intro e;
+    let i1=i1; i1 l1 l2;
+    ghost_impersonate l2 (on l2 e ** shift_tag p q e i1 i2 f) (on l2 (shift p q)) fn _ {
+      on_elim e;
+      fold shift p q;
+      on_intro (shift p q);
+    };
+  }
+}
+instance placeless_shift p q : placeless (shift p q) = placeless_shift' p q
+
 let handle_spotted
   (p : pool)
   (post : slprop)
@@ -279,6 +337,9 @@ let handle_spotted
       task_spotted p t **
       shift (up t.post ** later_credit 1) post **
       pure (t.h == h)
+
+instance is_send_handle_spotted p post h : is_send (handle_spotted p post h) =
+  Tactics.Typeclasses.solve
 
 ghost
 fn intro_task_spotted

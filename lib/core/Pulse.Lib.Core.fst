@@ -210,6 +210,7 @@ let ghost_impersonate l pre post f = admit ()
 //////////////////////////////////////////////////////////////////////////
 
 let later_credit = later_credit
+let placeless_later_credit amt = admit ()
 let timeless_later_credit amt = Sep.timeless_later_credit amt
 let later_credit_zero _ = PulseCore.InstantiatedSemantics.later_credit_zero ()
 let later_credit_add a b = PulseCore.InstantiatedSemantics.later_credit_add a b
@@ -248,6 +249,7 @@ let rewrite_eq p q (pf:squash (p == q))
   = slprop_equiv_elim p q;
     A.noop q
 let equiv = I.equiv
+let placeless_equiv a b = admit ()
 let equiv_dup a b = A.equiv_dup a b
 let equiv_refl a = A.equiv_refl a
 let equiv_comm a b = rewrite_eq (equiv a b) (equiv b a) (Sep.equiv_comm a b)

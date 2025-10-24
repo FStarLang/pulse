@@ -484,6 +484,8 @@ val ghost_impersonate
 
 val later_credit (amt: nat) : slprop
 
+instance val placeless_later_credit amt : placeless (later_credit amt)
+
 val timeless_later_credit (amt: nat)
 : Lemma (timeless (later_credit amt))
         [SMTPat (timeless (later_credit amt))]
@@ -514,6 +516,8 @@ val exists_later (#t: Type) (f:t->slprop) : stt_ghost unit emp_inames (exists* x
 
 (* Two slprops are equal when approximated to the current heap level. *)
 val equiv (a b: slprop) : slprop
+
+instance val placeless_equiv a b : placeless (equiv a b)
 
 val equiv_dup a b : stt_ghost unit emp_inames (equiv a b) fun _ -> equiv a b ** equiv a b
 val equiv_refl a : stt_ghost unit emp_inames emp fun _ -> equiv a a
