@@ -16,12 +16,14 @@
 module Pulse.Lib.Par
 #lang-pulse
 open Pulse.Lib.Core
+open Pulse.Lib.SendSync
 
 val par_stt
   (#preL:slprop)
   (#postL:slprop)
   (#preR:slprop)
   (#postR:slprop)
+  {| is_send preL, is_send postL |}
   (f:stt unit preL (fun _ -> postL))
   (g:stt unit preR (fun _ -> postR))
 : stt unit

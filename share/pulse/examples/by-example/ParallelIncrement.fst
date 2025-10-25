@@ -111,7 +111,7 @@ ensures pts_to x ('i + 2)
           pts_to left #0.5R vl **
           pts_to right #0.5R vr **
           pure (v == 'i + vl + vr))
-    );
+    ) #_;
     ghost
     fn step
         (lr:GR.ref int)
@@ -416,7 +416,7 @@ ensures pts_to x ('i + 2)
             pts_to right #0.5R vr **
             pure (v == 'i + vl + vr))
 
-    );
+    ) #_;
     ghost
     fn step
         (lr:GR.ref int)

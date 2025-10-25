@@ -62,7 +62,7 @@ ensures lock_alive l p
    let r = B.alloc 0ul;
    fold (maybe (0ul = 0ul) p);
    fold (lock_inv r p);
-   let i = new_invariant (lock_inv r p);
+   let i = new_invariant (lock_inv r p) #_;
    let l = {r;i};
    rewrite (inv i (lock_inv r p)) as
            (inv l.i (lock_inv l.r p));

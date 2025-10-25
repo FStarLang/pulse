@@ -40,6 +40,8 @@ let lock_inv (#a:Type0) (r:B.box a) (v:a -> slprop) : slprop =
 
 let mutex_live #a m #p v = lock_alive m.l #p (lock_inv m.r v)
 
+let is_sync_mutex_live #a m #p v = Tactics.Typeclasses.solve
+
 let pts_to mg #p x = pts_to mg #p x
 
 let op_Bang #a mg #x #p = R.op_Bang #a mg #x #p
@@ -47,14 +49,14 @@ let op_Colon_Equals #a r y #x = R.op_Colon_Equals #a r y #x
 let replace #a r y #x = R.replace #a r y #x
 
 
-fn new_mutex (#a:Type0) (v:a -> slprop) (x:a)
+fn new_mutex (#a:Type0) (v:a -> slprop) (x:a) {| (x:a -> is_send (v x)) |}
   requires v x
   returns m:mutex a
   ensures mutex_live m v
 {
   let r = B.alloc x;
   fold (lock_inv r v);
-  let l = new_lock (lock_inv r v);
+  let l = new_lock (lock_inv r v) #(is_send_exists _ #(fun x -> is_send_star _ _ #_ #_));
   let m = {r;l};
   rewrite (lock_alive l (lock_inv r v)) as
           (lock_alive m.l (lock_inv m.r v));

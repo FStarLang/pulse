@@ -18,21 +18,23 @@ module Pulse.Lib.Pledge
 #lang-pulse
 
 open Pulse.Lib.Pervasives
-open Pulse.Lib.Trade
+open Pulse.Lib.SendableTrade
 
 module GR = Pulse.Lib.GhostReference
 
 let pledge is f v = pure (is_finite is) ** trade #is f (f ** v)
 
+let is_send_pledge is f v = Tactics.Typeclasses.solve
+
 fn introducable_pledge_aux u#a (t: Type u#a) (is: inames) (is': fin_inames)
-    (f v extra: slprop) {| inst: introducable is' (extra ** f) (f ** v) t |} (x:t) :
+    (f v extra: slprop) {| is_send extra |} {| inst: introducable is' (extra ** f) (f ** v) t |} (x:t) :
     stt_ghost unit is extra (fun _ -> pledge is' f v) = {
   intro #is (trade #is' f (f ** v)) #extra (fun _ -> x);
   fold pledge is' f v;
 }
 
 instance introducable_pledge (t: Type u#a) is (is': fin_inames)
-    f v extra {| introducable is' (extra ** f) (f ** v) t |} :
+    f v extra {| is_send extra |} {| introducable is' (extra ** f) (f ** v) t |} :
     introducable is extra (pledge is' f v) t =
   { intro_aux = introducable_pledge_aux t is is' f v extra }
 
@@ -56,7 +58,7 @@ fn pledge_sub_inv (is1:inames) (is2:fin_inames { inames_subset is1 is2 })(f:slpr
 } 
 
 ghost
-fn return_pledge (f v : slprop)
+fn return_pledge (f v : slprop) {| is_send v |}
   requires v
   ensures pledge emp_inames f v
 {
@@ -67,7 +69,7 @@ fn return_pledge (f v : slprop)
 let call #t #is #req #ens (h: unit -> stt_ghost is t req (fun x -> ens x)) = h
 
 ghost
-fn make_pledge (is:fin_inames) (f:slprop) (v:slprop) (extra:slprop)
+fn make_pledge (is:fin_inames) (f:slprop) (v:slprop) (extra:slprop) {| is_send extra |}
   (k: unit -> pledge_f #is f #extra v)
   requires extra
   ensures pledge is f v
@@ -107,7 +109,7 @@ fn squash_pledge (is:inames) (f:slprop) (v1:slprop)
 
 ghost
 fn bind_pledge (#is:inames) (#f:slprop) (#v1:slprop) (#v2:slprop)
-        (extra : slprop)
+        (extra : slprop) {| is_send extra |}
         (#is_k:inames { inames_subset is_k is })
         (k:unit -> bind_pledge_f #is #is_k f #extra v1 v2)
   requires pledge is f v1 ** extra
@@ -125,13 +127,13 @@ fn bind_pledge (#is:inames) (#f:slprop) (#v1:slprop) (#v2:slprop)
 
 ghost
 fn bind_pledge' (#is:inames) (#f:slprop) (#v1:slprop) (#v2:slprop)
-        (extra : slprop)
+        (extra : slprop) {| is_send extra |}
         (#is_k:inames { inames_subset is_k is })
         (k:unit -> bind_pledge_f' #is #is_k f #extra v1 v2)
   requires pledge is f v1 ** extra
   ensures pledge is f v2
 {
-  bind_pledge #is #f #v1 #v2 extra #is_k fn _ {
+  bind_pledge #is #f #v1 #v2 extra #_ #is_k fn _ {
     call k ()
   };
 }

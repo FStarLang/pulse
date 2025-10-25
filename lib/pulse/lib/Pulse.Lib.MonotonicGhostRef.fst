@@ -25,6 +25,7 @@ let pts_to' (#t:Type)
     pure (f <=. 1.0R /\ Cons? h /\ PulseCore.Preorder.curval h == v)
 
 let pts_to = pts_to'
+let placeless_pts_to r v = Tactics.Typeclasses.solve
 let pts_to_is_timeless (#t:Type) (#p:preorder t) (r:mref p) #f (v:t) = ()
 
 [@@pulse_unfold]

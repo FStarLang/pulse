@@ -20,9 +20,13 @@ module TaskPool.Examples
 open Pulse.Lib.Pervasives
 open Pulse.Lib.Pledge
 open Pulse.Lib.Task
+open Pulse.Lib.SendSync
 
 assume
 val qsv : nat -> slprop
+[@@Tactics.Typeclasses.tcinstance]
+assume
+val is_send_qsv n : is_send (qsv n)
 assume
 val qsc : n:nat -> stt unit emp (fun _ -> qsv n)
 

@@ -36,6 +36,13 @@ let upd_singleton #a (x y: a) :
 
 let pts_to (#a: Type u#a) (r:ref a) (#[T.exact (`1.0R)] p:perm) (n:a)
 = A.pts_to r #p (singleton n)
+let is_send_pts_to r n = Tactics.Typeclasses.solve
+
+let atomic_loc = admit ()
+let elim_atomic_loc = admit ()
+let unsafe_attest_atomic_acquired = admit ()
+let unsafe_attest_atomic_released = admit ()
+
 let pts_to_timeless _ _ _ = ()
 
 let is_full_ref = A.is_full_array

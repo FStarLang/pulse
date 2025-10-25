@@ -150,7 +150,6 @@ let stt = I.stt
 let return_stt_noeq = I.return
 let bind_stt = I.bind
 let frame_stt = I.frame
-let fork f = I.fork (f ())
 let sub_stt = I.sub
 let conv_stt pf1 pf2 = I.conv #_ _ _ _ _ pf1 pf2
 let hide_div = I.hide_div
@@ -181,11 +180,37 @@ let frame_ghost = A.frame_ghost
 let sub_ghost = A.sub_ghost
 let sub_invs_ghost = A.sub_invs_stt_ghost
 
+////////////////////////////////////////////////////////////////////
+// Locations
+////////////////////////////////////////////////////////////////////
+
+let loc_id = unit
+let process_of = id
+let process_of_idem l = ()
+let loc l = emp
+let loc_get () = admit ()
+let loc_dup l = admit ()
+let loc_gather l = admit ()
+
+let on l p = p
+let on_intro p = admit ()
+let on_elim p = admit ()
+
+let placeless_emp = admit ()
+let placeless_star _ _ = admit ()
+let placeless_pure _ = admit ()
+let placeless_exists _ = admit ()
+let placeless_on _ _ = admit ()
+let placeless_inv _ _ = admit ()
+
+let ghost_impersonate l pre post f = admit ()
+
 //////////////////////////////////////////////////////////////////////////
 // Later
 //////////////////////////////////////////////////////////////////////////
 
 let later_credit = later_credit
+let placeless_later_credit amt = admit ()
 let timeless_later_credit amt = Sep.timeless_later_credit amt
 let later_credit_zero _ = PulseCore.InstantiatedSemantics.later_credit_zero ()
 let later_credit_add a b = PulseCore.InstantiatedSemantics.later_credit_add a b
@@ -224,6 +249,7 @@ let rewrite_eq p q (pf:squash (p == q))
   = slprop_equiv_elim p q;
     A.noop q
 let equiv = I.equiv
+let placeless_equiv a b = admit ()
 let equiv_dup a b = A.equiv_dup a b
 let equiv_refl a = A.equiv_refl a
 let equiv_comm a b = rewrite_eq (equiv a b) (equiv b a) (Sep.equiv_comm a b)
@@ -241,6 +267,7 @@ let later_equiv = Sep.later_equiv
 let slprop_ref = PulseCore.Action.slprop_ref
 let null_slprop_ref = PulseCore.Action.null_slprop_ref
 let slprop_ref_pts_to x y = PulseCore.Action.slprop_ref_pts_to x y
+let placeless_slprop_ref_pts_to = admit ()
 let slprop_ref_alloc x = A.slprop_ref_alloc x
 let slprop_ref_share x #y = A.slprop_ref_share x y
 let slprop_ref_gather x #y1 #y2 = A.slprop_ref_gather x y1 y2
@@ -249,7 +276,7 @@ let slprop_ref_gather x #y1 #y2 = A.slprop_ref_gather x y1 y2
 // Invariants
 ////////////////////////////////////////////////////////////////////
 let dup_inv = A.dup_inv
-let new_invariant = A.new_invariant
+let new_invariant p #_ = A.new_invariant p
 let fresh_invariant = A.fresh_invariant
 let inames_live_inv = A.inames_live_inv
 let inames_live_empty _ = rewrite_eq emp (inames_live emp_inames) (Sep.inames_live_empty ())
@@ -262,6 +289,8 @@ let invariant_name_identifies_invariant #p #q i j = A.invariant_name_identifies_
 //////////////////////////////////////////////////////////////////////////
 // Some basic actions and ghost operations
 //////////////////////////////////////////////////////////////////////////
+
+let fork pre #_ #l f = I.fork (f l)
 
 let rewrite p q (pf:slprop_equiv p q)
   : stt_ghost unit emp_inames p (fun _ -> q)

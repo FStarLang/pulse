@@ -21,6 +21,10 @@ module U32 = FStar.UInt32
 module OR = Pulse.Lib.OnRange
 module SLT = Pulse.Lib.SLPropTable
 module Box = Pulse.Lib.Box
+  
+instance assume_box_is_atomic (r: Box.box U32.t) p i :
+    is_sync (pts_to r #p i) =
+  admit ()
 
 noeq
 type cvar_t_core = {
@@ -42,6 +46,12 @@ let predicate_at (t:SLT.table) (f:perm) (pred:Seq.seq slprop) (i:nat)
 = if i < Seq.length pred
   then SLT.pts_to t i #f (Seq.index pred i)
   else emp
+
+instance placeless_predicate_at t f pred i : placeless (predicate_at t f pred i) =
+  if i < Seq.length pred then
+    SLT.placeless_pts_to t i #f (Seq.index pred i)
+  else
+    placeless_emp
 
 [@@pulse_unfold]
 let stored_predicates (t:SLT.table) (n:nat) (f:perm) (pred:Seq.seq slprop) 
@@ -89,7 +99,8 @@ let cvar_inv (b: cvar_t_core) (p:slprop)
 
 let cvar (b: cvar_t) (p:slprop)
 : slprop
-= inv b.i (cvar_inv b.core p)
+= exists* l'. in_same_process l' **
+  inv b.i (on l' <| cvar_inv b.core p)
 
 let inv_name (b:cvar_t) = b.i
 
@@ -103,6 +114,9 @@ let recv (b: cvar_t) (p:slprop)
 = exists* q i.
     cvar b q **
     SLT.pts_to b.core.tab i #0.5R p
+
+instance is_sync_send c p : is_sync (send c p) = Tactics.Typeclasses.solve
+instance is_sync_recv c p : is_sync (recv c p) = Tactics.Typeclasses.solve
 
 fn create (p:slprop)
   requires emp
@@ -125,20 +139,24 @@ fn create (p:slprop)
   rewrite each r as core.r;
   rewrite each tab as core.tab;
   fold (cvar_inv core p);
-  let i = new_invariant (cvar_inv core p);
+  loc_get (); with l. assert loc l; loc_dup l;
+  on_intro (cvar_inv core p);
+  let i = new_invariant (on l <| cvar_inv core p) #_;
   let cv = { core; i };
   rewrite each core as cv.core;
   rewrite each i as cv.i;
   dup_inv cv.i _;
+  fold in_same_process l;
   fold (cvar cv p);
   fold (send cv p);
+  fold in_same_process l;
   fold (cvar cv p);
   fold (recv cv p);
   cv
 }
 
 atomic
-fn signal_atomic (b:cvar_t) (#p:slprop)
+fn signal_atomic (b:cvar_t) (#p:slprop) {| is_send p |}
 requires 
   send b p ** p ** later_credit 1
 ensures 
@@ -147,11 +165,14 @@ ensures
 {
   unfold send;
   unfold cvar;
+  with l. assert in_same_process l;
   with_invariants b.i
   returns _:unit
-  ensures later (cvar_inv b.core p)
+  ensures later (on l <| cvar_inv b.core p)
   {
      later_elim _;
+     admit ();
+     is_sync_elim_on (cvar_inv b.core p) #_;
      unfold cvar_inv;
      Box.gather b.core.r;
      with v preds. assert (maybe_holds v p preds);
@@ -170,12 +191,12 @@ ensures
   drop_ _
 }
 
-fn signal (c:cvar_t) (#p:slprop)
+fn signal (c:cvar_t) (#p:slprop) {| is_send p |}
   requires send c p ** p
   ensures emp
 {
   later_credit_buy 1;
-  signal_atomic c #p
+  signal_atomic c #p #_
 }
 
 ghost
@@ -224,7 +245,7 @@ ensures
   ()
 }
 
-fn rec wait (b:cvar_t) (#p:slprop)
+fn rec wait (b:cvar_t) (#p:slprop) {| is_send p |}
 requires 
   recv b p
 ensures
@@ -236,14 +257,17 @@ ensures
   unfold cvar;
   later_credit_buy 1;
   later_credit_buy 1;
+  with l. assert in_same_process l;
   // show_proof_state;
   let res:bool =
     with_invariants b.i
     returns res:bool
-    ensures later (cvar_inv b.core q) **
+    ensures in_same_process l **
+            later (on l <| cvar_inv b.core q) **
             (if res then p else SLT.pts_to b.core.tab i #0.5R p)
     {
       later_elim _;
+      admit ();
       unfold cvar_inv;
       let vv = read_atomic_box b.core.r;
       if (vv = 0ul)
@@ -287,11 +311,11 @@ ensures
         true
       }
     };
-  if res { drop_ (inv b.i _); () } 
+  if res { drop_ (inv b.i _ ** in_same_process l); () } 
   else { 
     fold (cvar b q);
     fold (recv b p);
-    wait b #p
+    wait b #p #_
   }
 }
 
@@ -412,16 +436,19 @@ opens
   with i. assert (SLT.pts_to b.core.tab i #0.5R (p1 ** p2));
   with q. assert (cvar b q);
   unfold cvar;
+  with l. assert in_same_process l;
   let _ : unit =
     with_invariants b.i
     returns _:unit
     ensures
-      later (cvar_inv b.core q) **
+      in_same_process l **
+      later (on l <| cvar_inv b.core q) **
       (exists* j k.
         SLT.pts_to b.core.tab j #0.5R p1 **
         SLT.pts_to b.core.tab k #0.5R p2)
     {
       later_elim _;
+      admit ();
       unfold cvar_inv;
       with v preds. assert (maybe_holds v q preds);
       get_predicate_at_i b.core.tab i (p1 ** p2) preds;
@@ -469,6 +496,7 @@ opens
       }
     };
   dup_inv b.i _;
+  dup (in_same_process l) ();
   fold (cvar b q);
   fold (recv b p1);
   fold (cvar b q);

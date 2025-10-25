@@ -24,6 +24,7 @@ open PulseCore.FractionalPermission
 open FStar.Ghost
 module SZ = FStar.SizeT
 module Seq = FStar.Seq
+open Pulse.Lib.SendSync
 open Pulse.Lib.Array.Core
 open Pulse.Lib.Array.PtsTo
 
@@ -34,6 +35,9 @@ val pts_to_range
   (j: nat)
   (#[exact (`1.0R)] p:perm)
   (s : Seq.seq a) : slprop
+
+instance val is_send_pts_to_range (#a: Type u#a) (x:array a) (i j : nat) (p:perm) (s:Seq.seq a)
+  : is_send (pts_to_range x i j #p s)
 
 val pts_to_range_timeless (#a: Type u#a) (x:array a) (i j : nat) (p:perm) (s:Seq.seq a)
   : Lemma (timeless (pts_to_range x i j #p s))

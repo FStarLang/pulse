@@ -23,6 +23,8 @@ module GR = Pulse.Lib.GhostReference
 let finv_p (p:slprop) (r : GR.ref bool) : slprop =
   exists* (b:bool). pts_to r #0.5R b ** (if b then p else emp)
 
+instance placeless_finv_p p r : placeless (finv_p p r) = admit ()
+
 ghost
 fn fold_finv_p (p:slprop) (r : GR.ref bool) (#b:bool)
   requires pts_to r #0.5R b ** (if b then p else emp)
@@ -43,7 +45,7 @@ let on  #p (fi : finv p) : slprop =
   pts_to fi.r #0.5R true ** inv fi.i (finv_p p fi.r)
 
 
-fn mk_finv (p:slprop)
+ghost fn mk_finv (p:slprop) {| placeless p |}
    requires emp
    returns f:(finv p)
    ensures off f
@@ -53,7 +55,7 @@ fn mk_finv (p:slprop)
    rewrite emp
         as (if false then p else emp);
    fold finv_p p r;
-   let i = new_invariant (finv_p p r);
+   let i = new_invariant (finv_p p r) #_;
    let fi = Mkfinv #p r i; // See #121
    rewrite (pts_to r #0.5R false)
         as (pts_to fi.r #0.5R false);
@@ -68,7 +70,7 @@ fn mk_finv (p:slprop)
 let iname_of #p (f : finv p) : iname = f.i
 
 
-atomic
+ghost
 fn flip_on (#p:slprop) (fi:finv p)
    requires off fi ** p ** later_credit 1
    ensures on fi
@@ -96,7 +98,7 @@ fn flip_on (#p:slprop) (fi:finv p)
   fold on fi;
 }
 
-atomic
+ghost
 fn flip_off (#p:slprop) (fi : finv p)
    requires on fi ** later_credit 1
    ensures off fi ** p

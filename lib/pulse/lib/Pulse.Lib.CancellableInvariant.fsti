@@ -29,6 +29,8 @@ val cinv_vp (c:cinv) (v:slprop) : slprop
 
 val active (c:cinv) (p:perm) : slprop
 
+instance val placeless_active c p : placeless (active c p)
+
 val active_timeless (c:cinv) (p:perm)
   : Lemma (timeless (active c p))
           [SMTPat (timeless (active c p))]
@@ -36,7 +38,7 @@ val active_timeless (c:cinv) (p:perm)
 val iname_of (c:cinv) : GTot iname
 
 ghost
-fn new_cancellable_invariant (v:slprop)
+fn new_cancellable_invariant (v:slprop) {| placeless v |}
   requires v
   returns  c : cinv
   ensures  inv (iname_of c) (cinv_vp c v) ** active c 1.0R
