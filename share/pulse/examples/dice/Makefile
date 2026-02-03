@@ -1,6 +1,7 @@
 FSTAR_FILES != find . -name '*.fst' -o -name '*.fsti'
 
 PULSE_ROOT ?= ../../../..
+OTHERFLAGS += --ext pulse.pulse2rust
 include $(PULSE_ROOT)/mk/test.mk
 
 # Extra tests

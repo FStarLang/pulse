@@ -82,8 +82,14 @@ let check_fndefn
 
   let refl_t = elab_comp c in
   
-  let refl_e = Pulse.RuntimeUtils.embed_st_term_for_extraction #st_term body (Some rng) in
-  let blob = "pulse", refl_e in
+  let blob : option RT.blob = 
+    if T.ext_enabled "pulse.pulse2rust"
+    then (
+      let refl_e = Pulse.RuntimeUtils.embed_st_term_for_extraction #st_term body (Some rng) in
+      Some ("pulse", refl_e)
+    )
+    else None
+  in
   soundness_lemma g body c t_typing;
 
   let cur_module = T.cur_module () in
@@ -128,9 +134,11 @@ let check_fndefn
     let se = RU.add_attribute se (`(noextract_to "krml")) in
     let se = RU.add_noextract_qual se in
     let se : T.sigelt = RU.add_attribute se attribute in
-    let main_decl = chk, se, Some blob in
+    let main_decl : RT.sigelt_for (elab_env g) None = chk, se, blob in
     let recursive_decl : RT.sigelt_for (elab_env g) expected_t =
-      Rec.tie_knot g rng nm_orig nm_aux refl_t blob in
+      let b, se = Rec.tie_knot g rng nm_orig nm_aux refl_t in
+      b, se, blob
+    in
     [main_decl], maybe_add_impl expected_t recursive_decl, []
   end
   else begin
@@ -162,7 +170,7 @@ let check_fndefn
 
     let main_decl = mk_main_decl refl_t () in
     let chk, se, _ = main_decl in
-    let main_decl = chk, se, Some blob in
+    let main_decl = chk, se, blob in
     [], maybe_add_impl (Some refl_t) main_decl, []
   end
 #pop-options
