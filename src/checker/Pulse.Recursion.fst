@@ -245,8 +245,8 @@ let add_knot (g : env) (rng : R.range)
 let tie_knot (g : env)
              (rng : R.range)
              (nm_orig nm_aux : string)
-             (r_typ : R.typ) (blob:RT.blob)
-: Tac (r:(bool & sigelt & option RT.blob) { let (checked, _, _) = r in ~ checked })
+             (r_typ : R.typ)
+: Tac (r:(bool & sigelt) { let (checked, _) = r in ~ checked })
 =
   let knot_r_typ =
     (* Remove the last arguments from r_typ, as that is the recursive knot.
@@ -262,5 +262,5 @@ let tie_knot (g : env)
   let flag, sig, _ = RT.mk_unchecked_let (fstar_env g) (T.cur_module ()) nm_orig (`(magic())) knot_r_typ in
   let nm = string_as_term nm_aux in 
   let sig = RU.add_attribute sig (`("pulse.recursive.knot", `#(nm))) in
-  flag, sig, Some blob
+  flag, sig
 #pop-options
