@@ -334,19 +334,8 @@ let gapless_write_extends_prefix
 let gapless_preserved_by_resize (st: cb_state) (new_al: pos)
   : Lemma
     (requires cb_wf st /\ gapless st /\ new_al >= st.alloc_length)
-    (ensures (
-      let st' = resize_result st new_al in
-      gapless st'))
-  = let st' = resize_result st new_al in
-    resize_prefix_length st.alloc_length new_al st.contents;
-    let pl = GT.contiguous_prefix_length st.contents in
-    let rc = resized_contents st.alloc_length new_al st.contents in
-    let aux (i:nat{i >= pl /\ i < Seq.length rc})
-      : Lemma (None? (Seq.index rc i))
-      = if i < st.alloc_length then ()  // same as original contents
-        else ()  // padding is None
-    in
-    FStar.Classical.forall_intro aux
+    (ensures gapless (resize_result st new_al))
+  = resize_prefix_length st.alloc_length new_al st.contents
 
 /// Sequential range write: prefix grows by data length, gapless preserved
 let rec write_range_sequential_prefix
@@ -384,10 +373,7 @@ let phys_log_coherent_seq_equal
     (requires Seq.length c1 == al /\ Seq.length c2 == al /\
               phys_log_coherent al phys c1 rs /\ c1 `Seq.equal` c2)
     (ensures phys_log_coherent al phys c2 rs)
-  = let aux (j:nat{j < al}) : Lemma (coherent_at al phys c2 rs j)
-      = ()
-    in
-    FStar.Classical.forall_intro aux
+  = ()
 
 /// Combined step: write a byte and maintain coherence with write_range_contents
 let write_step_coherence
@@ -419,17 +405,6 @@ let write_step_coherence
 
 /// --- Write-buffer resize fold helpers ---
 /// Each lemma proves one conjunct of the is_circular_buffer fold in the resize branch.
-
-/// The new contents after resize + sequential write have the correct length.
-let write_buffer_resize_contents_length
-  (old_al: pos) (new_al: pos)
-  (contents: Seq.seq (option byte){Seq.length contents == old_al})
-  (pl: nat) (data: Seq.seq byte)
-  : Lemma
-    (requires new_al >= old_al /\ pl + Seq.length data <= new_al)
-    (ensures Seq.length (GT.write_range_contents
-               (resized_contents old_al new_al contents) pl data) == new_al)
-  = ()
 
 /// The new state after resize + sequential write is well-formed.
 let write_buffer_resize_wf
@@ -470,8 +445,7 @@ let write_buffer_resize_prefix
     resize_prefix_length st.alloc_length new_al st.contents;
     gapless_preserved_by_resize st new_al;
     // gapless on resized state means all positions >= pl in rc are None
-    let aux (i:nat{i >= pl /\ i < new_al}) : Lemma (None? (Seq.index rc i))
-      = if i < st.alloc_length then () else ()
+    let aux (i:nat{i >= pl /\ i < new_al}) : Lemma (None? (Seq.index rc i)) = ()
     in
     FStar.Classical.forall_intro aux;
     write_range_sequential_prefix new_al rc data pl
@@ -530,15 +504,12 @@ let read_step_invariant
     let aux (k:nat{k < vi + 1})
       : Lemma (Some? (Seq.index contents k) /\
                Seq.index dst' k == Some?.v (Seq.index contents k))
-      = if k < vi then begin
+      = if k < vi then
           // Old element: upd at vi doesn't affect index k
           Seq.lemma_index_upd2 dst vi byte_val k
-          // Some? and value equality from inductive hypothesis (k < vi)
-        end else begin
-          // New element: k == vi
+        else begin
+          // New element: k == vi; byte_val from coherent_at via phys_log_coherent
           Seq.lemma_index_upd1 dst vi byte_val;
-          // byte_val == phys[phys_index rs vi al] and by coherent_at:
-          // phys[phys_index rs vi al] == Some?.v(contents[vi])
           assert (coherent_at al phys contents rs vi)
         end
     in

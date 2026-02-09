@@ -104,9 +104,7 @@ let lemma_resize_invariant_step
       : Lemma (
         (j < vi + 1 ==> Seq.index new_seq' j == Seq.index old_phys ((old_rs + j) % old_al)) /\
         (vi + 1 <= j ==> Seq.index new_seq' j == 0uy))
-      = if j < vi then
-          Seq.lemma_index_upd2 new_seq vi byte_val j
-        else if j = vi then
+      = if j = vi then
           Seq.lemma_index_upd1 new_seq vi byte_val
         else
           Seq.lemma_index_upd2 new_seq vi byte_val j
@@ -557,12 +555,11 @@ fn write_buffer
     let new_pl = SZ.add pl write_len;
     cb.pl := new_pl;
 
-    // Prove fold conjuncts via standalone lemmas + explicit asserts
+    // Prove fold conjuncts via standalone lemmas
     Spec.resize_prefix_length st.alloc_length (SZ.v new_al) st.contents;
     Spec.write_range_sequential_prefix (SZ.v new_al)
       (Spec.resized_contents st.alloc_length (SZ.v new_al) st.contents)
       (reveal src_data) (SZ.v pl);
-    Spec.write_buffer_resize_contents_length st.alloc_length (SZ.v new_al) st.contents (SZ.v pl) (reveal src_data);
     Spec.write_buffer_resize_wf st (SZ.v new_al) (reveal src_data);
     Spec.write_buffer_resize_prefix st (SZ.v new_al) (reveal src_data);
 
