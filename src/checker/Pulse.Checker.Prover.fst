@@ -702,6 +702,7 @@ let on_head_id : head_id = FVarHead on_name
 type teq_cfg = {
   teq_fail_fast: bool;
   teq_mkeys_only: bool;
+  teq_types_as_mkeys: bool;
   teq_noforce: bool;
   teq_match: bool;
 }
@@ -709,6 +710,7 @@ type teq_cfg = {
 let teq_cfg_full = {
   teq_fail_fast = false;
   teq_mkeys_only = false;
+  teq_types_as_mkeys = false;
   teq_noforce = false;
   teq_match = false;
 }
@@ -719,6 +721,7 @@ let teq_cfg_unamb =
 let teq_cfg_first_mkeys_pass = {
   teq_fail_fast = true;
   teq_mkeys_only = true;
+  teq_types_as_mkeys = false;
   teq_noforce = false;
   teq_match = true;
 }
@@ -753,8 +756,12 @@ let is_mkey (t:R.term) : bool =
     name = ["Pulse"; "Lib"; "Core"; "mkey"]
   | _ -> false
 
-let binder_is_mkey (b:R.binder) : bool =
-  List.Tot.existsb is_mkey (R.inspect_binder b).attrs
+let binder_is_mkey (cfg: teq_cfg) (b:R.binder) : bool =
+  if List.Tot.existsb is_mkey (R.inspect_binder b).attrs then true else
+  // Treat type arguments as mkeys, as F* will happily unify terms of different types.
+  // This allows us to write intro lemmas matching on the type.
+  if cfg.teq_types_as_mkeys && R.Tv_Type? (R.inspect_ln (R.inspect_binder b).sort) then true else
+  false
 
 let binder_is_pred (b:R.binder) : option nat =
   let doms, c = R.collect_arr_ln (R.inspect_binder b).sort in
@@ -763,12 +770,12 @@ let binder_is_pred (b:R.binder) : option nat =
     if T.term_eq tm_slprop res then Some (List.length doms) else None
   | _ -> None
 
-let rec has_any_mkeys_in_type (ty: R.term) : bool =
+let rec has_any_mkeys_in_type (cfg: teq_cfg) (ty: R.term) : bool =
   match R.inspect_ln ty with
   | R.Tv_Arrow b c ->
-    if binder_is_mkey b then true else
+    if binder_is_mkey cfg b then true else
     (match R.inspect_comp c with
-    | R.C_Total res | R.C_GTotal res -> has_any_mkeys_in_type res
+    | R.C_Total res | R.C_GTotal res -> has_any_mkeys_in_type cfg res
     | _ -> false)
   | _ -> false
 
@@ -803,7 +810,7 @@ let rec teq_slprop (g: env) (cfg: teq_cfg) (a b: term) : T.Tac bool =
     if not head_matches && cfg.teq_fail_fast then false else
     let h_ty = match type_of_fv (elab_env g) fv with Some h_ty -> h_ty | None -> tm_unknown in 
     let use_mkeys =
-      if has_any_mkeys_in_type h_ty then
+      if has_any_mkeys_in_type cfg h_ty then
         true
       else
         has_no_mkeys fv in
@@ -823,7 +830,7 @@ and teq_slprop_args (g: env) (cfg: teq_cfg) (h_ty: term) (a b: list R.argv) (use
           match R.inspect_comp h_ty_c with
           | R.C_Total res | R.C_GTotal res -> res
           | _ -> tm_unknown in
-        h_ty, binder_is_pred h_ty_b, binder_is_mkey h_ty_b
+        h_ty, binder_is_pred h_ty_b, binder_is_mkey cfg h_ty_b
       | _ ->
         tm_unknown, None, true in
     let arg_matches =
@@ -998,6 +1005,8 @@ let rec apply_with_uvars (g:env) (t:typ) (v:term) : T.Tac (typ & term) =
     | _ -> t, v)
   | _ -> t, v
 
+let teq_cfg_plem_first_pass = { teq_cfg_first_mkeys_pass with teq_types_as_mkeys = true }
+
 #push-options "--split_queries always --z3rlimit 10"
 let try_apply_elim_lemma (g: env) (lid: R.name) (i: nat) (ctxt: slprop_view) :
     T.Tac (option (prover_result_nogoals g [ctxt])) =
@@ -1005,7 +1014,7 @@ let try_apply_elim_lemma (g: env) (lid: R.name) (i: nat) (ctxt: slprop_view) :
     match a, b with
     | Atom a_hd a_mkeys a, Atom b_hd b_mkeys b ->
       with_uf_transaction fun _ ->
-        teq_slprop g teq_cfg_first_mkeys_pass a b
+        teq_slprop g teq_cfg_plem_first_pass a b
     | _ -> false in
   let t, ty, _ = tc_term_phase1 g (R.pack_ln <| R.Tv_FVar <| R.pack_fv lid) in
   let ty, t = apply_with_uvars g ty t in
@@ -1049,7 +1058,7 @@ let try_apply_eager_intro_lemma (g: env) (lid: R.name) (i: nat) ctxt (goal: slpr
     | Atom a_hd a_mkeys a, Atom b_hd b_mkeys b ->
       debug_prover g (fun _ -> Printf.sprintf "do_match:\n%s and\n%s\n" (show a_mkeys) (show b_mkeys));
       with_uf_transaction fun _ ->
-        teq_slprop g teq_cfg_first_mkeys_pass a b
+        teq_slprop g teq_cfg_plem_first_pass a b
     | _ -> false in
   let t, ty, _ = tc_term_phase1 g (R.pack_ln <| R.Tv_FVar <| R.pack_fv lid) in
   let ty, t = apply_with_uvars g ty t in
@@ -1146,7 +1155,7 @@ let try_apply_intro_lemma (g: env) (lid: R.name) (i: nat) ctxt (goal: slprop_vie
     | Atom a_hd a_mkeys a, Atom b_hd b_mkeys b ->
       debug_prover g (fun _ -> Printf.sprintf "do_match:\n%s and\n%s\n" (show a_mkeys) (show b_mkeys));
       with_uf_transaction fun _ ->
-        teq_slprop g teq_cfg_first_mkeys_pass a b
+        teq_slprop g teq_cfg_plem_first_pass a b
     | _ -> false in
   let t, ty, _ = tc_term_phase1 g (R.pack_ln <| R.Tv_FVar <| R.pack_fv lid) in
   let ty, t = apply_with_uvars g ty t in
