@@ -16,6 +16,10 @@ module Pow2 = Pulse.Lib.CircularBuffer.Pow2
 module GT = Pulse.Lib.CircularBuffer.GapTrack
 module Mod = Pulse.Lib.CircularBuffer.Modular
 module A = Pulse.Lib.Array
+module RM = Pulse.Lib.RangeMap
+module RMSpec = Pulse.Lib.RangeMap.Spec
+module PTR = Pulse.Lib.Array.PtsToRange
+open Pulse.Lib.Trade
 
 type byte = Spec.byte
 
@@ -37,6 +41,11 @@ let lemma_nones_coherent (al:pos) (phys:Seq.seq byte{Seq.length phys == al}) (rs
 
 /// Platform assumption: SZ.t is at least 64 bits (true on all MsQuic targets).
 assume val platform_fits_u64 : squash SZ.fits_u64
+
+/// cb_max_length fits in SZ.t (follows from cb_max_length <= pow2_63 and fits_u64)
+let cb_max_length_sz : SZ.t =
+  SZ.fits_u64_implies_fits Spec.cb_max_length;
+  SZ.uint_to_t Spec.cb_max_length
 
 let lemma_idx_sum_fits (al: SZ.t) (a b: SZ.t)
   : Lemma (requires SZ.v a < SZ.v al /\ SZ.v b <= SZ.v al /\
@@ -116,7 +125,7 @@ type cb_internal = {
   al: SZ.t;             // alloc_length (mutable, changes on resize)
   pl: SZ.t;             // prefix_length (mutable, tracks contiguous readable data)
   vl: SZ.t;             // virtual_length (constant)
-  // base_offset is ghost-only (tracked via cb_state parameter)
+  bo: SZ.t;             // base_offset (absolute stream position of read_start)
 }
 
 type circular_buffer = box cb_internal
@@ -130,6 +139,7 @@ let is_circular_buffer ([@@@mkey]cb: circular_buffer) (st: Spec.cb_state) : slpr
       SZ.v cbi.al == st.alloc_length /\
       SZ.v cbi.vl == st.virtual_length /\
       SZ.v cbi.rs == st.read_start /\
+      SZ.v cbi.bo == st.base_offset /\
       SZ.v cbi.pl == GT.contiguous_prefix_length st.contents /\
       Seq.length buf_data == SZ.v cbi.al /\
       is_full_vec cbi.buf /\
@@ -139,6 +149,200 @@ let is_circular_buffer ([@@@mkey]cb: circular_buffer) (st: Spec.cb_state) : slpr
       Spec.phys_log_coherent st.alloc_length buf_data st.contents st.read_start
     )
 
+/// OOO predicate: same as is_circular_buffer but pl is a lower bound on prefix
+let is_circular_buffer_ooo ([@@@mkey]cb: circular_buffer) (st: Spec.cb_state) : slprop =
+  exists* (cbi: cb_internal) (buf_data: Seq.seq byte).
+    B.pts_to cb cbi **
+    Vec.pts_to cbi.buf buf_data **
+    pure (
+      SZ.v cbi.al > 0 /\
+      SZ.v cbi.al == st.alloc_length /\
+      SZ.v cbi.vl == st.virtual_length /\
+      SZ.v cbi.rs == st.read_start /\
+      SZ.v cbi.bo == st.base_offset /\
+      SZ.v cbi.pl <= GT.contiguous_prefix_length st.contents /\
+      Seq.length buf_data == SZ.v cbi.al /\
+      is_full_vec cbi.buf /\
+      Spec.cb_wf st /\
+      SZ.v cbi.al <= pow2_63 /\
+      st.virtual_length <= pow2_63 /\
+      Spec.phys_log_coherent st.alloc_length buf_data st.contents st.read_start
+    )
+
+/// Transition from exact to OOO mode (trivial: == implies <=)
+fn enter_ooo (cb: circular_buffer) (#st: erased Spec.cb_state)
+  requires is_circular_buffer cb st
+  ensures is_circular_buffer_ooo cb st
+{
+  unfold (is_circular_buffer cb st);
+  with cbi buf_data. _;
+  fold (is_circular_buffer_ooo cb st);
+}
+
+/// Get a lower bound on contiguous prefix length (OOO mode)
+fn read_length_ooo
+  (cb: circular_buffer)
+  (#st: erased Spec.cb_state)
+  requires is_circular_buffer_ooo cb st ** pure (Spec.cb_wf st)
+  returns n : SZ.t
+  ensures is_circular_buffer_ooo cb st **
+          pure (SZ.v n <= GT.contiguous_prefix_length st.contents)
+{
+  unfold (is_circular_buffer_ooo cb st);
+  with cbi buf_data. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  let n = cb_val.pl;
+  rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
+  fold (is_circular_buffer_ooo cb st);
+  n
+}
+
+/// RM-tracked predicate: exact prefix via RangeMap, bridge links RM to option-byte contents
+let is_circular_buffer_rm
+  ([@@@mkey]cb: circular_buffer)
+  (rm: RM.range_map_t)
+  (st: Spec.cb_state) : slprop =
+  exists* (cbi: cb_internal) (buf_data: Seq.seq byte) (repr: Seq.seq RMSpec.interval).
+    B.pts_to cb cbi **
+    Vec.pts_to cbi.buf buf_data **
+    RM.is_range_map rm repr **
+    pure (
+      SZ.v cbi.al > 0 /\
+      SZ.v cbi.al == st.alloc_length /\
+      SZ.v cbi.vl == st.virtual_length /\
+      SZ.v cbi.rs == st.read_start /\
+      SZ.v cbi.bo == st.base_offset /\
+      SZ.v cbi.pl == RMSpec.contiguous_from repr (SZ.v cbi.bo) /\
+      SZ.v cbi.pl == GT.contiguous_prefix_length st.contents /\
+      Seq.length buf_data == SZ.v cbi.al /\
+      is_full_vec cbi.buf /\
+      Spec.cb_wf st /\
+      SZ.v cbi.al <= pow2_63 /\
+      st.virtual_length <= pow2_63 /\
+      Spec.phys_log_coherent st.alloc_length buf_data st.contents st.read_start /\
+      Spec.ranges_match_contents repr st.contents (SZ.v cbi.bo) /\
+      RMSpec.range_map_wf repr /\
+      Spec.repr_well_positioned repr (SZ.v cbi.bo)
+    )
+
+/// Transition from exact mode + empty RangeMap to RM mode
+fn enter_rm
+  (cb: circular_buffer) (rm: RM.range_map_t)
+  (#st: erased Spec.cb_state)
+  (#repr: erased (Seq.seq RMSpec.interval))
+  requires
+    is_circular_buffer cb st **
+    RM.is_range_map rm repr **
+    pure (Spec.ranges_match_contents repr st.contents st.base_offset /\
+          Spec.base_aligned repr st.base_offset /\
+          RMSpec.range_map_wf repr)
+  ensures is_circular_buffer_rm cb rm st
+{
+  unfold (is_circular_buffer cb st);
+  with cbi buf_data. _;
+  // SZ.v cbi.bo == st.base_offset from the predicate
+  Spec.ranges_match_prefix repr st.contents st.base_offset;
+  fold (is_circular_buffer_rm cb rm st);
+}
+
+/// Transition from RM mode back to OOO mode, releasing the range map
+fn exit_rm_to_ooo
+  (cb: circular_buffer) (rm: RM.range_map_t)
+  (#st: erased Spec.cb_state)
+  requires is_circular_buffer_rm cb rm st
+  ensures exists* repr.
+    is_circular_buffer_ooo cb st **
+    RM.is_range_map rm repr
+{
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+  Spec.ranges_match_prefix_lower repr st.contents (SZ.v cbi.bo);
+  fold (is_circular_buffer_ooo cb st);
+}
+
+/// Get a lower bound on contiguous prefix length (RM mode).
+/// Returns contiguous_from(repr, base_offset), which is <= contiguous_prefix_length.
+/// When base_aligned holds (typical after writing at position 0), this is exact.
+fn read_length_rm
+  (cb: circular_buffer) (rm: RM.range_map_t)
+  (#st: erased Spec.cb_state)
+  requires is_circular_buffer_rm cb rm st
+  returns n : SZ.t
+  ensures is_circular_buffer_rm cb rm st **
+          pure (SZ.v n == GT.contiguous_prefix_length st.contents)
+{
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  let n = cb_val.pl;
+  rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
+  fold (is_circular_buffer_rm cb rm st);
+  n
+}
+
+fn get_total_length_rm
+  (cb: circular_buffer) (rm: RM.range_map_t)
+  (#st: erased Spec.cb_state)
+  requires is_circular_buffer_rm cb rm st
+  returns n: SZ.t
+  ensures is_circular_buffer_rm cb rm st **
+          pure (SZ.v n <= st.base_offset + st.alloc_length)
+{
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  let n = RM.range_map_max_endpoint rm;
+  rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
+  RMSpec.range_map_max_endpoint_bounded repr (SZ.v cbi.bo + SZ.v cbi.al);
+  fold (is_circular_buffer_rm cb rm st);
+  n
+}
+
+fn set_virtual_length
+  (cb: circular_buffer) (new_vl: SZ.t{SZ.v new_vl > 0})
+  (#st: erased Spec.cb_state)
+  requires is_circular_buffer cb st **
+    pure (Spec.cb_wf st /\
+          Pow2.is_pow2 (SZ.v new_vl) /\
+          SZ.v new_vl >= st.virtual_length /\
+          SZ.v new_vl <= pow2_63)
+  ensures is_circular_buffer cb ({ st with virtual_length = SZ.v new_vl })
+{
+  unfold (is_circular_buffer cb st);
+  with cbi buf_data. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al cb_val.pl new_vl cb_val.bo;
+  ( := ) cb new_cbi;
+  rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to new_cbi.buf buf_data);
+  fold (is_circular_buffer cb ({ st with virtual_length = SZ.v new_vl }));
+  ()
+}
+
+fn set_virtual_length_rm
+  (cb: circular_buffer) (rm: RM.range_map_t) (new_vl: SZ.t{SZ.v new_vl > 0})
+  (#st: erased Spec.cb_state)
+  requires is_circular_buffer_rm cb rm st **
+    pure (Spec.cb_wf st /\
+          Pow2.is_pow2 (SZ.v new_vl) /\
+          SZ.v new_vl >= st.virtual_length /\
+          SZ.v new_vl <= pow2_63)
+  ensures is_circular_buffer_rm cb rm ({ st with virtual_length = SZ.v new_vl })
+{
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al cb_val.pl new_vl cb_val.bo;
+  ( := ) cb new_cbi;
+  rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to new_cbi.buf buf_data);
+  fold (is_circular_buffer_rm cb rm ({ st with virtual_length = SZ.v new_vl }));
+  ()
+}
+
 fn create
   (alloc_len: SZ.t{SZ.v alloc_len > 0})
   (virt_len: SZ.t{SZ.v virt_len > 0})
@@ -146,6 +350,7 @@ fn create
     Pow2.is_pow2 (SZ.v alloc_len) /\
     Pow2.is_pow2 (SZ.v virt_len) /\
     SZ.v alloc_len <= SZ.v virt_len /\
+    SZ.v alloc_len <= Spec.cb_max_length /\
     SZ.v virt_len <= pow2_63)
   returns cb : circular_buffer
   ensures exists* st.
@@ -159,14 +364,14 @@ fn create
   let buf_vec : vec byte = alloc #byte 0uy alloc_len;
   let al_v : SZ.t = alloc_len;
   let vl_v : SZ.t = virt_len;
-  
-  let vi = Mkcb_internal buf_vec 0sz al_v 0sz vl_v;
+
+  let vi = Mkcb_internal buf_vec 0sz al_v 0sz vl_v 0sz;
   let cb = B.alloc vi;
 
   with buf_data. assert (Vec.pts_to buf_vec buf_data);
   lemma_nones_coherent (SZ.v alloc_len) buf_data 0;
   GT.prefix_of_nones (SZ.v alloc_len);
-  
+
   rewrite (Vec.pts_to buf_vec buf_data) as (Vec.pts_to vi.buf buf_data);
 
   fold (is_circular_buffer cb {
@@ -193,86 +398,35 @@ fn read_length
   n
 }
 
-fn write_byte
-  (cb: circular_buffer) (offset: SZ.t) (b: byte) (new_pl: SZ.t)
-  (#st: erased Spec.cb_state)
-  requires is_circular_buffer cb st **
-    pure (Spec.cb_wf st /\ SZ.v offset < st.alloc_length /\
-          SZ.v new_pl == GT.contiguous_prefix_length (Seq.upd st.contents (SZ.v offset) (Some b)))
-  ensures is_circular_buffer cb (Spec.write_result st (SZ.v offset) b)
-{
-  unfold (is_circular_buffer cb st);
-  with cbi buf_data. _;
-  let cb_val = !cb;
-  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
-  
-  lemma_idx_sum_fits cb_val.al cb_val.rs offset;
-  let sum = SZ.add cb_val.rs offset;
-  let pidx = SZ.rem sum cb_val.al;
-  cb_val.buf.(pidx) <- b;
-  with buf_data'. assert (Vec.pts_to cb_val.buf buf_data');
-  Spec.write_preserves_coherence st.alloc_length buf_data st.contents st.read_start (SZ.v offset) b;
-  
-  let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al new_pl cb_val.vl;
-  ( := ) cb new_cbi;
-  rewrite (Vec.pts_to cb_val.buf buf_data') as (Vec.pts_to new_cbi.buf buf_data');
-  
-  fold (is_circular_buffer cb (Spec.write_result st (SZ.v offset) b));
-}
-
-fn read_byte
-  (cb: circular_buffer) (offset: SZ.t) (#st: erased Spec.cb_state)
-  requires is_circular_buffer cb st **
-    pure (Spec.cb_wf st /\
-          SZ.v offset < GT.contiguous_prefix_length st.contents /\
-          SZ.v offset < Seq.length st.contents)
-  returns b: byte
-  ensures is_circular_buffer cb st **
-    pure (SZ.v offset < Seq.length st.contents /\
-          Some? (Seq.index st.contents (SZ.v offset)) /\
-          b == Some?.v (Seq.index st.contents (SZ.v offset)))
-{
-  unfold (is_circular_buffer cb st);
-  with cbi buf_data. _;
-  let cb_val = !cb;
-  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
-  
-  lemma_idx_sum_fits cb_val.al cb_val.rs offset;
-  let pidx = SZ.rem (SZ.add cb_val.rs offset) cb_val.al;
-  lemma_mod_spec_eq (SZ.v (SZ.add cb_val.rs offset)) (SZ.v cb_val.al);
-  GT.prefix_elements_are_some st.contents (SZ.v offset);
-  assert (pure (Spec.coherent_at st.alloc_length buf_data st.contents st.read_start (SZ.v offset)));
-  let b = cb_val.buf.(pidx);
-  
-  rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
-  fold (is_circular_buffer cb st);
-  b
-}
-
 fn drain
   (cb: circular_buffer) (n: SZ.t) (#st: erased Spec.cb_state)
   requires is_circular_buffer cb st **
     pure (Spec.cb_wf st /\ SZ.v n <= st.alloc_length /\
-          SZ.v n <= GT.contiguous_prefix_length st.contents)
-  ensures is_circular_buffer cb (Spec.drain_result st (SZ.v n))
+          SZ.v n <= GT.contiguous_prefix_length st.contents /\
+          SZ.fits (st.base_offset + SZ.v n))
+  returns no_more_data: bool
+  ensures is_circular_buffer cb (Spec.drain_result st (SZ.v n)) **
+    pure (no_more_data == (GT.contiguous_prefix_length st.contents = SZ.v n))
 {
   unfold (is_circular_buffer cb st);
   with cbi buf_data. _;
   let cb_val = !cb;
   rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
-  
+
   lemma_idx_sum_fits cb_val.al cb_val.rs n;
   let temp = SZ.add cb_val.rs n;
   let new_rs = SZ.rem temp cb_val.al;
   let new_pl = SZ.sub cb_val.pl n;
-  
-  let new_cbi = Mkcb_internal cb_val.buf new_rs cb_val.al new_pl cb_val.vl;
+  let new_bo = SZ.add cb_val.bo n;
+
+  let new_cbi = Mkcb_internal cb_val.buf new_rs cb_val.al new_pl cb_val.vl new_bo;
   ( := ) cb new_cbi;
   rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to new_cbi.buf buf_data);
-  
+
   Spec.drain_preserves_coherence st.alloc_length buf_data st.contents st.read_start (SZ.v n);
   Spec.drain_prefix_length st.alloc_length st.contents (SZ.v n);
   fold (is_circular_buffer cb (Spec.drain_result st (SZ.v n)));
+  SZ.eq new_pl 0sz
 }
 
 fn resize
@@ -282,6 +436,7 @@ fn resize
     pure (Spec.cb_wf st /\ Pow2.is_pow2 (SZ.v new_al) /\
           SZ.v new_al >= st.alloc_length /\
           SZ.v new_al <= st.virtual_length /\
+          SZ.v new_al <= Spec.cb_max_length /\
           SZ.v new_al <= pow2_63)
   ensures is_circular_buffer cb (Spec.resize_result st (SZ.v new_al))
 {
@@ -316,7 +471,7 @@ fn resize
     let temp = SZ.add cb_val.rs vi;
     let src_idx = SZ.rem temp cb_val.al;
     lemma_mod_spec_eq (SZ.v temp) (SZ.v cb_val.al);
-    
+
     assert (pure (SZ.v src_idx < Seq.length buf_data));
     let byte_val = cb_val.buf.(src_idx);
     assert (pure (byte_val == Seq.index buf_data ((st.read_start + SZ.v vi) % st.alloc_length)));
@@ -330,17 +485,89 @@ fn resize
   lemma_loop_is_linearized st.alloc_length (SZ.v new_al) buf_data st.read_start _new_v;
   assert (pure (_new_v == Spec.linearized_phys st.alloc_length (SZ.v new_al) buf_data st.read_start));
   Vec.free cb_val.buf;
-  
-  let new_cbi = Mkcb_internal new_vec 0sz new_al cb_val.pl cb_val.vl;
+
+  let new_cbi = Mkcb_internal new_vec 0sz new_al cb_val.pl cb_val.vl cb_val.bo;
   ( := ) cb new_cbi;
-  
+
   with new_buf_data. assert (Vec.pts_to new_vec new_buf_data);
   assert (pure (new_buf_data == _new_v));
   rewrite (Vec.pts_to new_vec new_buf_data) as (Vec.pts_to new_cbi.buf new_buf_data);
-  
+
   Spec.linearize_preserves_coherence st.alloc_length (SZ.v new_al) buf_data st.contents st.read_start;
   Spec.resize_prefix_length st.alloc_length (SZ.v new_al) st.contents;
   fold (is_circular_buffer cb (Spec.resize_result st (SZ.v new_al)));
+}
+
+/// RM-mode resize: grow buffer while preserving range map bridge.
+fn resize_rm
+  (cb: circular_buffer) (rm: RM.range_map_t) (new_al: SZ.t{SZ.v new_al > 0})
+  (#st: erased Spec.cb_state)
+  requires is_circular_buffer_rm cb rm st **
+    pure (Spec.cb_wf st /\ Pow2.is_pow2 (SZ.v new_al) /\
+          SZ.v new_al >= st.alloc_length /\
+          SZ.v new_al <= st.virtual_length /\
+          SZ.v new_al <= Spec.cb_max_length /\
+          SZ.v new_al <= pow2_63)
+  ensures is_circular_buffer_rm cb rm (Spec.resize_result st (SZ.v new_al))
+{
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+
+  let new_vec : vec byte = alloc #byte 0uy new_al;
+  let mut i : SZ.t = 0sz;
+  while (let vi = R.read i; SZ.lt vi cb_val.al)
+  invariant exists* vi new_v.
+    B.pts_to cb cbi ** Vec.pts_to cb_val.buf buf_data **
+    RM.is_range_map rm repr **
+    R.pts_to i vi ** Vec.pts_to new_vec new_v **
+    pure (SZ.v vi <= SZ.v cb_val.al /\
+      Seq.length new_v == SZ.v new_al /\
+      Seq.length buf_data == SZ.v cb_val.al /\
+      is_full_vec cb_val.buf /\
+      SZ.v cb_val.al <= pow2_63 /\
+      SZ.v cb_val.al > 0 /\
+      SZ.v cb_val.rs == st.read_start /\
+      SZ.v cb_val.al == st.alloc_length /\
+      (forall (j:nat). j < SZ.v vi ==>
+        Seq.index new_v j == Seq.index buf_data ((st.read_start + j) % st.alloc_length)) /\
+      (forall (j:nat). (SZ.v vi <= j /\ j < SZ.v new_al) ==>
+        Seq.index new_v j == 0uy))
+  {
+    let vi = R.read i;
+    with new_v. assert (Vec.pts_to new_vec new_v);
+    lemma_idx_sum_fits cb_val.al cb_val.rs vi;
+    let temp = SZ.add cb_val.rs vi;
+    let src_idx = SZ.rem temp cb_val.al;
+    lemma_mod_spec_eq (SZ.v temp) (SZ.v cb_val.al);
+
+    assert (pure (SZ.v src_idx < Seq.length buf_data));
+    let byte_val = cb_val.buf.(src_idx);
+    assert (pure (byte_val == Seq.index buf_data ((st.read_start + SZ.v vi) % st.alloc_length)));
+    new_vec.(vi) <- byte_val;
+    with new_v'. assert (Vec.pts_to new_vec new_v');
+    lemma_resize_invariant_step st.alloc_length (SZ.v new_al) buf_data st.read_start new_v (SZ.v vi) byte_val;
+    lemma_inc_fits vi cb_val.al;
+    R.write i (SZ.add vi 1sz);
+  };
+  with _vi _new_v. _;
+  lemma_loop_is_linearized st.alloc_length (SZ.v new_al) buf_data st.read_start _new_v;
+  assert (pure (_new_v == Spec.linearized_phys st.alloc_length (SZ.v new_al) buf_data st.read_start));
+  Vec.free cb_val.buf;
+
+  let new_cbi = Mkcb_internal new_vec 0sz new_al cb_val.pl cb_val.vl cb_val.bo;
+  ( := ) cb new_cbi;
+
+  with new_buf_data. assert (Vec.pts_to new_vec new_buf_data);
+  assert (pure (new_buf_data == _new_v));
+  rewrite (Vec.pts_to new_vec new_buf_data) as (Vec.pts_to new_cbi.buf new_buf_data);
+
+  Spec.linearize_preserves_coherence st.alloc_length (SZ.v new_al) buf_data st.contents st.read_start;
+  Spec.resize_prefix_length st.alloc_length (SZ.v new_al) st.contents;
+  Spec.ranges_match_resize repr st.contents (SZ.v cb_val.bo) st.alloc_length (SZ.v new_al);
+  fold (is_circular_buffer_rm cb rm (Spec.resize_result st (SZ.v new_al)));
 }
 
 fn free
@@ -372,7 +599,7 @@ fn get_alloc_length
   n
 }
 
-#push-options "--z3rlimit_factor 64 --fuel 2 --ifuel 1"
+#push-options "--z3rlimit_factor 32 --fuel 2 --ifuel 1"
 fn write_buffer
   (cb: circular_buffer)
   (src: A.array byte)
@@ -387,7 +614,8 @@ fn write_buffer
           Spec.gapless st /\
           SZ.v write_len == Seq.length src_data /\
           SZ.v write_len == A.length src /\
-          GT.contiguous_prefix_length st.contents + SZ.v write_len <= st.virtual_length)
+          GT.contiguous_prefix_length st.contents + SZ.v write_len <= st.virtual_length /\
+          GT.contiguous_prefix_length st.contents + SZ.v write_len <= Spec.cb_max_length)
   returns new_data_ready: bool
   ensures exists* st'.
     is_circular_buffer cb st' **
@@ -427,6 +655,7 @@ fn write_buffer
         SZ.v nal_v >= SZ.v cb_val.al /\
         Pow2.is_pow2 (SZ.v nal_v) /\
         SZ.v nal_v <= st.virtual_length /\
+        SZ.v nal_v <= Spec.cb_max_length /\
         SZ.v cb_val.al > 0 /\
         SZ.v cb_val.al == st.alloc_length /\
         SZ.v cb_val.rs == st.read_start /\
@@ -435,10 +664,12 @@ fn write_buffer
         is_full_vec cb_val.buf /\
         SZ.v cb_val.al <= pow2_63 /\
         Pow2.is_pow2 st.virtual_length /\
-        SZ.v needed <= st.virtual_length)
+        SZ.v needed <= st.virtual_length /\
+        SZ.v needed <= Spec.cb_max_length)
     {
       let cur = R.read nal_ref;
       Pow2.pow2_double_le (SZ.v cur) st.virtual_length;
+      Pow2.pow2_double_le (SZ.v cur) Spec.cb_max_length;
       SZ.fits_lte (SZ.v cur + SZ.v cur) st.virtual_length;
       Pow2.doubling_stays_pow2 (SZ.v cur);
       R.write nal_ref (SZ.add cur cur);
@@ -476,7 +707,7 @@ fn write_buffer
       let temp = SZ.add cb_val.rs vi;
       let src_idx = SZ.rem temp cb_val.al;
       lemma_mod_spec_eq (SZ.v temp) (SZ.v cb_val.al);
-      
+
       assert (pure (SZ.v src_idx < Seq.length buf_data));
       let byte_val = cb_val.buf.(src_idx);
       assert (pure (byte_val == Seq.index buf_data ((st.read_start + SZ.v vi) % st.alloc_length)));
@@ -490,8 +721,8 @@ fn write_buffer
     lemma_loop_is_linearized st.alloc_length (SZ.v new_al) buf_data st.read_start _new_v;
     assert (pure (_new_v == Spec.linearized_phys st.alloc_length (SZ.v new_al) buf_data st.read_start));
     Vec.free cb_val.buf;
-    
-    let new_cbi = Mkcb_internal new_vec 0sz new_al cb_val.pl cb_val.vl;
+
+    let new_cbi = Mkcb_internal new_vec 0sz new_al cb_val.pl cb_val.vl cb_val.bo;
     ( := ) cb new_cbi;
 
     // After resize: rs=0, al=new_al, data linearized
@@ -557,8 +788,8 @@ fn write_buffer
       (SZ.v new_al) _cur_phys st.alloc_length st.contents
       (SZ.v cb_val.pl) (reveal src_data) (SZ.v _vi) (SZ.v write_len);
     let new_pl = SZ.add cb_val.pl write_len;
-    
-    let new_cbi2 = Mkcb_internal cb_val2.buf 0sz new_al new_pl cb_val.vl;
+
+    let new_cbi2 = Mkcb_internal cb_val2.buf 0sz new_al new_pl cb_val.vl cb_val.bo;
     ( := ) cb new_cbi2;
     rewrite (Vec.pts_to cb_val2.buf _cur_phys) as (Vec.pts_to new_cbi2.buf _cur_phys);
 
@@ -667,11 +898,11 @@ fn write_buffer
     // Bridge: Seq.slice data 0 write_len `Seq.equal` data
     Seq.lemma_eq_intro (Seq.slice (reveal src_data) 0 (SZ.v write_len)) (reveal src_data);
     let new_pl = SZ.add cb_val.pl write_len;
-    
-    let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al new_pl cb_val.vl;
+
+    let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al new_pl cb_val.vl cb_val.bo;
     ( := ) cb new_cbi;
     rewrite (Vec.pts_to cb_val.buf _cur_phys) as (Vec.pts_to new_cbi.buf _cur_phys);
-    
+
     // Prefix + gapless
     Spec.write_range_sequential_prefix (SZ.v cb_val.al) st.contents
       (reveal src_data) (SZ.v cb_val.pl);
@@ -684,7 +915,7 @@ fn write_buffer
 }
 #pop-options
 
-#push-options "--z3rlimit_factor 8"
+#push-options "--z3rlimit_factor 4"
 fn read_buffer
   (cb: circular_buffer)
   (dst: A.array byte)
@@ -758,5 +989,916 @@ fn read_buffer
   with _vi _cur_dst. _;
   rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
   fold (is_circular_buffer cb st);
+}
+#pop-options
+
+/// Out-of-order write: writes data at an arbitrary offset within the allocated buffer.
+/// Uses is_circular_buffer_ooo (conservative prefix tracking).
+/// No auto-resize — requires offset + write_len <= alloc_length.
+#push-options "--z3rlimit_factor 32 --fuel 2 --ifuel 1"
+fn write_buffer_ooo
+  (cb: circular_buffer)
+  (offset: SZ.t)
+  (src: A.array byte)
+  (write_len: SZ.t)
+  (#p: perm)
+  (#src_data: erased (Seq.seq byte))
+  (#st: erased Spec.cb_state)
+  requires
+    is_circular_buffer_ooo cb st **
+    A.pts_to src #p src_data **
+    pure (Spec.cb_wf st /\
+          SZ.v write_len == Seq.length src_data /\
+          SZ.v write_len == A.length src /\
+          SZ.v offset + SZ.v write_len <= st.alloc_length)
+  ensures exists* st'.
+    is_circular_buffer_ooo cb st' **
+    A.pts_to src #p src_data **
+    pure (Spec.cb_wf st' /\
+          st'.base_offset == st.base_offset /\
+          st'.virtual_length == st.virtual_length /\
+          st'.alloc_length == st.alloc_length /\
+          st'.read_start == st.read_start /\
+          st'.contents == GT.write_range_contents_t st.contents (SZ.v offset) (reveal src_data) /\
+          GT.contiguous_prefix_length st'.contents >=
+            GT.contiguous_prefix_length st.contents)
+{
+  unfold (is_circular_buffer_ooo cb st);
+  with cbi buf_data. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  A.pts_to_len src;
+
+  // Write loop: copy src into physical array at (rs + offset + i) % al
+  let mut wi : SZ.t = 0sz;
+  while (let vi = R.read wi; SZ.lt vi write_len)
+  invariant exists* (vi: SZ.t) (cur_phys: Seq.seq byte).
+    B.pts_to cb cbi ** Vec.pts_to cb_val.buf cur_phys **
+    A.pts_to src #p src_data **
+    R.pts_to wi vi **
+    pure (
+      SZ.v vi <= SZ.v write_len /\
+      Seq.length cur_phys == SZ.v cb_val.al /\
+      is_full_vec cb_val.buf /\
+      SZ.v cb_val.al > 0 /\
+      SZ.v cb_val.al <= pow2_63 /\
+      SZ.v cb_val.rs == st.read_start /\
+      SZ.v cb_val.al == st.alloc_length /\
+      SZ.v write_len == Seq.length src_data /\
+      SZ.v write_len == A.length src /\
+      SZ.v offset + SZ.v write_len <= SZ.v cb_val.al /\
+      st.read_start < st.alloc_length /\
+      Spec.phys_log_coherent st.alloc_length cur_phys
+        (GT.write_range_contents st.contents (SZ.v offset)
+          (Seq.slice (reveal src_data) 0 (SZ.v vi)))
+        st.read_start)
+  {
+    let vi = R.read wi;
+    with cur_phys. assert (Vec.pts_to cb_val.buf cur_phys);
+    A.pts_to_len src;
+    let byte_val = A.op_Array_Access src vi;
+    let off = SZ.add offset vi;
+    lemma_idx_sum_fits cb_val.al cb_val.rs off;
+    let pidx = SZ.rem (SZ.add cb_val.rs off) cb_val.al;
+    lemma_mod_spec_eq (SZ.v (SZ.add cb_val.rs off)) (SZ.v cb_val.al);
+    cb_val.buf.(pidx) <- byte_val;
+    Spec.write_step_coherence (SZ.v cb_val.al) cur_phys st.contents
+      st.read_start (SZ.v offset) (reveal src_data) (SZ.v vi);
+    lemma_inc_fits vi write_len;
+    R.write wi (SZ.add vi 1sz);
+  };
+
+  with _vi _cur_phys. _;
+  // Bridge: Seq.slice data 0 write_len == data
+  Seq.lemma_eq_intro (Seq.slice (reveal src_data) 0 (SZ.v write_len)) (reveal src_data);
+
+  // Coherence transfer
+  Spec.write_ooo_coherence_transfer (SZ.v cb_val.al) _cur_phys st.contents
+    st.read_start (SZ.v offset) (reveal src_data) (SZ.v _vi) (SZ.v write_len);
+
+  // Bridge: total version equals partial version (precondition holds)
+  GT.write_range_contents_t_eq st.contents (SZ.v offset) (reveal src_data);
+
+  // Prefix monotonicity
+  GT.write_range_monotone st.contents (SZ.v offset) (reveal src_data);
+
+  // cb_wf preserved
+  Spec.write_range_preserves_wf st (SZ.v offset) (reveal src_data);
+
+  // Keep pl unchanged (conservative lower bound — prefix can only grow)
+  let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al cb_val.pl cb_val.vl cb_val.bo;
+  ( := ) cb new_cbi;
+  rewrite (Vec.pts_to cb_val.buf _cur_phys) as (Vec.pts_to new_cbi.buf _cur_phys);
+
+  fold (is_circular_buffer_ooo cb
+    { st with contents =
+        GT.write_range_contents_t st.contents (SZ.v offset) (reveal src_data) });
+}
+#pop-options
+
+/// RM-tracked out-of-order write: writes data at an arbitrary offset,
+/// updates both the physical buffer and the range map, and computes exact new prefix.
+#push-options "--z3rlimit_factor 32 --fuel 2 --ifuel 1"
+fn write_buffer_rm
+  (cb: circular_buffer)
+  (rm: RM.range_map_t)
+  (offset: SZ.t)
+  (src: A.array byte)
+  (write_len: SZ.t)
+  (#p: perm)
+  (#src_data: erased (Seq.seq byte))
+  (#st: erased Spec.cb_state)
+  requires
+    is_circular_buffer_rm cb rm st **
+    A.pts_to src #p src_data **
+    pure (Spec.cb_wf st /\
+          SZ.v write_len == Seq.length src_data /\
+          SZ.v write_len == A.length src /\
+          SZ.v write_len > 0 /\
+          SZ.v offset + SZ.v write_len <= st.alloc_length /\
+          SZ.fits (st.base_offset + SZ.v offset + SZ.v write_len))
+  ensures exists* st'.
+    is_circular_buffer_rm cb rm st' **
+    A.pts_to src #p src_data **
+    pure (Spec.cb_wf st' /\
+          st'.base_offset == st.base_offset /\
+          st'.virtual_length == st.virtual_length /\
+          st'.alloc_length == st.alloc_length /\
+          st'.read_start == st.read_start /\
+          st'.contents == GT.write_range_contents_t st.contents (SZ.v offset) (reveal src_data) /\
+          GT.contiguous_prefix_length st'.contents >=
+            GT.contiguous_prefix_length st.contents)
+{
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  A.pts_to_len src;
+
+  // Write loop: copy src into physical array at (rs + offset + i) % al
+  let mut wi : SZ.t = 0sz;
+  while (let vi = R.read wi; SZ.lt vi write_len)
+  invariant exists* (vi: SZ.t) (cur_phys: Seq.seq byte).
+    B.pts_to cb cbi ** Vec.pts_to cb_val.buf cur_phys **
+    A.pts_to src #p src_data **
+    RM.is_range_map rm repr **
+    R.pts_to wi vi **
+    pure (
+      SZ.v vi <= SZ.v write_len /\
+      Seq.length cur_phys == SZ.v cb_val.al /\
+      is_full_vec cb_val.buf /\
+      SZ.v cb_val.al > 0 /\
+      SZ.v cb_val.al <= pow2_63 /\
+      SZ.v cb_val.rs == st.read_start /\
+      SZ.v cb_val.al == st.alloc_length /\
+      SZ.v write_len == Seq.length src_data /\
+      SZ.v write_len == A.length src /\
+      SZ.v offset + SZ.v write_len <= SZ.v cb_val.al /\
+      st.read_start < st.alloc_length /\
+      Spec.phys_log_coherent st.alloc_length cur_phys
+        (GT.write_range_contents st.contents (SZ.v offset)
+          (Seq.slice (reveal src_data) 0 (SZ.v vi)))
+        st.read_start)
+  {
+    let vi = R.read wi;
+    with cur_phys. assert (Vec.pts_to cb_val.buf cur_phys);
+    A.pts_to_len src;
+    let byte_val = A.op_Array_Access src vi;
+    let off = SZ.add offset vi;
+    lemma_idx_sum_fits cb_val.al cb_val.rs off;
+    let pidx = SZ.rem (SZ.add cb_val.rs off) cb_val.al;
+    lemma_mod_spec_eq (SZ.v (SZ.add cb_val.rs off)) (SZ.v cb_val.al);
+    cb_val.buf.(pidx) <- byte_val;
+    Spec.write_step_coherence (SZ.v cb_val.al) cur_phys st.contents
+      st.read_start (SZ.v offset) (reveal src_data) (SZ.v vi);
+    lemma_inc_fits vi write_len;
+    R.write wi (SZ.add vi 1sz);
+  };
+
+  with _vi _cur_phys. _;
+  // Bridge: Seq.slice data 0 write_len == data
+  Seq.lemma_eq_intro (Seq.slice (reveal src_data) 0 (SZ.v write_len)) (reveal src_data);
+
+  // Coherence transfer
+  Spec.write_ooo_coherence_transfer (SZ.v cb_val.al) _cur_phys st.contents
+    st.read_start (SZ.v offset) (reveal src_data) (SZ.v _vi) (SZ.v write_len);
+
+  // Bridge: total version equals partial version (precondition holds)
+  GT.write_range_contents_t_eq st.contents (SZ.v offset) (reveal src_data);
+
+  // Prefix monotonicity
+  GT.write_range_monotone st.contents (SZ.v offset) (reveal src_data);
+
+  // cb_wf preserved
+  Spec.write_range_preserves_wf st (SZ.v offset) (reveal src_data);
+
+  // Update range map with absolute offset (bo + offset)
+  let abs_offset = SZ.add cb_val.bo offset;
+  RM.range_map_add rm abs_offset write_len;
+
+  // Bridge preservation (using absolute offsets)
+  RMSpec.add_range_wf repr (SZ.v abs_offset) (SZ.v write_len);
+  Spec.ranges_match_write repr st.contents (SZ.v cb_val.bo) (SZ.v offset) (reveal src_data);
+
+  // Compute new prefix length from range map using base_offset
+  let new_pl = RM.range_map_contiguous_from rm cb_val.bo;
+
+  // Update cb with new pl
+  let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al new_pl cb_val.vl cb_val.bo;
+  ( := ) cb new_cbi;
+  rewrite (Vec.pts_to cb_val.buf _cur_phys) as (Vec.pts_to new_cbi.buf _cur_phys);
+
+  // repr_well_positioned preservation
+  Spec.write_preserves_rwp repr (SZ.v cb_val.bo) (SZ.v offset) (SZ.v write_len);
+
+  // cf == cpl after write
+  Spec.write_preserves_cf_eq_cpl repr st.contents (SZ.v cb_val.bo) (SZ.v offset) (reveal src_data);
+
+  fold (is_circular_buffer_rm cb rm
+    { st with contents =
+        GT.write_range_contents_t st.contents (SZ.v offset) (reveal src_data) });
+}
+#pop-options
+
+/// RM-tracked absolute-offset write with trim, auto-resize, and failure handling.
+/// Handles stale writes (no-op), partial overlap trim, auto-resize up to cb_max_length.
+/// Returns write_result with wrote/new_data_ready/resize_failed flags.
+#push-options "--z3rlimit_factor 32 --fuel 2 --ifuel 1"
+fn write_buffer_rm_abs
+  (cb: circular_buffer) (rm: RM.range_map_t)
+  (abs_offset: SZ.t) (src: A.array byte) (write_len: SZ.t)
+  (#p: perm)
+  (#src_data: erased (Seq.seq byte))
+  (#st: erased Spec.cb_state)
+  requires
+    is_circular_buffer_rm cb rm st **
+    A.pts_to src #p src_data **
+    pure (Spec.cb_wf st /\
+          SZ.v write_len == Seq.length src_data /\
+          SZ.v write_len == A.length src /\
+          SZ.v write_len > 0 /\
+          SZ.v abs_offset + SZ.v write_len <= st.base_offset + st.virtual_length /\
+          SZ.fits (SZ.v abs_offset + SZ.v write_len))
+  returns wr: write_result
+  ensures exists* st'.
+    is_circular_buffer_rm cb rm st' **
+    A.pts_to src #p src_data **
+    pure (Spec.cb_wf st' /\
+          st'.base_offset == st.base_offset /\
+          st'.virtual_length == st.virtual_length /\
+          (not wr.wrote ==> st'.alloc_length == st.alloc_length /\
+                            st'.read_start == st.read_start /\
+                            st'.contents == st.contents) /\
+          (wr.wrote ==> st'.alloc_length >= st.alloc_length /\
+                        GT.contiguous_prefix_length st'.contents >=
+                          GT.contiguous_prefix_length st.contents))
+{
+  // Step 1: Read base_offset and alloc_length
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  let bo = cb_val.bo;
+  let al = cb_val.al;
+  let old_pl = cb_val.pl;
+
+  // Step 2: Check stale (abs_end <= base_offset)
+  let abs_end = SZ.add abs_offset write_len;
+  if SZ.lte abs_end bo
+  {
+    // Fully stale — no-op
+    rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
+    fold (is_circular_buffer_rm cb rm st);
+    { wrote = false; new_data_ready = false; resize_failed = false }
+  }
+  else
+  {
+    // Step 3: Compute trim params
+    // rel_offset: how far into buffer to start writing
+    // skip: how many src bytes to skip (already consumed)
+    let rel_offset : SZ.t =
+      (if SZ.gte abs_offset bo then SZ.sub abs_offset bo
+       else 0sz);
+    let skip : SZ.t =
+      (if SZ.lt abs_offset bo then SZ.sub bo abs_offset
+       else 0sz);
+    let trimmed_len = SZ.sub write_len skip;
+
+    // The furthest point from base_offset the write reaches
+    let needed = SZ.add rel_offset trimmed_len;
+
+    // Step 4: Check if resize needed
+    if SZ.gt needed al
+    {
+      // Need to resize — check if it fits within cb_max_length
+      // Compute the needed new_al by doubling
+      Pow2.next_pow2_ge_le_bound (SZ.v al) (SZ.v needed) st.virtual_length;
+      // Check if doubling can reach needed within cb_max_length
+      if SZ.gt needed cb_max_length_sz
+      {
+        // Resize would exceed max — return failure
+        rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
+        fold (is_circular_buffer_rm cb rm st);
+        { wrote = false; new_data_ready = false; resize_failed = true }
+      }
+      else
+      {
+        // Compute new_al by doubling loop
+        let mut nal_ref : SZ.t = al;
+        while (
+          let cur = R.read nal_ref;
+          SZ.lt cur needed
+        )
+        invariant exists* (nal_v: SZ.t).
+          B.pts_to cb cbi ** Vec.pts_to cb_val.buf buf_data **
+          A.pts_to src #p src_data **
+          RM.is_range_map rm repr **
+          R.pts_to nal_ref nal_v **
+          pure (
+            SZ.v nal_v >= SZ.v al /\
+            Pow2.is_pow2 (SZ.v nal_v) /\
+            SZ.v nal_v <= st.virtual_length /\
+            SZ.v nal_v <= Spec.cb_max_length /\
+            SZ.v al > 0 /\
+            SZ.v al == st.alloc_length /\
+            SZ.v cb_val.rs == st.read_start /\
+            Seq.length buf_data == SZ.v al /\
+            is_full_vec cb_val.buf /\
+            SZ.v al <= pow2_63 /\
+            Pow2.is_pow2 st.virtual_length /\
+            SZ.v needed <= st.virtual_length /\
+            SZ.v needed <= Spec.cb_max_length)
+        {
+          let cur = R.read nal_ref;
+          Pow2.pow2_double_le (SZ.v cur) st.virtual_length;
+          Pow2.pow2_double_le (SZ.v cur) Spec.cb_max_length;
+          SZ.fits_lte (SZ.v cur + SZ.v cur) st.virtual_length;
+          Pow2.doubling_stays_pow2 (SZ.v cur);
+          R.write nal_ref (SZ.add cur cur);
+        };
+        let new_al = R.read nal_ref;
+
+        // Fold back to call resize_rm
+        rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
+        fold (is_circular_buffer_rm cb rm st);
+        resize_rm cb rm new_al;
+
+        // After resize, unfold to write inline
+        A.pts_to_len src;
+        Spec.trim_write_in_bounds (SZ.v abs_offset) (SZ.v write_len) st.base_offset (SZ.v new_al);
+
+        unfold (is_circular_buffer_rm cb rm (Spec.resize_result st (SZ.v new_al)));
+        with cbi2 buf_data2 repr2. _;
+        let cb_val2 = !cb;
+        rewrite (Vec.pts_to cbi2.buf buf_data2) as (Vec.pts_to cb_val2.buf buf_data2);
+        A.pts_to_len src;
+
+        // Write loop: copy src[skip..] into physical array
+        let mut wi : SZ.t = 0sz;
+        while (let vi = R.read wi; SZ.lt vi trimmed_len)
+        invariant exists* (vi: SZ.t) (cur_phys: Seq.seq byte).
+          B.pts_to cb cbi2 ** Vec.pts_to cb_val2.buf cur_phys **
+          A.pts_to src #p src_data **
+          RM.is_range_map rm repr2 **
+          R.pts_to wi vi **
+          pure (
+            SZ.v vi <= SZ.v trimmed_len /\
+            Seq.length cur_phys == SZ.v cb_val2.al /\
+            is_full_vec cb_val2.buf /\
+            SZ.v cb_val2.al > 0 /\
+            SZ.v cb_val2.al <= pow2_63 /\
+            SZ.v cb_val2.rs < SZ.v cb_val2.al /\
+            SZ.v trimmed_len + SZ.v skip == SZ.v write_len /\
+            SZ.v write_len == Seq.length src_data /\
+            SZ.v write_len == A.length src /\
+            SZ.v rel_offset + SZ.v trimmed_len <= SZ.v cb_val2.al /\
+            Spec.phys_log_coherent (SZ.v cb_val2.al) cur_phys
+              (GT.write_range_contents (Spec.resize_result st (SZ.v new_al)).contents
+                (SZ.v rel_offset)
+                (Seq.slice (reveal src_data) (SZ.v skip) (SZ.v skip + SZ.v vi)))
+              (SZ.v cb_val2.rs))
+        {
+          let vi = R.read wi;
+          with cur_phys. assert (Vec.pts_to cb_val2.buf cur_phys);
+          A.pts_to_len src;
+          let src_idx = SZ.add skip vi;
+          let byte_val = A.op_Array_Access src src_idx;
+          let off = SZ.add rel_offset vi;
+          lemma_idx_sum_fits cb_val2.al cb_val2.rs off;
+          let pidx = SZ.rem (SZ.add cb_val2.rs off) cb_val2.al;
+          lemma_mod_spec_eq (SZ.v (SZ.add cb_val2.rs off)) (SZ.v cb_val2.al);
+          cb_val2.buf.(pidx) <- byte_val;
+          Spec.write_step_coherence (SZ.v cb_val2.al) cur_phys
+            (Spec.resize_result st (SZ.v new_al)).contents
+            (SZ.v cb_val2.rs) (SZ.v rel_offset)
+            (Seq.slice (reveal src_data) (SZ.v skip) (SZ.v write_len)) (SZ.v vi);
+          lemma_inc_fits vi trimmed_len;
+          R.write wi (SZ.add vi 1sz);
+        };
+
+        with _vi _cur_phys. _;
+        let trimmed_data = Ghost.hide (Seq.slice (reveal src_data) (SZ.v skip) (SZ.v write_len));
+        Seq.lemma_eq_intro
+          (Seq.slice (reveal src_data) (SZ.v skip) (SZ.v skip + SZ.v trimmed_len))
+          (reveal trimmed_data);
+        Seq.lemma_eq_intro
+          (Seq.slice (reveal trimmed_data) 0 (SZ.v trimmed_len))
+          (reveal trimmed_data);
+
+        let rs_contents = Ghost.hide (Spec.resize_result st (SZ.v new_al)).contents;
+        Spec.write_ooo_coherence_transfer (SZ.v cb_val2.al) _cur_phys
+          rs_contents (SZ.v cb_val2.rs) (SZ.v rel_offset)
+          (reveal trimmed_data) (SZ.v _vi) (SZ.v trimmed_len);
+        GT.write_range_contents_t_eq rs_contents (SZ.v rel_offset) (reveal trimmed_data);
+        GT.write_range_monotone rs_contents (SZ.v rel_offset) (reveal trimmed_data);
+        Spec.resize_prefix_length st.alloc_length (SZ.v new_al) st.contents;
+
+        let new_st_contents = Ghost.hide (
+          GT.write_range_contents_t rs_contents (SZ.v rel_offset) (reveal trimmed_data));
+        Spec.write_range_preserves_wf (Spec.resize_result st (SZ.v new_al))
+          (SZ.v rel_offset) (reveal trimmed_data);
+
+        // Update range map with absolute offset
+        let rm_abs = SZ.add cb_val2.bo rel_offset;
+        RM.range_map_add rm rm_abs trimmed_len;
+        RMSpec.add_range_wf repr2 (SZ.v rm_abs) (SZ.v trimmed_len);
+        Spec.ranges_match_write repr2 rs_contents (SZ.v cb_val2.bo) (SZ.v rel_offset) (reveal trimmed_data);
+
+        let new_pl = RM.range_map_contiguous_from rm cb_val2.bo;
+        let ndr = SZ.gt new_pl 0sz && SZ.eq old_pl 0sz;
+
+        let new_cbi = Mkcb_internal cb_val2.buf cb_val2.rs cb_val2.al new_pl cb_val2.vl cb_val2.bo;
+        ( := ) cb new_cbi;
+        rewrite (Vec.pts_to cb_val2.buf _cur_phys) as (Vec.pts_to new_cbi.buf _cur_phys);
+
+        let rs_st = Ghost.hide (Spec.resize_result st (SZ.v new_al));
+        Spec.write_preserves_rwp repr2 (SZ.v cb_val2.bo) (SZ.v rel_offset) (SZ.v trimmed_len);
+        Spec.write_preserves_cf_eq_cpl repr2 (reveal rs_st).contents (SZ.v cb_val2.bo) (SZ.v rel_offset) (reveal trimmed_data);
+
+        fold (is_circular_buffer_rm cb rm
+          { Spec.resize_result st (SZ.v new_al) with contents = reveal new_st_contents });
+        { wrote = true; new_data_ready = ndr; resize_failed = false }
+      }
+    }
+    else
+    {
+      // No resize needed — write directly
+      A.pts_to_len src;
+      Spec.trim_write_in_bounds (SZ.v abs_offset) (SZ.v write_len) st.base_offset st.alloc_length;
+
+      // Write loop: copy src[skip..] into buffer at (rs + rel_offset + i) % al
+      let mut wi : SZ.t = 0sz;
+      while (let vi = R.read wi; SZ.lt vi trimmed_len)
+      invariant exists* (vi: SZ.t) (cur_phys: Seq.seq byte).
+        B.pts_to cb cbi ** Vec.pts_to cb_val.buf cur_phys **
+        A.pts_to src #p src_data **
+        RM.is_range_map rm repr **
+        R.pts_to wi vi **
+        pure (
+          SZ.v vi <= SZ.v trimmed_len /\
+          Seq.length cur_phys == SZ.v cb_val.al /\
+          is_full_vec cb_val.buf /\
+          SZ.v cb_val.al > 0 /\
+          SZ.v cb_val.al <= pow2_63 /\
+          SZ.v cb_val.rs == st.read_start /\
+          SZ.v cb_val.al == st.alloc_length /\
+          SZ.v trimmed_len + SZ.v skip == SZ.v write_len /\
+          SZ.v write_len == Seq.length src_data /\
+          SZ.v write_len == A.length src /\
+          SZ.v rel_offset + SZ.v trimmed_len <= SZ.v cb_val.al /\
+          st.read_start < st.alloc_length /\
+          Spec.phys_log_coherent st.alloc_length cur_phys
+            (GT.write_range_contents st.contents (SZ.v rel_offset)
+              (Seq.slice (reveal src_data) (SZ.v skip) (SZ.v skip + SZ.v vi)))
+            st.read_start)
+      {
+        let vi = R.read wi;
+        with cur_phys. assert (Vec.pts_to cb_val.buf cur_phys);
+        A.pts_to_len src;
+        let src_idx = SZ.add skip vi;
+        let byte_val = A.op_Array_Access src src_idx;
+        let off = SZ.add rel_offset vi;
+        lemma_idx_sum_fits cb_val.al cb_val.rs off;
+        let pidx = SZ.rem (SZ.add cb_val.rs off) cb_val.al;
+        lemma_mod_spec_eq (SZ.v (SZ.add cb_val.rs off)) (SZ.v cb_val.al);
+        cb_val.buf.(pidx) <- byte_val;
+        Spec.write_step_coherence (SZ.v cb_val.al) cur_phys st.contents
+          st.read_start (SZ.v rel_offset) (Seq.slice (reveal src_data) (SZ.v skip) (SZ.v write_len)) (SZ.v vi);
+        lemma_inc_fits vi trimmed_len;
+        R.write wi (SZ.add vi 1sz);
+      };
+
+      with _vi _cur_phys. _;
+      let trimmed_data = Ghost.hide (Seq.slice (reveal src_data) (SZ.v skip) (SZ.v write_len));
+      Seq.lemma_eq_intro
+        (Seq.slice (reveal src_data) (SZ.v skip) (SZ.v skip + SZ.v trimmed_len))
+        (reveal trimmed_data);
+      Seq.lemma_eq_intro
+        (Seq.slice (reveal trimmed_data) 0 (SZ.v trimmed_len))
+        (reveal trimmed_data);
+
+      Spec.write_ooo_coherence_transfer (SZ.v cb_val.al) _cur_phys st.contents
+        st.read_start (SZ.v rel_offset) (reveal trimmed_data) (SZ.v _vi) (SZ.v trimmed_len);
+      GT.write_range_contents_t_eq st.contents (SZ.v rel_offset) (reveal trimmed_data);
+      GT.write_range_monotone st.contents (SZ.v rel_offset) (reveal trimmed_data);
+      Spec.write_range_preserves_wf st (SZ.v rel_offset) (reveal trimmed_data);
+
+      let rm_abs = SZ.add cb_val.bo rel_offset;
+      RM.range_map_add rm rm_abs trimmed_len;
+      RMSpec.add_range_wf repr (SZ.v rm_abs) (SZ.v trimmed_len);
+      Spec.ranges_match_write repr st.contents (SZ.v cb_val.bo) (SZ.v rel_offset) (reveal trimmed_data);
+
+      let new_pl = RM.range_map_contiguous_from rm cb_val.bo;
+      let ndr = SZ.gt new_pl 0sz && SZ.eq old_pl 0sz;
+
+      let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al new_pl cb_val.vl cb_val.bo;
+      ( := ) cb new_cbi;
+      rewrite (Vec.pts_to cb_val.buf _cur_phys) as (Vec.pts_to new_cbi.buf _cur_phys);
+
+      Spec.write_preserves_rwp repr (SZ.v cb_val.bo) (SZ.v rel_offset) (SZ.v trimmed_len);
+      Spec.write_preserves_cf_eq_cpl repr st.contents (SZ.v cb_val.bo) (SZ.v rel_offset) (reveal trimmed_data);
+
+      fold (is_circular_buffer_rm cb rm
+        { st with contents =
+            GT.write_range_contents_t st.contents (SZ.v rel_offset) (reveal trimmed_data) });
+      { wrote = true; new_data_ready = ndr; resize_failed = false }
+    }
+  }
+}
+#pop-options
+
+/// RM-tracked drain: advance read_start and base_offset, slice contents.
+/// The range map is UNCHANGED — this is the key advantage of absolute offsets.
+#push-options "--z3rlimit_factor 8 --fuel 2 --ifuel 1"
+fn drain_rm
+  (cb: circular_buffer) (rm: RM.range_map_t) (n: SZ.t)
+  (#st: erased Spec.cb_state)
+  requires is_circular_buffer_rm cb rm st **
+    pure (Spec.cb_wf st /\ SZ.v n <= st.alloc_length /\
+          SZ.v n <= GT.contiguous_prefix_length st.contents /\
+          SZ.fits (st.base_offset + SZ.v n))
+  returns no_more_data: bool
+  ensures is_circular_buffer_rm cb rm (Spec.drain_result st (SZ.v n)) **
+    pure (no_more_data == (GT.contiguous_prefix_length st.contents = SZ.v n))
+{
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+
+  // Advance read_start and base_offset
+  lemma_idx_sum_fits cb_val.al cb_val.rs n;
+  let temp = SZ.add cb_val.rs n;
+  let new_rs = SZ.rem temp cb_val.al;
+  let new_bo = SZ.add cb_val.bo n;
+
+  // Compute new prefix length from range map with new base_offset
+  let new_pl = RM.range_map_contiguous_from rm new_bo;
+
+  let new_cbi = Mkcb_internal cb_val.buf new_rs cb_val.al new_pl cb_val.vl new_bo;
+  ( := ) cb new_cbi;
+  rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to new_cbi.buf buf_data);
+
+  // Physical coherence preserved under drain
+  Spec.drain_preserves_coherence st.alloc_length buf_data st.contents st.read_start (SZ.v n);
+
+  // Bridge preserved by index substitution with padding (trivial!)
+  Spec.ranges_match_drain_padded repr st.contents (SZ.v cb_val.bo) (SZ.v n);
+
+  // repr_well_positioned preserved
+  Spec.drain_preserves_rwp repr (SZ.v cb_val.bo) (SZ.v n);
+
+  // cf == cpl after drain
+  Spec.rwp_cf_eq_cpl repr
+    (Spec.drained_contents st.alloc_length st.contents (SZ.v n))
+    (SZ.v new_bo);
+
+  // Drain prefix: new_cpl = old_cpl - n, so new_cpl == 0 iff old_cpl == n
+  Spec.drain_prefix_length st.alloc_length st.contents (SZ.v n);
+
+  fold (is_circular_buffer_rm cb rm (Spec.drain_result st (SZ.v n)));
+  SZ.eq new_pl 0sz
+}
+#pop-options
+
+/// --- Zero-copy Read ---
+
+/// Core: split the buffer array into read segments, return trade back to raw resources.
+/// Shared by all mode wrappers (non-RM, RM, OOO, ...).
+#push-options "--z3rlimit_factor 32 --fuel 1 --ifuel 1"
+fn read_zerocopy_core
+  (cb: circular_buffer)
+  (read_len: SZ.t)
+  (cbi: cb_internal)
+  (#buf_data: erased (Seq.seq byte))
+  requires
+    B.pts_to cb cbi ** Vec.pts_to cbi.buf buf_data **
+    pure (SZ.v cbi.al > 0 /\ SZ.v cbi.rs < SZ.v cbi.al /\
+          SZ.v read_len <= SZ.v cbi.al /\ SZ.v read_len > 0 /\
+          SZ.v cbi.al <= pow2_63 /\ is_full_vec cbi.buf /\
+          Seq.length buf_data == SZ.v cbi.al /\
+          SZ.fits (SZ.v cbi.rs + SZ.v read_len))
+  returns rv: read_view
+  ensures exists* (s1 s2: Seq.seq byte).
+    zc_segs rv s1 s2 **
+    (zc_segs rv s1 s2 @==> (B.pts_to cb cbi ** Vec.pts_to cbi.buf buf_data)) **
+    pure (
+      SZ.v rv.len1 + SZ.v rv.len2 == SZ.v read_len /\
+      SZ.v rv.off1 + SZ.v rv.len1 <= SZ.v cbi.al /\
+      SZ.v rv.off2 + SZ.v rv.len2 <= SZ.v cbi.al)
+{
+  // Convert Vec -> Array -> pts_to_range
+  to_array_pts_to cbi.buf;
+  A.pts_to_len (vec_to_array cbi.buf);
+  PTR.pts_to_range_intro (vec_to_array cbi.buf) 1.0R buf_data;
+
+  // Compute segment boundaries
+  let rs = cbi.rs;
+  let al = cbi.al;
+  let wraps = SZ.gt (SZ.add rs read_len) al;
+
+  if wraps {
+    // Wrap case: seg1 = [rs, al), seg2 = [0, read_len - (al - rs))
+    let len1 = SZ.sub al rs;
+    let len2 = SZ.sub read_len len1;
+
+    // Split: [0, rs) + [rs, al)
+    PTR.pts_to_range_split (vec_to_array cbi.buf) 0 (SZ.v rs) (A.length (vec_to_array cbi.buf));
+    with s_pre s_post. _;
+
+    // Split [0, rs) into [0, len2) + [len2, rs)
+    PTR.pts_to_range_split (vec_to_array cbi.buf) 0 (SZ.v len2) (SZ.v rs);
+    with s2 s_mid. _;
+
+    let rv = Mkread_view (vec_to_array cbi.buf) rs len1 0sz len2;
+
+    // Package trade: segments → raw resources
+    intro (trade (zc_segs rv s_post s2)
+                 (B.pts_to cb cbi ** Vec.pts_to cbi.buf buf_data))
+      #(A.pts_to_range (vec_to_array cbi.buf) (SZ.v len2) (SZ.v rs) s_mid **
+        B.pts_to cb cbi) fn _
+    {
+      // Rewrite hyp from rv.* to concrete values
+      unfold zc_segs;
+      rewrite
+        (A.pts_to_range rv.arr (SZ.v rv.off1) (SZ.v rv.off1 + SZ.v rv.len1) s_post)
+      as (A.pts_to_range (vec_to_array cbi.buf) (SZ.v rs) (SZ.v rs + SZ.v len1) s_post);
+      rewrite
+        (A.pts_to_range rv.arr (SZ.v rv.off2) (SZ.v rv.off2 + SZ.v rv.len2) s2)
+      as (A.pts_to_range (vec_to_array cbi.buf) 0 (SZ.v len2) s2);
+      // Rejoin [0, len2) + [len2, rs)
+      PTR.pts_to_range_join (vec_to_array cbi.buf) 0 (SZ.v len2) (SZ.v rs);
+      // Rejoin [0, rs) + [rs, al)
+      PTR.pts_to_range_join (vec_to_array cbi.buf) 0 (SZ.v rs) (A.length (vec_to_array cbi.buf));
+      // pts_to_range -> pts_to -> Vec
+      PTR.pts_to_range_elim (vec_to_array cbi.buf) 1.0R (Seq.append (Seq.append s2 s_mid) s_post);
+      to_vec_pts_to cbi.buf;
+      with s'. assert (Vec.pts_to cbi.buf s');
+      assert (pure (s' `Seq.equal` buf_data));
+      rewrite (Vec.pts_to cbi.buf s') as (Vec.pts_to cbi.buf buf_data);
+    };
+    // Rewrite from concrete array to rv.arr for postcondition
+    rewrite
+      (A.pts_to_range (vec_to_array cbi.buf) (SZ.v rs) (A.length (vec_to_array cbi.buf)) s_post)
+    as (A.pts_to_range rv.arr (SZ.v rv.off1) (SZ.v rv.off1 + SZ.v rv.len1) s_post);
+    rewrite
+      (A.pts_to_range (vec_to_array cbi.buf) 0 (SZ.v len2) s2)
+    as (A.pts_to_range rv.arr (SZ.v rv.off2) (SZ.v rv.off2 + SZ.v rv.len2) s2);
+    fold (zc_segs rv s_post s2);
+    rv
+  } else {
+    // No-wrap case: seg1 = [rs, rs+read_len), seg2 = empty
+    // Split: [0, rs) + [rs, al)
+    PTR.pts_to_range_split (vec_to_array cbi.buf) 0 (SZ.v rs) (A.length (vec_to_array cbi.buf));
+    with s_pre s_post. _;
+
+    // Split [rs, al) into [rs, rs+read_len) + [rs+read_len, al)
+    PTR.pts_to_range_split (vec_to_array cbi.buf) (SZ.v rs) (SZ.v rs + SZ.v read_len) (A.length (vec_to_array cbi.buf));
+    with s1 s_tail. _;
+
+    let rv = Mkread_view (vec_to_array cbi.buf) rs read_len 0sz 0sz;
+
+    // Create empty pts_to_range for segment 2
+    PTR.pts_to_range_split (vec_to_array cbi.buf) 0 0 (SZ.v rs);
+    with s_empty s_pre'. _;
+
+    // Package trade: segments → raw resources
+    intro (trade (zc_segs rv s1 s_empty)
+                 (B.pts_to cb cbi ** Vec.pts_to cbi.buf buf_data))
+      #(A.pts_to_range (vec_to_array cbi.buf) 0 (SZ.v rs) s_pre' **
+        A.pts_to_range (vec_to_array cbi.buf) (SZ.v rs + SZ.v read_len) (A.length (vec_to_array cbi.buf)) s_tail **
+        B.pts_to cb cbi) fn _
+    {
+      unfold zc_segs;
+      rewrite
+        (A.pts_to_range rv.arr (SZ.v rv.off1) (SZ.v rv.off1 + SZ.v rv.len1) s1)
+      as (A.pts_to_range (vec_to_array cbi.buf) (SZ.v rs) (SZ.v rs + SZ.v read_len) s1);
+      rewrite
+        (A.pts_to_range rv.arr (SZ.v rv.off2) (SZ.v rv.off2 + SZ.v rv.len2) s_empty)
+      as (A.pts_to_range (vec_to_array cbi.buf) 0 0 s_empty);
+      // Rejoin [0,0) + [0,rs)
+      PTR.pts_to_range_join (vec_to_array cbi.buf) 0 0 (SZ.v rs);
+      // Rejoin [rs, rs+rl) + [rs+rl, al)
+      PTR.pts_to_range_join (vec_to_array cbi.buf) (SZ.v rs) (SZ.v rs + SZ.v read_len) (A.length (vec_to_array cbi.buf));
+      // Rejoin [0, rs) + [rs, al)
+      PTR.pts_to_range_join (vec_to_array cbi.buf) 0 (SZ.v rs) (A.length (vec_to_array cbi.buf));
+      // pts_to_range -> pts_to -> Vec
+      PTR.pts_to_range_elim (vec_to_array cbi.buf) 1.0R
+        (Seq.append (Seq.append s_empty s_pre') (Seq.append s1 s_tail));
+      to_vec_pts_to cbi.buf;
+      with s'. assert (Vec.pts_to cbi.buf s');
+      assert (pure (s' `Seq.equal` buf_data));
+      rewrite (Vec.pts_to cbi.buf s') as (Vec.pts_to cbi.buf buf_data);
+    };
+    // Rewrite from concrete array to rv.arr for postcondition
+    rewrite
+      (A.pts_to_range (vec_to_array cbi.buf) (SZ.v rs) (SZ.v rs + SZ.v read_len) s1)
+    as (A.pts_to_range rv.arr (SZ.v rv.off1) (SZ.v rv.off1 + SZ.v rv.len1) s1);
+    rewrite
+      (A.pts_to_range (vec_to_array cbi.buf) 0 0 s_empty)
+    as (A.pts_to_range rv.arr (SZ.v rv.off2) (SZ.v rv.off2 + SZ.v rv.len2) s_empty);
+    fold (zc_segs rv s1 s_empty);
+    rv
+  }
+}
+#pop-options
+
+/// Non-RM zero-copy read: unfold is_circular_buffer, call core, compose trade via Trade.trans
+fn read_zerocopy
+  (cb: circular_buffer)
+  (read_len: SZ.t)
+  (#st: erased Spec.cb_state)
+  requires
+    is_circular_buffer cb st **
+    pure (Spec.cb_wf st /\
+          SZ.v read_len <= GT.contiguous_prefix_length st.contents /\
+          SZ.v read_len <= st.alloc_length /\
+          SZ.v read_len > 0)
+  returns rv: read_view
+  ensures exists* (s1 s2: Seq.seq byte).
+    zc_segs rv s1 s2 **
+    (zc_segs rv s1 s2 @==> is_circular_buffer cb st) **
+    pure (
+      SZ.v rv.len1 + SZ.v rv.len2 == SZ.v read_len /\
+      SZ.v rv.off1 + SZ.v rv.len1 <= st.alloc_length /\
+      SZ.v rv.off2 + SZ.v rv.len2 <= st.alloc_length)
+{
+  unfold (is_circular_buffer cb st);
+  with cbi buf_data. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  rewrite (B.pts_to cb cbi) as (B.pts_to cb cb_val);
+  lemma_idx_sum_fits cb_val.al cb_val.rs read_len;
+
+  let rv = read_zerocopy_core cb read_len cb_val;
+  with s1 s2. _;
+
+  // Fold trade: raw resources → is_circular_buffer
+  intro (trade (B.pts_to cb cb_val ** Vec.pts_to cb_val.buf buf_data)
+               (is_circular_buffer cb st))
+    fn _ {
+    rewrite (B.pts_to cb cb_val) as (B.pts_to cb cbi);
+    rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
+    fold (is_circular_buffer cb st);
+  };
+
+  // Compose: (segs @==> raw) ** (raw @==> is_circular_buffer) → (segs @==> is_circular_buffer)
+  trade_compose
+    (zc_segs rv s1 s2)
+    (B.pts_to cb cb_val ** Vec.pts_to cb_val.buf buf_data)
+    (is_circular_buffer cb st);
+
+  rv
+}
+
+/// RM-mode zero-copy read: unfold is_circular_buffer_rm, call core, compose trade
+fn read_zerocopy_rm
+  (cb: circular_buffer)
+  (rm: RM.range_map_t)
+  (read_len: SZ.t)
+  (#st: erased Spec.cb_state)
+  requires
+    is_circular_buffer_rm cb rm st **
+    pure (Spec.cb_wf st /\
+          SZ.v read_len <= GT.contiguous_prefix_length st.contents /\
+          SZ.v read_len <= st.alloc_length /\
+          SZ.v read_len > 0)
+  returns rv: read_view
+  ensures exists* (s1 s2: Seq.seq byte).
+    zc_segs rv s1 s2 **
+    (zc_segs rv s1 s2 @==> is_circular_buffer_rm cb rm st) **
+    pure (
+      SZ.v rv.len1 + SZ.v rv.len2 == SZ.v read_len /\
+      SZ.v rv.off1 + SZ.v rv.len1 <= st.alloc_length /\
+      SZ.v rv.off2 + SZ.v rv.len2 <= st.alloc_length)
+{
+  unfold (is_circular_buffer_rm cb rm st);
+  with cbi buf_data repr. _;
+  let cb_val = !cb;
+  rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
+  rewrite (B.pts_to cb cbi) as (B.pts_to cb cb_val);
+  Spec.ranges_match_prefix_lower repr st.contents (SZ.v cbi.bo);
+  lemma_idx_sum_fits cb_val.al cb_val.rs read_len;
+
+  let rv = read_zerocopy_core cb read_len cb_val;
+  with s1 s2. _;
+
+  // Fold trade: raw resources → is_circular_buffer_rm (captures RM as extra)
+  intro (trade (B.pts_to cb cb_val ** Vec.pts_to cb_val.buf buf_data)
+               (is_circular_buffer_rm cb rm st))
+    #(RM.is_range_map rm repr) fn _ {
+    rewrite (B.pts_to cb cb_val) as (B.pts_to cb cbi);
+    rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
+    fold (is_circular_buffer_rm cb rm st);
+  };
+
+  // Compose: (segs @==> raw) ** (raw @==> is_circular_buffer_rm) → (segs @==> is_circular_buffer_rm)
+  trade_compose
+    (zc_segs rv s1 s2)
+    (B.pts_to cb cb_val ** Vec.pts_to cb_val.buf buf_data)
+    (is_circular_buffer_rm cb rm st);
+
+  rv
+}
+
+/// Release zero-copy read without draining (cancel)
+fn release_read
+  (cb: circular_buffer)
+  (rv: read_view)
+  (#st: erased Spec.cb_state)
+  (#s1 #s2: erased (Seq.seq byte))
+  requires
+    zc_segs rv s1 s2 **
+    (zc_segs rv s1 s2 @==> is_circular_buffer cb st)
+  ensures
+    is_circular_buffer cb st
+{
+  elim_trade (zc_segs rv s1 s2) (is_circular_buffer cb st);
+}
+
+/// Release zero-copy read AND drain
+#push-options "--z3rlimit_factor 8 --fuel 1 --ifuel 1"
+fn drain_after_read
+  (cb: circular_buffer)
+  (rv: read_view)
+  (drain_len: SZ.t)
+  (#st: erased Spec.cb_state)
+  (#s1 #s2: erased (Seq.seq byte))
+  requires
+    zc_segs rv s1 s2 **
+    (zc_segs rv s1 s2 @==> is_circular_buffer cb st) **
+    pure (Spec.cb_wf st /\
+          SZ.v drain_len <= st.alloc_length /\
+          SZ.v drain_len <= GT.contiguous_prefix_length st.contents /\
+          SZ.fits (st.base_offset + SZ.v drain_len))
+  returns no_more_data: bool
+  ensures
+    is_circular_buffer cb (Spec.drain_result st (SZ.v drain_len)) **
+    pure (no_more_data == (GT.contiguous_prefix_length st.contents = SZ.v drain_len))
+{
+  release_read cb rv;
+  drain cb drain_len
+}
+#pop-options
+
+/// RM-mode release zero-copy read
+fn release_read_rm
+  (cb: circular_buffer)
+  (rm: RM.range_map_t)
+  (rv: read_view)
+  (#st: erased Spec.cb_state)
+  (#s1 #s2: erased (Seq.seq byte))
+  requires
+    zc_segs rv s1 s2 **
+    (zc_segs rv s1 s2 @==> is_circular_buffer_rm cb rm st)
+  ensures
+    is_circular_buffer_rm cb rm st
+{
+  elim_trade (zc_segs rv s1 s2) (is_circular_buffer_rm cb rm st);
+}
+
+/// RM-mode release + drain
+#push-options "--z3rlimit_factor 8 --fuel 1 --ifuel 1"
+fn drain_after_read_rm
+  (cb: circular_buffer)
+  (rm: RM.range_map_t)
+  (rv: read_view)
+  (drain_len: SZ.t)
+  (#st: erased Spec.cb_state)
+  (#s1 #s2: erased (Seq.seq byte))
+  requires
+    zc_segs rv s1 s2 **
+    (zc_segs rv s1 s2 @==> is_circular_buffer_rm cb rm st) **
+    pure (Spec.cb_wf st /\
+          SZ.v drain_len <= st.alloc_length /\
+          SZ.v drain_len <= GT.contiguous_prefix_length st.contents /\
+          SZ.fits (st.base_offset + SZ.v drain_len))
+  returns no_more_data: bool
+  ensures
+    is_circular_buffer_rm cb rm (Spec.drain_result st (SZ.v drain_len)) **
+    pure (no_more_data == (GT.contiguous_prefix_length st.contents = SZ.v drain_len))
+{
+  release_read_rm cb rm rv;
+  drain_rm cb rm drain_len
 }
 #pop-options

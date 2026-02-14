@@ -138,7 +138,7 @@ fn capacity (#t:Type0) (v:vector t) (#s:erased (Seq.seq t)) (#cap:erased SZ.t)
 }
 
 /// Push back — append element, double capacity if full
-#push-options "--warn_error -288 --z3rlimit_factor 4"
+#push-options "--warn_error -288 --z3rlimit_factor 2"
 fn push_back (#t:Type0) (v:vector t) (x:t)
   (#s:erased (Seq.seq t)) (#cap:erased SZ.t)
   requires is_vector v s cap **
@@ -191,7 +191,7 @@ fn push_back (#t:Type0) (v:vector t) (x:t)
 #pop-options
 
 /// Pop back — remove last element, halve capacity when size == floor(cap/2)
-#push-options "--warn_error -288 --z3rlimit_factor 4"
+#push-options "--warn_error -288 --z3rlimit_factor 2"
 fn pop_back (#t:Type0) (v:vector t)
   (#s:erased (Seq.seq t){Seq.length s > 0}) (#cap:erased SZ.t)
   requires is_vector v s cap
@@ -247,7 +247,7 @@ fn pop_back (#t:Type0) (v:vector t)
 #pop-options
 
 /// Resize
-#push-options "--warn_error -288 --z3rlimit_factor 4"
+#push-options "--warn_error -288 --z3rlimit_factor 2"
 fn resize (#t:Type0) (v:vector t) (new_size:SZ.t{SZ.v new_size > 0})
   (#s:erased (Seq.seq t)) (#cap:erased SZ.t)
   requires is_vector v s cap

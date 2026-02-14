@@ -56,6 +56,28 @@ let prefix_boundary_is_none (s:Seq.seq (option byte))
     if pl = 0 then ()
     else prefix_boundary_is_none_aux s pl
 
+/// Converse of prefix_elements_are_some:
+/// If all positions 0..n-1 are Some, then contiguous_prefix_length >= n.
+let rec all_some_prefix_ge (s:Seq.seq (option byte)) (n:nat)
+  : Lemma (requires n <= Seq.length s /\
+                    (forall (i:nat{i < n}). Some? (Seq.index s i)))
+          (ensures contiguous_prefix_length s >= n)
+          (decreases n)
+  = if n = 0 then ()
+    else (
+      assert (Some? (Seq.index s 0));
+      // cpl s = 1 + cpl (tail s)
+      // All positions 0..n-2 of tail are Some (shifted from 1..n-1 of s)
+      let s' = Seq.tail s in
+      let aux (i:nat{i < n - 1})
+        : Lemma (Some? (Seq.index s' i))
+        = assert (Seq.index s' i == Seq.index s (i + 1));
+          assert (Some? (Seq.index s (i + 1)))
+      in
+      FStar.Classical.forall_intro aux;
+      all_some_prefix_ge s' (n - 1)
+    )
+
 /// Writing Some at an index strictly beyond the prefix doesn't change the prefix
 let rec write_beyond_prefix_preserves (s:Seq.seq (option byte)) (i:nat) (b:byte)
   : Lemma (requires i < Seq.length s /\ i > contiguous_prefix_length s)
@@ -227,3 +249,94 @@ let rec write_range_snoc
       assert (Seq.index d' (i - 1) == Seq.index data i);
       write_range_snoc c' (offset + 1) d' (i - 1)
     end
+
+/// Total wrapper for write_range_contents (no precondition; identity when out of bounds)
+let write_range_contents_t
+  (contents: Seq.seq (option byte))
+  (offset: nat)
+  (data: Seq.seq byte)
+  : Seq.seq (option byte)
+  = if offset + Seq.length data <= Seq.length contents
+    then write_range_contents contents offset data
+    else contents
+
+/// Equivalence: when precondition holds, total version equals partial version
+let write_range_contents_t_eq
+  (contents: Seq.seq (option byte))
+  (offset: nat)
+  (data: Seq.seq byte)
+  : Lemma
+    (requires offset + Seq.length data <= Seq.length contents)
+    (ensures write_range_contents_t contents offset data ==
+             write_range_contents contents offset data)
+  = ()
+
+/// Length preservation for total version
+let write_range_contents_t_length
+  (contents: Seq.seq (option byte))
+  (offset: nat)
+  (data: Seq.seq byte)
+  : Lemma (Seq.length (write_range_contents_t contents offset data) ==
+           Seq.length contents)
+  = if offset + Seq.length data <= Seq.length contents
+    then ()
+    else ()
+
+/// Pointwise characterization of write_range_contents
+let rec write_range_index
+  (contents: Seq.seq (option byte))
+  (offset: nat)
+  (data: Seq.seq byte)
+  (i: nat)
+  : Lemma
+    (requires offset + Seq.length data <= Seq.length contents /\
+             i < Seq.length contents)
+    (ensures
+      Seq.index (write_range_contents contents offset data) i ==
+        (if offset <= i && i < offset + Seq.length data
+         then Some (Seq.index data (i - offset))
+         else Seq.index contents i))
+    (decreases (Seq.length data))
+  = if Seq.length data = 0 then ()
+    else begin
+      let c' = Seq.upd contents offset (Some (Seq.index data 0)) in
+      if i = offset then begin
+        // First byte written at offset — show it's overwritten
+        write_range_index c' (offset + 1) (Seq.tail data) i
+      end
+      else if i > offset && i < offset + Seq.length data then begin
+        // In the written range but not the first position
+        write_range_index c' (offset + 1) (Seq.tail data) i;
+        assert (Seq.index c' i == Seq.index contents i);
+        assert (i - offset >= 1);
+        assert (Seq.index (Seq.tail data) (i - (offset + 1)) == Seq.index data (i - offset))
+      end
+      else begin
+        // Outside the written range — unchanged
+        write_range_index c' (offset + 1) (Seq.tail data) i;
+        if i = offset then ()
+        else assert (Seq.index c' i == Seq.index contents i)
+      end
+    end
+
+/// Forall version: characterize every index of write_range_contents
+let write_range_forall_index
+  (contents: Seq.seq (option byte))
+  (offset: nat)
+  (data: Seq.seq byte)
+  : Lemma
+    (requires offset + Seq.length data <= Seq.length contents)
+    (ensures
+      forall (i:nat{i < Seq.length contents}).
+        Seq.index (write_range_contents contents offset data) i ==
+          (if offset <= i && i < offset + Seq.length data
+           then Some (Seq.index data (i - offset))
+           else Seq.index contents i))
+  = let aux (i:nat{i < Seq.length contents})
+      : Lemma (Seq.index (write_range_contents contents offset data) i ==
+                (if offset <= i && i < offset + Seq.length data
+                 then Some (Seq.index data (i - offset))
+                 else Seq.index contents i))
+      = write_range_index contents offset data i
+    in
+    FStar.Classical.forall_intro aux

@@ -149,12 +149,20 @@ let pulse_translate_expr : translate_expr_t = fun env e ->
     when string_of_mlpath p = "Pulse.Lib.Vec.op_Array_Access" ->
     EBufRead (cb e, cb i)
 
+  | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ e; i; _p; _w ])
+    when string_of_mlpath p = "Pulse.Lib.Array.PtsTo.op_Array_Access" ->
+    EBufRead (cb e, cb i)
+
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ e; i; _p; _w; _m ])
     when string_of_mlpath p = "Pulse.Lib.Array.Core.mask_read" ->
     EBufRead (cb e, cb i)
 
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ e; i; v; _w ])
     when string_of_mlpath p = "Pulse.Lib.Vec.op_Array_Assignment" ->
+    EBufWrite (cb e, cb i, cb v)
+
+  | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ e; i; v; _s ])
+    when string_of_mlpath p = "Pulse.Lib.Array.PtsTo.op_Array_Assignment" ->
     EBufWrite (cb e, cb i, cb v)
 
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ e; i; v; _; _ ])

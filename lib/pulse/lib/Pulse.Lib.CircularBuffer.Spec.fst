@@ -28,10 +28,14 @@ noeq type cb_state = {
   contents: Seq.seq (option byte);
 }
 
+/// Platform bound on maximum allocatable buffer size (simulates finite memory).
+assume val cb_max_length : n:pos{ Pow2.is_pow2 n /\ n <= 0x8000000000000000 }
+
 let cb_wf (st: cb_state) : prop =
   Pow2.is_pow2 st.alloc_length /\
   Pow2.is_pow2 st.virtual_length /\
   st.alloc_length <= st.virtual_length /\
+  st.alloc_length <= cb_max_length /\
   st.read_start < st.alloc_length /\
   Seq.length st.contents == st.alloc_length
 
@@ -265,7 +269,7 @@ let no_overcommit (st: cb_state) (write_end: nat)
 /// --- Total helpers for Pulse interface (no preconditions) ---
 
 /// State after writing a byte (total: no-op if out of bounds)
-let write_result (st: cb_state) (i: nat) (b: byte) : cb_state =
+let write_byte_result (st: cb_state) (i: nat) (b: byte) : cb_state =
   if i < Seq.length st.contents then
     { st with contents = Seq.upd st.contents i (Some b) }
   else st
@@ -415,6 +419,7 @@ let write_buffer_resize_wf
       Pow2.is_pow2 new_al /\
       new_al >= st.alloc_length /\
       new_al <= st.virtual_length /\
+      new_al <= cb_max_length /\
       GT.contiguous_prefix_length st.contents + Seq.length data <= new_al)
     (ensures
       cb_wf { st with
@@ -514,3 +519,649 @@ let read_step_invariant
         end
     in
     FStar.Classical.forall_intro aux
+
+/// --- Zero-copy read segment computation ---
+
+/// A pair of physical segments for zero-copy read.
+/// seg1 is [off1, off1+len1), seg2 is [off2, off2+len2) (possibly empty).
+noeq type read_segments = {
+  off1: nat;
+  len1: nat;
+  off2: nat;
+  len2: nat;
+}
+
+/// Compute the physical segment boundaries for reading n bytes starting at read_start.
+/// If the read wraps around: seg1 = [rs, al), seg2 = [0, n - (al - rs))
+/// If no wrap:               seg1 = [rs, rs+n), seg2 = empty
+let compute_read_segments (rs: nat) (n: nat) (al: pos)
+  : Pure read_segments
+    (requires rs < al /\ n <= al)
+    (ensures fun segs ->
+      segs.off1 == rs /\
+      segs.len1 + segs.len2 == n /\
+      segs.off1 + segs.len1 <= al /\
+      segs.off2 + segs.len2 <= al /\
+      (segs.len2 > 0 ==> segs.off2 == 0) /\
+      (segs.len2 == 0 ==> segs.off1 + segs.len1 == rs + n))
+  = if rs + n <= al then
+      { off1 = rs; len1 = n; off2 = 0; len2 = 0 }
+    else
+      { off1 = rs; len1 = al - rs; off2 = 0; len2 = n - (al - rs) }
+
+/// The physical bytes for segment 1 match the logical contents.
+/// phys[off1..off1+len1) corresponds to contents[0..len1) via coherence.
+let read_segments_seg1_correct
+  (al: pos) (phys: Seq.seq byte{Seq.length phys == al})
+  (contents: Seq.seq (option byte){Seq.length contents == al})
+  (rs: nat{rs < al}) (n: nat{n <= al})
+  (cpl: nat{cpl >= n})
+  : Lemma
+    (requires
+      phys_log_coherent al phys contents rs /\
+      cpl <= GT.contiguous_prefix_length contents)
+    (ensures (
+      let segs = compute_read_segments rs n al in
+      forall (i:nat{i < segs.len1}).
+        Some? (Seq.index contents i) /\
+        Seq.index phys (segs.off1 + i) == Some?.v (Seq.index contents i)))
+  = let segs = compute_read_segments rs n al in
+    let aux (i:nat{i < segs.len1})
+      : Lemma (Some? (Seq.index contents i) /\
+               Seq.index phys (segs.off1 + i) == Some?.v (Seq.index contents i))
+      = GT.prefix_elements_are_some contents i;
+        assert (coherent_at al phys contents rs i);
+        Mod.circular_index_in_bounds rs i al;
+        // phys_index rs i al == (rs + i) % al
+        // Since i < len1 and off1 = rs, off1 + i = rs + i
+        // No wrap case: rs + i < al, so (rs + i) % al = rs + i = off1 + i
+        // Wrap case: i < al - rs, so rs + i < al, so (rs + i) % al = rs + i = off1 + i
+        ML.small_mod (rs + i) al
+    in
+    FStar.Classical.forall_intro aux
+
+/// The physical bytes for segment 2 match the logical contents.
+/// phys[0..len2) corresponds to contents[len1..len1+len2) via coherence.
+let read_segments_seg2_correct
+  (al: pos) (phys: Seq.seq byte{Seq.length phys == al})
+  (contents: Seq.seq (option byte){Seq.length contents == al})
+  (rs: nat{rs < al}) (n: nat{n <= al})
+  (cpl: nat{cpl >= n})
+  : Lemma
+    (requires
+      phys_log_coherent al phys contents rs /\
+      cpl <= GT.contiguous_prefix_length contents)
+    (ensures (
+      let segs = compute_read_segments rs n al in
+      forall (i:nat{i < segs.len2}).
+        Some? (Seq.index contents (segs.len1 + i)) /\
+        Seq.index phys (segs.off2 + i) == Some?.v (Seq.index contents (segs.len1 + i))))
+  = let segs = compute_read_segments rs n al in
+    if segs.len2 = 0 then ()
+    else
+      let aux (i:nat{i < segs.len2})
+        : Lemma (Some? (Seq.index contents (segs.len1 + i)) /\
+                 Seq.index phys (segs.off2 + i) == Some?.v (Seq.index contents (segs.len1 + i)))
+        = let li = segs.len1 + i in
+          GT.prefix_elements_are_some contents li;
+          assert (coherent_at al phys contents rs li);
+          Mod.circular_index_in_bounds rs li al;
+          // phys_index rs li al == (rs + li) % al
+          // li = (al - rs) + i, so rs + li = al + i
+          // (al + i) % al = i = off2 + i (since off2 = 0)
+          ML.lemma_mod_plus i 1 al;
+          assert ((rs + li) % al == i)
+      in
+      FStar.Classical.forall_intro aux
+
+/// Combined: both segments are correct
+let read_segments_correct
+  (al: pos) (phys: Seq.seq byte{Seq.length phys == al})
+  (contents: Seq.seq (option byte){Seq.length contents == al})
+  (rs: nat{rs < al}) (n: nat{n <= al})
+  (cpl: nat{cpl >= n})
+  : Lemma
+    (requires
+      phys_log_coherent al phys contents rs /\
+      cpl <= GT.contiguous_prefix_length contents)
+    (ensures (
+      let segs = compute_read_segments rs n al in
+      // Segment 1 data matches
+      (forall (i:nat{i < segs.len1}).
+        Some? (Seq.index contents i) /\
+        Seq.index phys (segs.off1 + i) == Some?.v (Seq.index contents i)) /\
+      // Segment 2 data matches
+      (forall (i:nat{i < segs.len2}).
+        Some? (Seq.index contents (segs.len1 + i)) /\
+        Seq.index phys (segs.off2 + i) == Some?.v (Seq.index contents (segs.len1 + i)))))
+  = read_segments_seg1_correct al phys contents rs n cpl;
+    read_segments_seg2_correct al phys contents rs n cpl
+
+/// Slice equality: phys[off1..off1+len1) == the logical bytes for [0..len1)
+let read_segments_slice_eq
+  (al: pos) (phys: Seq.seq byte{Seq.length phys == al})
+  (contents: Seq.seq (option byte){Seq.length contents == al})
+  (rs: nat{rs < al}) (n: nat{n <= al})
+  (cpl: nat{cpl >= n})
+  : Lemma
+    (requires
+      phys_log_coherent al phys contents rs /\
+      cpl <= GT.contiguous_prefix_length contents)
+    (ensures (
+      let segs = compute_read_segments rs n al in
+      let s1 = Seq.slice phys segs.off1 (segs.off1 + segs.len1) in
+      let s2 = Seq.slice phys segs.off2 (segs.off2 + segs.len2) in
+      // Each byte in s1 matches the logical contents
+      (forall (i:nat{i < segs.len1}).
+        Some? (Seq.index contents i) /\
+        Seq.index s1 i == Some?.v (Seq.index contents i)) /\
+      // Each byte in s2 matches the logical contents
+      (forall (i:nat{i < segs.len2}).
+        Some? (Seq.index contents (segs.len1 + i)) /\
+        Seq.index s2 i == Some?.v (Seq.index contents (segs.len1 + i)))))
+  = read_segments_correct al phys contents rs n cpl;
+    let segs = compute_read_segments rs n al in
+    let aux1 (i:nat{i < segs.len1})
+      : Lemma (Seq.index (Seq.slice phys segs.off1 (segs.off1 + segs.len1)) i
+               == Seq.index phys (segs.off1 + i))
+      = Seq.lemma_index_slice phys segs.off1 (segs.off1 + segs.len1) i
+    in
+    FStar.Classical.forall_intro aux1;
+    let aux2 (i:nat{i < segs.len2})
+      : Lemma (Seq.index (Seq.slice phys segs.off2 (segs.off2 + segs.len2)) i
+               == Seq.index phys (segs.off2 + i))
+      = Seq.lemma_index_slice phys segs.off2 (segs.off2 + segs.len2) i
+    in
+    FStar.Classical.forall_intro aux2
+
+/// --- Out-of-order write helpers ---
+
+/// cb_wf is preserved by write_range_contents (contents length unchanged)
+let write_range_preserves_wf
+  (st: cb_state) (offset: nat) (data: Seq.seq byte)
+  : Lemma
+    (requires cb_wf st /\ offset + Seq.length data <= st.alloc_length)
+    (ensures cb_wf { st with contents = GT.write_range_contents st.contents offset data })
+  = ()
+
+/// Transfer coherence from Seq.slice to full data for OOO write (no-resize case)
+let write_ooo_coherence_transfer
+  (al: pos) (phys: Seq.seq byte{Seq.length phys == al})
+  (contents: Seq.seq (option byte){Seq.length contents == al})
+  (rs: nat{rs < al})
+  (offset: nat) (data: Seq.seq byte) (n: nat) (write_len: nat)
+  : Lemma
+    (requires
+      n <= write_len /\
+      write_len == Seq.length data /\
+      false == (n < write_len) /\
+      offset + write_len <= al /\
+      phys_log_coherent al phys
+        (GT.write_range_contents contents offset (Seq.slice data 0 n))
+        rs)
+    (ensures
+      phys_log_coherent al phys
+        (GT.write_range_contents contents offset data)
+        rs)
+  = assert (n == Seq.length data);
+    Seq.lemma_eq_intro (Seq.slice data 0 n) data;
+    Seq.lemma_eq_elim (Seq.slice data 0 n) data
+
+/// --- RangeMap ↔ Contents Bridge ---
+
+module RMSpec = Pulse.Lib.RangeMap.Spec
+
+/// Bridge: RangeMap intervals (absolute offsets) match the option-byte contents.
+/// Intervals use absolute stream positions; contents is indexed relative to base_offset.
+/// For every position i, mem repr (base_offset + i) <==> Some? contents[i].
+/// All interval endpoints are bounded by base_offset + Seq.length contents.
+let ranges_match_contents
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat) : prop =
+  Seq.length contents > 0 /\
+  (forall (i:nat{i < Seq.length contents}).
+    RMSpec.mem repr (base_offset + i) <==> Some? (Seq.index contents i)) /\
+  RMSpec.range_map_bounded repr (base_offset + Seq.length contents)
+
+/// base_offset is within the first interval (or repr is empty).
+/// Invariant of the CircularBuffer: first interval starts at 0 and base_offset
+/// only advances by drain (contiguous_from), so it stays within the first interval.
+let base_aligned (repr: Seq.seq RMSpec.interval) (base_offset: nat) : prop =
+  Seq.length repr = 0 \/
+  (let first = Seq.index repr 0 in first.low <= base_offset /\ base_offset <= RMSpec.high first)
+
+/// Empty repr matches all-None contents (base_offset = 0), and is trivially base_aligned.
+let ranges_match_empty (al: pos)
+  : Lemma (ranges_match_contents Seq.empty (Seq.create al (None #byte)) 0 /\
+           base_aligned Seq.empty 0)
+  = let contents : Seq.seq (option byte) = Seq.create al None in
+    let aux (i:nat{i < Seq.length contents})
+      : Lemma (RMSpec.mem Seq.empty (0 + i) <==> Some? (Seq.index contents i))
+      = ()
+    in
+    FStar.Classical.forall_intro aux
+
+/// Writing data preserves the bridge.
+/// add_range uses absolute offset (base_offset + rel_offset).
+let ranges_match_write
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat) (rel_offset: nat) (data: Seq.seq byte)
+  : Lemma
+    (requires
+      ranges_match_contents repr contents base_offset /\
+      Seq.length data > 0 /\
+      rel_offset + Seq.length data <= Seq.length contents)
+    (ensures
+      ranges_match_contents
+        (RMSpec.add_range repr (base_offset + rel_offset) (Seq.length data))
+        (GT.write_range_contents contents rel_offset data)
+        base_offset)
+  = let len = Seq.length data in
+    let abs_offset = base_offset + rel_offset in
+    let new_repr = RMSpec.add_range repr abs_offset len in
+    let new_contents = GT.write_range_contents contents rel_offset data in
+    let aux (i:nat{i < Seq.length new_contents})
+      : Lemma (RMSpec.mem new_repr (base_offset + i) <==> Some? (Seq.index new_contents i))
+      = GT.write_range_index contents rel_offset data i;
+        let abs_i = base_offset + i in
+        if rel_offset <= i && i < rel_offset + len then (
+          assert (abs_offset <= abs_i && abs_i < abs_offset + len);
+          RMSpec.add_range_mem_new repr abs_offset len abs_i
+        ) else (
+          assert (Seq.index new_contents i == Seq.index contents i);
+          assert (not (abs_offset <= abs_i && abs_i < abs_offset + len));
+          if Some? (Seq.index contents i) then (
+            assert (RMSpec.mem repr abs_i);
+            RMSpec.add_range_mem_old repr abs_offset len abs_i
+          ) else ();
+          if RMSpec.mem new_repr abs_i then (
+            RMSpec.add_range_mem_inv repr abs_offset len abs_i;
+            assert (RMSpec.mem repr abs_i)
+          ) else ()
+        )
+    in
+    FStar.Classical.forall_intro aux;
+    RMSpec.add_range_bounded repr abs_offset len (base_offset + Seq.length contents)
+
+/// Resize preserves the bridge: extending contents with Nones doesn't break the correspondence.
+let ranges_match_resize
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat)
+  (old_al: pos) (new_al: pos)
+  : Lemma
+    (requires
+      ranges_match_contents repr contents base_offset /\
+      Seq.length contents == old_al /\
+      new_al >= old_al)
+    (ensures
+      ranges_match_contents repr (resized_contents old_al new_al contents) base_offset)
+  = let new_c = resized_contents old_al new_al contents in
+    let aux (i:nat{i < Seq.length new_c})
+      : Lemma (RMSpec.mem repr (base_offset + i) <==> Some? (Seq.index new_c i))
+      = if i < old_al then ()
+        else RMSpec.mem_bounded repr (base_offset + old_al) (base_offset + i)
+    in
+    FStar.Classical.forall_intro aux;
+    RMSpec.range_map_bounded_monotone repr (base_offset + old_al) (base_offset + new_al)
+
+/// Lower bound: contiguous_from is always <= contiguous_prefix_length.
+/// Does NOT require base_aligned. When base_aligned holds, use ranges_match_prefix for equality.
+let ranges_match_prefix_lower
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat)
+  : Lemma
+    (requires ranges_match_contents repr contents base_offset /\
+             RMSpec.range_map_wf repr)
+    (ensures RMSpec.contiguous_from repr base_offset <= GT.contiguous_prefix_length contents)
+  = RMSpec.cf_bounded repr base_offset (base_offset + Seq.length contents);
+    let cf = RMSpec.contiguous_from repr base_offset in
+    GT.prefix_length_bounded contents;
+    if cf > 0 then (
+      let first = Seq.index repr 0 in
+      assert (first.low <= base_offset /\ base_offset < RMSpec.high first);
+      assert (cf == RMSpec.high first - base_offset);
+      assert (cf <= Seq.length contents);
+      let aux (i:nat{i < cf})
+        : Lemma (Some? (Seq.index contents i))
+        = assert (i < Seq.length contents);
+          assert (base_offset + i < RMSpec.high first);
+          assert (first.low <= base_offset + i);
+          assert (RMSpec.in_interval first (base_offset + i));
+          assert (RMSpec.mem repr (base_offset + i))
+      in
+      FStar.Classical.forall_intro aux;
+      GT.all_some_prefix_ge contents cf
+    ) else ()
+
+/// Prefix equivalence: under the bridge + base_aligned,
+/// contiguous_from(repr, base_offset) == contiguous_prefix_length(contents).
+#push-options "--z3rlimit_factor 4 --fuel 2 --ifuel 1"
+let ranges_match_prefix
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat)
+  : Lemma
+    (requires ranges_match_contents repr contents base_offset /\
+             RMSpec.range_map_wf repr /\
+             base_aligned repr base_offset)
+    (ensures RMSpec.contiguous_from repr base_offset == GT.contiguous_prefix_length contents)
+  = RMSpec.cf_bounded repr base_offset (base_offset + Seq.length contents);
+    let cf = RMSpec.contiguous_from repr base_offset in
+    let cpl = GT.contiguous_prefix_length contents in
+    GT.prefix_length_bounded contents;
+    // Direction 1: cf <= cpl
+    if cf > 0 then (
+      let first = Seq.index repr 0 in
+      assert (first.low <= base_offset /\ base_offset < RMSpec.high first);
+      assert (cf == RMSpec.high first - base_offset);
+      assert (cf <= Seq.length contents);
+      let aux (i:nat{i < cf})
+        : Lemma (Some? (Seq.index contents i))
+        = assert (i < Seq.length contents);
+          assert (base_offset + i < RMSpec.high first);
+          assert (first.low <= base_offset + i);
+          assert (RMSpec.in_interval first (base_offset + i));
+          assert (RMSpec.mem repr (base_offset + i))
+      in
+      FStar.Classical.forall_intro aux;
+      GT.all_some_prefix_ge contents cf
+    ) else ();
+    // Direction 2: cpl <= cf (by contradiction: assume cpl > cf, derive false)
+    if cpl > cf then (
+      GT.prefix_elements_are_some contents cf;
+      assert (Some? (Seq.index contents cf));
+      assert (RMSpec.mem repr (base_offset + cf));
+      if Seq.length repr = 0 then ()
+      else (
+        let first = Seq.index repr 0 in
+        // From base_aligned: first.low <= base_offset <= high first
+        if first.low <= base_offset && base_offset < RMSpec.high first then (
+          // cf = high first - base_offset, so base_offset + cf = high first
+          // high first is NOT in the first interval (boundary), so must be in tail
+          assert (not (RMSpec.in_interval first (base_offset + cf)));
+          RMSpec.mem_tail repr (base_offset + cf);
+          if Seq.length (Seq.tail repr) > 0 then
+            // tail membership implies position > high first, but position = high first
+            RMSpec.mem_wf_tail_gt repr (base_offset + cf)
+          else ()
+        ) else (
+          // first.low <= base_offset (from base_aligned) AND NOT (base_offset < high first)
+          // AND base_offset <= high first (from base_aligned)
+          // Therefore base_offset = high first, and cf = 0
+          assert (base_offset == RMSpec.high first);
+          assert (not (RMSpec.in_interval first base_offset));
+          RMSpec.mem_tail repr base_offset;
+          if Seq.length (Seq.tail repr) > 0 then
+            // tail membership implies position > high first = base_offset, contradiction
+            RMSpec.mem_wf_tail_gt repr base_offset
+          else ()
+        )
+      )
+    ) else ()
+#pop-options
+
+/// Drain preservation: the bridge is automatically preserved by index substitution.
+let ranges_match_drain
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat) (n: nat)
+  : Lemma
+    (requires ranges_match_contents repr contents base_offset /\
+             n <= Seq.length contents /\
+             Seq.length contents - n > 0)
+    (ensures ranges_match_contents repr (Seq.slice contents n (Seq.length contents)) (base_offset + n))
+  = let new_contents = Seq.slice contents n (Seq.length contents) in
+    let new_base = base_offset + n in
+    let aux (i:nat{i < Seq.length new_contents})
+      : Lemma (RMSpec.mem repr (new_base + i) <==> Some? (Seq.index new_contents i))
+      = assert (new_base + i == base_offset + (n + i));
+        assert (Seq.index new_contents i == Seq.index contents (n + i))
+    in
+    FStar.Classical.forall_intro aux;
+    assert (base_offset + Seq.length contents == new_base + Seq.length new_contents)
+
+/// Drain with padding: bridge preserved for drained_contents (slice + None padding).
+/// This is what the actual CircularBuffer drain uses (keeps length = alloc_length).
+#push-options "--z3rlimit_factor 2"
+let ranges_match_drain_padded
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat) (n: nat)
+  : Lemma
+    (requires ranges_match_contents repr contents base_offset /\
+             n <= Seq.length contents)
+    (ensures ranges_match_contents repr
+               (drained_contents (Seq.length contents) contents n)
+               (base_offset + n))
+  = let al = Seq.length contents in
+    let new_contents = drained_contents al contents n in
+    let new_base = base_offset + n in
+    assert (Seq.length new_contents == al);
+    assert (al > 0);
+    let aux (i:nat{i < al})
+      : Lemma (RMSpec.mem repr (new_base + i) <==> Some? (Seq.index new_contents i))
+      = if i < al - n then (
+          // Position in sliced region: new_contents[i] = contents[n + i]
+          assert (Seq.index new_contents i == Seq.index contents (n + i));
+          assert (new_base + i == base_offset + (n + i));
+          assert (n + i < al)
+        ) else (
+          // Position in padding region: new_contents[i] = None
+          assert (Seq.index new_contents i == None #byte);
+          // base_offset + (n + i) >= base_offset + al, beyond all intervals
+          assert (new_base + i == base_offset + (n + i));
+          assert (n + i >= al);
+          RMSpec.mem_bounded repr (base_offset + al) (base_offset + (n + i))
+        )
+    in
+    FStar.Classical.forall_intro aux;
+    // Bounded: old bound (base_offset + al) <= new bound (base_offset + n + al)
+    RMSpec.range_map_bounded_monotone repr (base_offset + al) (base_offset + n + al)
+#pop-options
+
+/// Drain preserves base_aligned when draining at most contiguous_from bytes.
+let drain_preserves_base_aligned
+  (repr: Seq.seq RMSpec.interval)
+  (base_offset: nat) (n: nat)
+  : Lemma
+    (requires base_aligned repr base_offset /\
+             n <= RMSpec.contiguous_from repr base_offset)
+    (ensures base_aligned repr (base_offset + n))
+  = if Seq.length repr = 0 then ()
+    else (
+      let first = Seq.index repr 0 in
+      if first.low <= base_offset && base_offset < RMSpec.high first then (
+        assert (RMSpec.contiguous_from repr base_offset == RMSpec.high first - base_offset);
+        assert (base_offset + n <= RMSpec.high first)
+      ) else (
+        assert (base_offset + n == base_offset)
+      )
+    )
+
+/// 3-way invariant: empty, gap (first starts after base), or base_aligned.
+/// Excludes the unreachable case where first starts at/before base but base is past the end.
+let repr_well_positioned (repr: Seq.seq RMSpec.interval) (base_offset: nat) : prop =
+  Seq.length repr = 0 \/
+  (Seq.index repr 0).low > base_offset \/
+  ((Seq.index repr 0).low <= base_offset /\ base_offset <= RMSpec.high (Seq.index repr 0))
+
+/// repr_well_positioned subsumes base_aligned
+let base_aligned_implies_rwp (repr: Seq.seq RMSpec.interval) (base_offset: nat)
+  : Lemma (requires base_aligned repr base_offset)
+          (ensures repr_well_positioned repr base_offset) = ()
+
+/// repr_well_positioned implies cf == cpl (the key property for drain_rm postconditions)
+let rwp_cf_eq_cpl
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat)
+  : Lemma
+    (requires ranges_match_contents repr contents base_offset /\
+             RMSpec.range_map_wf repr /\
+             repr_well_positioned repr base_offset)
+    (ensures RMSpec.contiguous_from repr base_offset == GT.contiguous_prefix_length contents)
+  = if Seq.length repr = 0 then (
+      // Empty repr: no members, all None
+      ranges_match_prefix repr contents base_offset
+    ) else if (Seq.index repr 0).low > base_offset then (
+      // Gap state: first starts after base
+      // cf = 0 (first doesn't cover base)
+      assert (RMSpec.contiguous_from repr base_offset == 0);
+      // position base_offset is not a member (below first.low, which is the lowest)
+      // So contents[0] = None, hence cpl = 0
+      let first = Seq.index repr 0 in
+      assert (not (RMSpec.in_interval first base_offset));
+      RMSpec.mem_not_below_first repr base_offset;
+      assert (not (RMSpec.mem repr base_offset));
+      // contents[0] = None since mem repr (base_offset + 0) = false
+      assert (Seq.length contents > 0);
+      // cpl = 0 since contents[0] = None (from ranges_match_contents + non-membership)
+      assert (not (Some? (Seq.index contents 0)));
+      assert (GT.contiguous_prefix_length contents == 0)
+    ) else (
+      // base_aligned: first.low <= base_offset <= high first
+      ranges_match_prefix repr contents base_offset
+    )
+
+/// Write preserves repr_well_positioned
+let write_preserves_rwp
+  (repr: Seq.seq RMSpec.interval) (base_offset: nat) (rel_offset: nat) (len: pos)
+  : Lemma
+    (requires RMSpec.range_map_wf repr /\
+             repr_well_positioned repr base_offset)
+    (ensures repr_well_positioned (RMSpec.add_range repr (base_offset + rel_offset) len) base_offset)
+  = let offset = base_offset + rel_offset in
+    let r = RMSpec.add_range repr offset len in
+    if Seq.length repr = 0 then (
+      // Empty repr: add creates [{offset, len}]
+      if rel_offset = 0 then
+        // Write at base: new first at base, base_aligned
+        RMSpec.add_range_at_base_establishes_aligned repr base_offset len
+      else
+        // Gap write: new first at offset > base
+        RMSpec.add_range_preserves_gap repr base_offset offset len
+    ) else if (Seq.index repr 0).low > base_offset then (
+      // Gap state
+      if rel_offset = 0 then
+        // Write at base into gap state: establishes base_aligned
+        RMSpec.add_range_at_base_establishes_aligned repr base_offset len
+      else
+        // Gap write: offset > base_offset, preserves gap
+        RMSpec.add_range_preserves_gap repr base_offset offset len
+    ) else (
+      // base_aligned: first.low <= base_offset <= high first
+      // offset = base_offset + rel_offset >= base_offset >= first.low
+      RMSpec.add_range_base_aligned repr base_offset offset len
+    )
+
+/// Drain preserves repr_well_positioned
+let drain_preserves_rwp
+  (repr: Seq.seq RMSpec.interval) (base_offset: nat) (n: nat)
+  : Lemma
+    (requires repr_well_positioned repr base_offset /\
+             n <= RMSpec.contiguous_from repr base_offset)
+    (ensures repr_well_positioned repr (base_offset + n))
+  = if Seq.length repr = 0 then ()
+    else if (Seq.index repr 0).low > base_offset then (
+      // Gap state: cf = 0, n = 0
+      assert (RMSpec.contiguous_from repr base_offset == 0);
+      assert (n == 0)
+    ) else (
+      // base_aligned: drain preserves it
+      drain_preserves_base_aligned repr base_offset n
+    )
+
+/// Master lemma: write preserves cf == cpl under the 3-way invariant
+#push-options "--z3rlimit_factor 2"
+let write_preserves_cf_eq_cpl
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat)
+  (rel_offset: nat)
+  (data: Seq.seq byte)
+  : Lemma
+    (requires
+      ranges_match_contents repr contents base_offset /\
+      RMSpec.range_map_wf repr /\
+      repr_well_positioned repr base_offset /\
+      RMSpec.contiguous_from repr base_offset == GT.contiguous_prefix_length contents /\
+      Seq.length data > 0 /\
+      rel_offset + Seq.length data <= Seq.length contents)
+    (ensures (
+      let new_repr = RMSpec.add_range repr (base_offset + rel_offset) (Seq.length data) in
+      let new_contents = GT.write_range_contents contents rel_offset data in
+      RMSpec.contiguous_from new_repr base_offset ==
+        GT.contiguous_prefix_length new_contents))
+  = let len = Seq.length data in
+    let new_repr = RMSpec.add_range repr (base_offset + rel_offset) len in
+    let new_contents = GT.write_range_contents contents rel_offset data in
+    // Prove preservation of ranges_match_contents and wf for new state
+    ranges_match_write repr contents base_offset rel_offset data;
+    RMSpec.add_range_wf repr (base_offset + rel_offset) len;
+    // Prove repr_well_positioned for new state
+    write_preserves_rwp repr base_offset rel_offset len;
+    // Use rwp_cf_eq_cpl on new state
+    rwp_cf_eq_cpl new_repr new_contents base_offset
+#pop-options
+
+/// --- Trim Write (for absolute-offset API) ---
+
+/// Trim a write to remove bytes before base_offset (already consumed).
+/// Returns (relative_offset, trimmed_data_length, skip_count).
+/// skip_count is the number of leading bytes to skip from src.
+let trim_write_params (abs_offset: nat) (write_len: nat) (base_offset: nat)
+  : (nat & nat & nat)   // (rel_offset, trimmed_len, skip)
+  = let abs_end = abs_offset + write_len in
+    if abs_end <= base_offset then (0, 0, 0)   // fully stale — no bytes to write
+    else if abs_offset >= base_offset then
+      (abs_offset - base_offset, write_len, 0)  // no overlap — all bytes valid
+    else
+      let skip = base_offset - abs_offset in    // partial overlap — skip consumed prefix
+      (0, write_len - skip, skip)
+
+/// Stale check: true if the entire write is before base_offset
+let is_stale_write (abs_offset: nat) (write_len: nat) (base_offset: nat) : bool =
+  abs_offset + write_len <= base_offset
+
+/// After trimming, the relative offset + trimmed length fits in alloc_length
+/// if the original absolute write fits in base_offset + alloc_length.
+let trim_write_in_bounds
+  (abs_offset: nat) (write_len: nat) (base_offset: nat) (alloc_length: nat)
+  : Lemma
+    (requires
+      write_len > 0 /\
+      abs_offset + write_len <= base_offset + alloc_length /\
+      not (is_stale_write abs_offset write_len base_offset))
+    (ensures (
+      let (rel_off, tlen, skip) = trim_write_params abs_offset write_len base_offset in
+      rel_off + tlen <= alloc_length /\
+      skip + tlen == write_len /\
+      tlen > 0))
+  = ()
+
+/// The trimmed write produces the same logical result as writing only the
+/// non-stale portion: write_range_contents at rel_offset with data[skip..].
+let trim_write_equiv
+  (abs_offset: nat) (write_len: nat) (base_offset: nat)
+  (contents: Seq.seq (option byte)) (data: Seq.seq byte)
+  : Lemma
+    (requires
+      Seq.length data == write_len /\
+      not (is_stale_write abs_offset write_len base_offset) /\
+      (let (rel_off, tlen, skip) = trim_write_params abs_offset write_len base_offset in
+       rel_off + tlen <= Seq.length contents))
+    (ensures (
+      let (rel_off, tlen, skip) = trim_write_params abs_offset write_len base_offset in
+      GT.write_range_contents_t contents rel_off (Seq.slice data skip (skip + tlen)) ==
+      GT.write_range_contents contents rel_off (Seq.slice data skip (skip + tlen))))
+  = let (rel_off, tlen, skip) = trim_write_params abs_offset write_len base_offset in
+    GT.write_range_contents_t_eq contents rel_off (Seq.slice data skip (skip + tlen))
+
+/// Needed resize size: smallest pow2 >= abs_end - base_offset
+let needed_alloc_for_write (abs_offset: nat) (write_len: nat) (base_offset: nat) : nat =
+  if abs_offset + write_len <= base_offset then 0
+  else abs_offset + write_len - base_offset
