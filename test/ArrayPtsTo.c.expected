@@ -1,0 +1,10 @@
+/* krml header omitted for test repeatability */
+
+
+#include "ArrayPtsTo.h"
+
+uint32_t ArrayPtsTo_test(uint32_t *a)
+{
+  a[(size_t)0U] = 42U;
+  return a[(size_t)1U];
+}
