@@ -294,80 +294,6 @@ let resize_result (st: cb_state) (new_al: pos) : cb_state =
       contents = resized_contents st.alloc_length new_al st.contents }
   else st
 
-/// --- Gapless Property (for sequential writes) ---
-
-/// A gapless buffer has all positions >= prefix as None
-let gapless (st: cb_state) : prop =
-  let pl = GT.contiguous_prefix_length st.contents in
-  forall (i:nat). (i >= pl /\ i < Seq.length st.contents) ==> None? (Seq.index st.contents i)
-
-/// Writing at the prefix position in a gapless buffer gives prefix + 1
-let gapless_write_extends_prefix
-  (al: pos)
-  (contents: Seq.seq (option byte){Seq.length contents == al})
-  (b: byte)
-  : Lemma
-    (requires
-      GT.contiguous_prefix_length contents < al /\
-      (forall (i:nat). (i >= GT.contiguous_prefix_length contents /\ i < al) ==>
-        None? (Seq.index contents i)))
-    (ensures (
-      let pl = GT.contiguous_prefix_length contents in
-      let c' = Seq.upd contents pl (Some b) in
-      GT.contiguous_prefix_length c' == pl + 1))
-  = let pl = GT.contiguous_prefix_length contents in
-    let c' = Seq.upd contents pl (Some b) in
-    GT.prefix_length_bounded contents;
-    // [0, pl) are Some in c' (unchanged from original)
-    let aux1 (k:nat{k < pl + 1}) : Lemma (Some? (Seq.index c' k))
-      = if k < pl then begin
-          GT.prefix_elements_are_some contents k;
-          Seq.lemma_index_upd2 contents pl (Some b) k
-        end
-        else Seq.lemma_index_upd1 contents pl (Some b)
-    in
-    FStar.Classical.forall_intro aux1;
-    // position pl+1 is None in c' (if it exists)
-    if pl + 1 < al then begin
-      assert (None? (Seq.index contents (pl + 1)));
-      Seq.lemma_index_upd2 contents pl (Some b) (pl + 1)
-    end;
-    GT.cpl_characterization c' (pl + 1)
-
-/// Gapless is preserved by resize (padding with Nones)
-let gapless_preserved_by_resize (st: cb_state) (new_al: pos)
-  : Lemma
-    (requires cb_wf st /\ gapless st /\ new_al >= st.alloc_length)
-    (ensures gapless (resize_result st new_al))
-  = resize_prefix_length st.alloc_length new_al st.contents
-
-/// Sequential range write: prefix grows by data length, gapless preserved
-let rec write_range_sequential_prefix
-  (al: pos) (contents: Seq.seq (option byte){Seq.length contents == al})
-  (data: Seq.seq byte) (pl: nat)
-  : Lemma
-    (requires
-      pl + Seq.length data <= al /\
-      GT.contiguous_prefix_length contents == pl /\
-      (forall (i:nat). (i >= pl /\ i < al) ==> None? (Seq.index contents i)))
-    (ensures (
-      let c' = GT.write_range_contents contents pl data in
-      GT.contiguous_prefix_length c' == pl + Seq.length data /\
-      (forall (i:nat). (i >= pl + Seq.length data /\ i < al) ==> None? (Seq.index c' i))))
-    (decreases (Seq.length data))
-  = if Seq.length data = 0 then ()
-    else begin
-      let b = Seq.index data 0 in
-      let c1 = Seq.upd contents pl (Some b) in
-      gapless_write_extends_prefix al contents b;
-      let aux (i:nat{i >= pl + 1 /\ i < al})
-        : Lemma (None? (Seq.index c1 i))
-        = Seq.lemma_index_upd2 contents pl (Some b) i
-      in
-      FStar.Classical.forall_intro aux;
-      write_range_sequential_prefix al c1 (Seq.tail data) (pl + 1)
-    end
-
 /// Transfer coherence across Seq.equal contents
 let phys_log_coherent_seq_equal
   (al: pos) (phys: Seq.seq byte{Seq.length phys == al})
@@ -406,80 +332,6 @@ let write_step_coherence
       (Seq.upd old_c (offset + i) (Some b))
       (GT.write_range_contents contents offset (Seq.slice data 0 (i + 1)))
       rs
-
-/// --- Write-buffer resize fold helpers ---
-/// Each lemma proves one conjunct of the is_circular_buffer fold in the resize branch.
-
-/// The new state after resize + sequential write is well-formed.
-let write_buffer_resize_wf
-  (st: cb_state) (new_al: pos) (data: Seq.seq byte)
-  : Lemma
-    (requires
-      cb_wf st /\
-      Pow2.is_pow2 new_al /\
-      new_al >= st.alloc_length /\
-      new_al <= st.virtual_length /\
-      new_al <= cb_max_length /\
-      GT.contiguous_prefix_length st.contents + Seq.length data <= new_al)
-    (ensures
-      cb_wf { st with
-        read_start = 0;
-        alloc_length = new_al;
-        contents = GT.write_range_contents
-          (resized_contents st.alloc_length new_al st.contents)
-          (GT.contiguous_prefix_length st.contents) data })
-  = ()
-
-/// The prefix length of the new state equals pl + length of data.
-let write_buffer_resize_prefix
-  (st: cb_state) (new_al: pos) (data: Seq.seq byte)
-  : Lemma
-    (requires
-      cb_wf st /\ gapless st /\
-      new_al >= st.alloc_length /\
-      Pow2.is_pow2 new_al /\
-      new_al <= st.virtual_length /\
-      GT.contiguous_prefix_length st.contents + Seq.length data <= new_al)
-    (ensures (
-      let pl = GT.contiguous_prefix_length st.contents in
-      let rc = resized_contents st.alloc_length new_al st.contents in
-      let nc = GT.write_range_contents rc pl data in
-      GT.contiguous_prefix_length nc == pl + Seq.length data))
-  = let pl = GT.contiguous_prefix_length st.contents in
-    let rc = resized_contents st.alloc_length new_al st.contents in
-    resize_prefix_length st.alloc_length new_al st.contents;
-    gapless_preserved_by_resize st new_al;
-    // gapless on resized state means all positions >= pl in rc are None
-    let aux (i:nat{i >= pl /\ i < new_al}) : Lemma (None? (Seq.index rc i)) = ()
-    in
-    FStar.Classical.forall_intro aux;
-    write_range_sequential_prefix new_al rc data pl
-
-/// Transfer coherence from Seq.slice data 0 n to data when the loop exit
-/// condition says n is not less than write_len (== Seq.length data).
-/// The precondition uses `false == (n < write_len)` instead of `n == Seq.length data`
-/// because that's exactly what Pulse's bool-bound while invariant provides.
-let write_buffer_resize_coherence_transfer
-  (al: pos) (phys: Seq.seq byte{Seq.length phys == al})
-  (old_al: pos) (contents: Seq.seq (option byte){Seq.length contents == old_al})
-  (pl: nat) (data: Seq.seq byte) (n: nat) (write_len: nat)
-  : Lemma
-    (requires
-      n <= write_len /\
-      write_len == Seq.length data /\
-      false == (n < write_len) /\
-      al >= old_al /\
-      pl + write_len <= al /\
-      phys_log_coherent al phys
-        (GT.write_range_contents (resized_contents old_al al contents) pl (Seq.slice data 0 n))
-        0)
-    (ensures
-      phys_log_coherent al phys
-        (GT.write_range_contents (resized_contents old_al al contents) pl data)
-        0)
-  = assert (n == Seq.length data);
-    Seq.lemma_eq_intro (Seq.slice data 0 n) data;
-    Seq.lemma_eq_elim (Seq.slice data 0 n) data
 
 /// --- Read step helper ---
 /// Extends the read_buffer loop invariant from k<vi to k<vi+1.
@@ -993,6 +845,18 @@ let repr_well_positioned (repr: Seq.seq RMSpec.interval) (base_offset: nat) : pr
 let base_aligned_implies_rwp (repr: Seq.seq RMSpec.interval) (base_offset: nat)
   : Lemma (requires base_aligned repr base_offset)
           (ensures repr_well_positioned repr base_offset) = ()
+
+/// Empty repr matches create_nones contents (base_offset = 0), with all invariants.
+let ranges_match_create_nones (al: pos)
+  : Lemma (ranges_match_contents Seq.empty (GT.create_nones al) 0 /\
+           RMSpec.range_map_wf Seq.empty /\
+           repr_well_positioned Seq.empty 0)
+  = let contents = GT.create_nones al in
+    let aux (i:nat{i < Seq.length contents})
+      : Lemma (RMSpec.mem Seq.empty (0 + i) <==> Some? (Seq.index contents i))
+      = GT.create_nones_all_none al i
+    in
+    FStar.Classical.forall_intro aux
 
 /// repr_well_positioned implies cf == cpl (the key property for drain_rm postconditions)
 let rwp_cf_eq_cpl
