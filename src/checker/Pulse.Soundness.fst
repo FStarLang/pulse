@@ -310,6 +310,7 @@ let rec soundness (g:stt_env)
 
     | T_ForwardJumpLabel .. -> admit ()
     | T_Goto .. -> admit ()
+    | T_Cleanup .. -> admit ()
 #pop-options
 
 let soundness_lemma

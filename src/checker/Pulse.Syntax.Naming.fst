@@ -237,6 +237,11 @@ let rec close_open_inverse_st'  (t:st_term)
     | Tm_Goto { lbl; arg } ->
       close_open_inverse' lbl x i;
       close_open_inverse' arg x i
+
+    | Tm_Cleanup { cleanup_pre; handler; body } ->
+      close_open_inverse' cleanup_pre x i;
+      close_open_inverse_st' handler x i;
+      close_open_inverse_st' body x i
 #pop-options
 
 let close_open_inverse (t:term) (x:var { ~(x `Set.mem` freevars t) } )

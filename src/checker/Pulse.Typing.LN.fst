@@ -300,6 +300,11 @@ let rec open_st_term_ln' (e:st_term)
       open_term_ln' lbl x i;
       open_term_ln' arg x i
 
+    | Tm_Cleanup { cleanup_pre; handler; body } ->
+      open_term_ln' cleanup_pre x i;
+      open_st_term_ln' handler x i;
+      open_st_term_ln' body x i
+
 // The Tm_Match? and __brs_of conditions are to prove that the ln_branches' below
 // satisfies the termination refinment.
 and open_branches_ln' (t:st_term{Tm_Match? t.term})
@@ -519,6 +524,11 @@ let rec ln_weakening_st (t:st_term) (i j:int)
       ln_weakening lbl i j;
       ln_weakening arg i j
 
+    | Tm_Cleanup { cleanup_pre; handler; body } ->
+      ln_weakening cleanup_pre i j;
+      ln_weakening_st handler i j;
+      ln_weakening_st body i j
+
 assume
 val r_open_term_ln_inv' (e:R.term) (x:R.term { RT.ln x }) (i:index)
   : Lemma 
@@ -727,6 +737,11 @@ let rec open_term_ln_inv_st' (t:st_term)
       open_term_ln_inv' lbl x i;
       open_term_ln_inv' arg x i
 
+    | Tm_Cleanup { cleanup_pre; handler; body } ->
+      open_term_ln_inv' cleanup_pre x i;
+      open_term_ln_inv_st' handler x i;
+      open_term_ln_inv_st' body x i
+
 #pop-options
 
 assume
@@ -931,6 +946,11 @@ let rec close_st_term_ln' (t:st_term) (x:var) (i:index)
     | Tm_Goto { lbl; arg } ->
       close_term_ln' lbl x i;
       close_term_ln' arg x i
+
+    | Tm_Cleanup { cleanup_pre; handler; body } ->
+      close_term_ln' cleanup_pre x i;
+      close_st_term_ln' handler x i;
+      close_st_term_ln' body x i
 
 #pop-options
 let close_comp_ln (c:comp) (v:var)
@@ -1289,5 +1309,6 @@ let rec st_typing_ln (#g:_) (#t:_) (#c:_)
 
     | T_ForwardJumpLabel .. -> admit ()
     | T_Goto .. -> admit ()
+    | T_Cleanup .. -> admit ()
 
 #pop-options

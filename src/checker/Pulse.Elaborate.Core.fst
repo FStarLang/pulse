@@ -297,6 +297,7 @@ let rec elab_st_typing (#g:env)
     
     | T_ForwardJumpLabel .. -> admit ()
     | T_Goto .. -> admit ()
+    | T_Cleanup .. -> admit ()
 
     | T_Unreachable .. ->
       `("IOU: elab_st_typing of T_Unreachable")

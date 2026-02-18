@@ -30,6 +30,7 @@ let rewrite_token (tok:FP.token)
     | IDENT "return" -> PP.RETURN
     | IDENT "continue" -> PP.CONTINUE
     | IDENT "break" -> PP.BREAK
+    | IDENT "cleanup" -> PP.CLEANUP
     (* the rest are just copied from FStarC_Parser_Parse *)
     | IDENT s -> PP.IDENT s
     | AMP -> PP.AMP
