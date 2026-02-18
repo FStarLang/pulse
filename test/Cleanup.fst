@@ -14,7 +14,7 @@ fn without_cleanup (x: bool) {
 
 fn with_cleanup (x: bool) {
   let v = V.alloc 1uy 10sz;
-  cleanup (V.pts_to v (Seq.create 10 1uy)) { V.free v };
+  cleanup live v { V.free v };
   if (x) {
     return;
   };

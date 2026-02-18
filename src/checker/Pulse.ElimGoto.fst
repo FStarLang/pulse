@@ -304,9 +304,13 @@ let rec conditionalize (g: env) (t: st_term) (cond: cond_params) : T.Tac (option
     | _ -> None
   )
   | Tm_Cleanup { cleanup_pre; handler; body } -> (
-    match conditionalize g body cond with
-    | None -> None
-    | Some body ->
+    match conditionalize g body cond, conditionalize g handler cond with
+    | None, None -> None
+    | Some body, None ->
+      Some { t with term = Tm_Cleanup { cleanup_pre; handler = add_write_if_necessary g handler cond; body } }
+    | None, Some handler ->
+      Some { t with term = Tm_Cleanup { cleanup_pre; handler; body = add_write_if_necessary g body cond } }
+    | Some body, Some handler ->
       Some { t with term = Tm_Cleanup { cleanup_pre; handler; body } }
   )
 
