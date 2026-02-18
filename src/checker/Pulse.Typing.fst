@@ -1144,11 +1144,12 @@ type st_typing : env -> st_term -> comp -> Type =
       cleanup_pre:slprop ->
       handler:st_term ->
       body:st_term ->
-      c_body:comp_st { comp_post c_body == tm_star (comp_post c_body) cleanup_pre \/ True } ->
+      c_body:comp_st ->
       c_handler:comp_st ->
       c:comp_st { comp_pre c == comp_pre c_body /\
                   comp_u c == comp_u c_body /\
-                  comp_res c == comp_res c_body } ->
+                  comp_res c == comp_res c_body /\
+                  comp_post c_body == tm_star (comp_post c) cleanup_pre } ->
       st_typing (push_post g cleanup_pre) body c_body ->
       st_typing g handler c_handler ->
       st_typing g (wtag (Some (ctag_of_comp_st c)) (Tm_Cleanup { cleanup_pre; handler; body })) c
