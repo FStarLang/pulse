@@ -1080,6 +1080,136 @@ let rec merge_absorbed_high_mono (s: Seq.seq interval) (mh: nat) (k: nat{k <= Se
   if k = 0 then ()
   else merge_absorbed_high_mono (Seq.tail s) (if mh > high (Seq.index s 0) then mh else high (Seq.index s 0)) (k - 1)
 
+/// Unfold from the right: merge_absorbed_high(s, mh, k+1) == max(merge_absorbed_high(s, mh, k), high(s[k]))
+/// This enables imperative loop invariant tracking where the last element absorbed is s[k]
+let rec merge_absorbed_high_unfold_right (s: Seq.seq interval) (mh: nat) (k: nat{k < Seq.length s})
+  : Lemma (ensures (let mh_k = merge_absorbed_high s mh k in
+                    merge_absorbed_high s mh (k + 1) ==
+                    (if mh_k > high (Seq.index s k) then mh_k else high (Seq.index s k))))
+          (decreases k) =
+  if k = 0 then begin
+    // Base case: merge_absorbed_high s mh 1 == max(mh, high(s[0]))
+    // LHS: merge_absorbed_high s mh 1
+    //      = merge_absorbed_high (Seq.tail s) (max(mh, high(s[0]))) 0
+    //      = max(mh, high(s[0]))
+    // RHS: merge_absorbed_high s mh 0 = mh, so max(mh, high(s[0]))
+    ()
+  end else begin
+    // Inductive case: use IH on (Seq.tail s) with mh' = max(mh, high(s[0])) and k-1
+    let mh' = if mh > high (Seq.index s 0) then mh else high (Seq.index s 0) in
+    // IH gives: merge_absorbed_high (Seq.tail s) mh' k ==
+    //           max(merge_absorbed_high (Seq.tail s) mh' (k-1), high((Seq.tail s)[k-1]))
+    merge_absorbed_high_unfold_right (Seq.tail s) mh' (k - 1);
+    // Note: Seq.index (Seq.tail s) (k - 1) == Seq.index s k
+    assert (Seq.index (Seq.tail s) (k - 1) == Seq.index s k);
+    // LHS: merge_absorbed_high s mh (k+1)
+    //      = merge_absorbed_high (Seq.tail s) mh' k        (by definition)
+    //      = max(merge_absorbed_high (Seq.tail s) mh' (k-1), high(s[k]))  (by IH)
+    //      = max(merge_absorbed_high s mh k, high(s[k]))   (by definition of mah(s, mh, k))
+    ()
+  end
+
+/// Step lemma: merge_absorbed_high(s, mh, k+1) == merge_absorbed_high(tail s, max(mh, high(s[0])), k)
+let merge_absorbed_high_step (s: Seq.seq interval) (mh: nat) (k: nat{k < Seq.length s})
+  : Lemma (ensures merge_absorbed_high s mh (k + 1) ==
+                   merge_absorbed_high (Seq.tail s) (if mh > high (Seq.index s 0) then mh else high (Seq.index s 0)) k) = ()
+
+/// Shift: merge_absorbed_high on slice (i..n) relates to original seq indexing
+let merge_absorbed_high_slice_step (s: Seq.seq interval) (base: nat) (mh: nat) (k: nat)
+  : Lemma (requires base + k + 1 <= Seq.length s /\ base + 1 <= Seq.length s)
+          (ensures (let suffix = Seq.slice s base (Seq.length s) in
+                    let mh' = (if mh > high (Seq.index s base) then mh else high (Seq.index s base)) in
+                    Seq.lemma_eq_intro (Seq.tail suffix) (Seq.slice s (base + 1) (Seq.length s));
+                    merge_absorbed_high suffix mh (k + 1) ==
+                    merge_absorbed_high (Seq.slice s (base + 1) (Seq.length s)) mh' k)) =
+  let suffix = Seq.slice s base (Seq.length s) in
+  Seq.lemma_eq_intro (Seq.tail suffix) (Seq.slice s (base + 1) (Seq.length s));
+  merge_absorbed_high_step suffix mh k
+
+/// Lemma: With range_map_wf, high values are strictly increasing
+let rec high_values_increasing (s: Seq.seq interval) (i j: nat)
+  : Lemma (requires range_map_wf s /\ i < j /\ j < Seq.length s)
+          (ensures high (Seq.index s i) < high (Seq.index s j))
+          (decreases j - i) =
+  if i + 1 = j then begin
+    // Adjacent case: from wf, high(s[i]) < s[j].low <= s[j].low < high(s[j])
+    range_map_wf_sorted s i j;
+    assert (high (Seq.index s i) < (Seq.index s j).low);
+    assert ((Seq.index s j).low < high (Seq.index s j))
+  end else begin
+    // Transitive case: i < j-1 < j
+    high_values_increasing s i (j - 1);
+    high_values_increasing s (j - 1) j;
+    assert (high (Seq.index s i) < high (Seq.index s (j - 1)));
+    assert (high (Seq.index s (j - 1)) < high (Seq.index s j))
+  end
+
+/// Lemma: For wf sequences with k > 0, merge_absorbed_high equals max(mh, high(s[k-1]))
+/// because high values are strictly increasing, so high(s[k-1]) dominates all earlier highs
+let rec merge_absorbed_high_eq_max_last (s: Seq.seq interval) (mh: nat) (k: nat)
+  : Lemma (requires range_map_wf s /\ 0 < k /\ k <= Seq.length s)
+          (ensures merge_absorbed_high s mh k == 
+                   (if mh > high (Seq.index s (k - 1)) then mh else high (Seq.index s (k - 1))))
+          (decreases k) =
+  if k = 1 then begin
+    // Base case: merge_absorbed_high s mh 1 == max(mh, high(s[0]))
+    ()
+  end else begin
+    // k > 1: by IH, merge_absorbed_high s mh (k-1) == max(mh, high(s[k-2]))
+    merge_absorbed_high_eq_max_last s mh (k - 1);
+    // By unfold_right: merge_absorbed_high s mh k == max(mah(s, mh, k-1), high(s[k-1]))
+    merge_absorbed_high_unfold_right s mh (k - 1);
+    // So: merge_absorbed_high s mh k == max(max(mh, high(s[k-2])), high(s[k-1]))
+    // By wf, high(s[k-2]) < high(s[k-1])
+    high_values_increasing s (k - 2) (k - 1);
+    assert (high (Seq.index s (k - 2)) < high (Seq.index s (k - 1)));
+    // Therefore: max(max(mh, high(s[k-2])), high(s[k-1])) == max(mh, high(s[k-1]))
+    ()
+  end
+
+/// Main lemma: From the running-max invariant plus wf, derive that mh0 covers absorbed elements
+/// 
+/// If merge_absorbed_high(s, mh0, k) >= s[k].low for some k, and range_map_wf holds,
+/// then mh0 >= s[k].low.
+/// 
+/// Proof: By merge_absorbed_high_eq_max_last, mah(s, mh0, k) = max(mh0, high(s[k-1])).
+///        By wf, high(s[k-1]) < s[k].low (from range_map_wf_sorted).
+///        So max(mh0, high(s[k-1])) >= s[k].low and high(s[k-1]) < s[k].low
+///        implies mh0 >= s[k].low.
+let mh0_covers_absorbed (s: Seq.seq interval) (mh0: nat) (k: nat)
+  : Lemma (requires range_map_wf s /\ 
+                    0 < k /\ k < Seq.length s /\
+                    merge_absorbed_high s mh0 k >= (Seq.index s k).low)
+          (ensures mh0 >= (Seq.index s k).low) =
+  // Step 1: Express merge_absorbed_high as max(mh0, high(s[k-1]))
+  merge_absorbed_high_eq_max_last s mh0 k;
+  assert (merge_absorbed_high s mh0 k == 
+          (if mh0 > high (Seq.index s (k - 1)) then mh0 else high (Seq.index s (k - 1))));
+  
+  // Step 2: Use wf to show high(s[k-1]) < s[k].low
+  range_map_wf_sorted s (k - 1) k;
+  assert (high (Seq.index s (k - 1)) < (Seq.index s k).low);
+  
+  // Step 3: From merge_absorbed_high s mh0 k >= s[k].low and high(s[k-1]) < s[k].low,
+  //         deduce mh0 >= s[k].low
+  let mah_val = merge_absorbed_high s mh0 k in
+  let s_k_low = (Seq.index s k).low in
+  let high_prev = high (Seq.index s (k - 1)) in
+  
+  assert (mah_val >= s_k_low);
+  assert (high_prev < s_k_low);
+  assert (mah_val == (if mh0 > high_prev then mh0 else high_prev));
+  
+  // Since high_prev < s_k_low and max(mh0, high_prev) >= s_k_low,
+  // we must have mh0 >= s_k_low
+  if mh0 > high_prev then
+    assert (mh0 >= s_k_low)
+  else begin
+    assert (mah_val == high_prev);
+    assert (high_prev >= s_k_low);
+    assert (False)  // Contradiction: high_prev < s_k_low but also high_prev >= s_k_low
+  end
+
 /// Lemma 1: Trivial unfolding lemma for the merge branch
 let add_range_merge_step (s: Seq.seq interval) (offset: nat) (len: pos)
   : Lemma (requires Seq.length s > 0 /\
@@ -1346,5 +1476,25 @@ let add_range_merge_full (s: Seq.seq interval) (offset: nat) (len: pos) (iv j: n
                                            (Seq.slice s j (Seq.length s))))) =
   add_range_skip_prefix s offset len iv;
   add_range_merge_suffix s offset len iv j
+
+/// Explicit-mh0 version: takes mh0 as a parameter for easier SMT matching
+let add_range_merge_full_explicit (s: Seq.seq interval) (offset: nat) (len: pos) (iv j: nat) (mh0: nat)
+  : Lemma (requires range_map_wf s /\
+                    iv < Seq.length s /\ j > iv /\ j <= Seq.length s /\
+                    (forall (i:nat). i < iv ==> high (Seq.index s i) < offset) /\
+                    ~(offset + len < (Seq.index s iv).low) /\
+                    ~(high (Seq.index s iv) < offset) /\
+                    mh0 == (if offset + len > high (Seq.index s iv) then offset + len else high (Seq.index s iv)) /\
+                    (forall (i:nat). i > iv /\ i < j ==> mh0 >= (Seq.index s i).low) /\
+                    (j = Seq.length s \/ mh0 < (Seq.index s j).low))
+          (ensures (let ml = (if offset < (Seq.index s iv).low then offset else (Seq.index s iv).low) in
+                    let suffix_tail = Seq.slice s (iv + 1) (Seq.length s) in
+                    let fh = merge_absorbed_high suffix_tail mh0 (j - iv - 1) in
+                    fh > ml /\
+                    add_range s offset len ==
+                    Seq.append (Seq.slice s 0 iv)
+                               (Seq.append (Seq.create 1 ({ low = ml; count = fh - ml }))
+                                           (Seq.slice s j (Seq.length s))))) =
+  add_range_merge_full s offset len iv j
 
 #pop-options

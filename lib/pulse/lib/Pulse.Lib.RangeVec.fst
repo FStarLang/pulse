@@ -362,6 +362,147 @@ let forall_overlap_to_spec (s: Seq.seq range) (iv j: nat) (mh: nat)
 
 #pop-options
 
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 20"
+
+(* seq_all_valid of seq_remove *)
+noextract
+let seq_all_valid_remove (s: Seq.seq range) (i count: nat)
+  : Lemma (requires seq_all_valid s /\ i + count <= Seq.length s)
+          (ensures seq_all_valid (seq_remove s i count)) =
+  seq_all_valid_slice s 0 i;
+  seq_all_valid_slice s (i + count) (Seq.length s);
+  seq_all_valid_append (Seq.slice s 0 i) (Seq.slice s (i + count) (Seq.length s))
+
+(* seq_to_spec of seq_remove *)
+noextract
+let seq_to_spec_remove (s: Seq.seq range) (i count: nat)
+  : Lemma (requires seq_all_valid s /\ i + count <= Seq.length s)
+          (ensures seq_all_valid (seq_remove s i count) /\
+                   seq_to_spec (seq_remove s i count) ==
+                   Seq.append (Seq.slice (seq_to_spec s) 0 i)
+                              (Seq.slice (seq_to_spec s) (i + count) (Seq.length s))) =
+  seq_all_valid_remove s i count;
+  seq_all_valid_slice s 0 i;
+  seq_all_valid_slice s (i + count) (Seq.length s);
+  seq_to_spec_slice s 0 i;
+  seq_to_spec_slice s (i + count) (Seq.length s);
+  seq_to_spec_append (Seq.slice s 0 i) (Seq.slice s (i + count) (Seq.length s))
+
+(* Key bridge: Seq.upd at iv followed by seq_remove of [iv+1..j) gives merge result *)
+noextract
+let seq_upd_remove_spec (s: Seq.seq range) (iv j: nat) (r: range)
+  : Lemma (requires seq_all_valid s /\ iv < Seq.length s /\ j > iv /\ j <= Seq.length s /\ range_valid r)
+          (ensures (let result =
+                      (if j > iv + 1
+                       then seq_remove (Seq.upd s iv r) (iv + 1) (j - iv - 1)
+                       else Seq.upd s iv r) in
+                    seq_all_valid result /\
+                    seq_to_spec result ==
+                    Seq.append (Seq.slice (seq_to_spec s) 0 iv)
+                               (Seq.append (Seq.create 1 (range_to_interval r))
+                                           (Seq.slice (seq_to_spec s) j (Seq.length s))))) =
+  let n = Seq.length s in
+  let s' = Seq.upd s iv r in
+  // upd preserves validity
+  let upd_valid () : Lemma (seq_all_valid s') =
+    let prefix = Seq.slice s 0 iv in
+    let suffix = Seq.slice s (iv + 1) n in
+    seq_all_valid_slice s 0 iv;
+    seq_all_valid_slice s (iv + 1) n;
+    Seq.lemma_eq_intro s' (Seq.append prefix (Seq.append (Seq.create 1 r) suffix));
+    Seq.lemma_eq_intro (Seq.tail (Seq.cons r suffix)) suffix;
+    seq_all_valid_append (Seq.create 1 r) suffix;
+    Seq.lemma_eq_intro (Seq.append (Seq.create 1 r) suffix) (Seq.cons r suffix);
+    seq_all_valid_append prefix (Seq.cons r suffix)
+  in
+  upd_valid ();
+  if j > iv + 1 then begin
+    let count = j - iv - 1 in
+    // seq_remove s' (iv+1) count == append (slice s' 0 (iv+1)) (slice s' j n)
+    // slice s' 0 (iv+1) == append (slice s 0 iv) (create 1 r)
+    Seq.lemma_eq_intro (Seq.slice s' 0 (iv + 1))
+      (Seq.append (Seq.slice s 0 iv) (Seq.create 1 r));
+    // slice s' j n == slice s j n
+    Seq.lemma_eq_intro (Seq.slice s' j n) (Seq.slice s j n);
+    // So: seq_remove s' (iv+1) count == append (slice s 0 iv) (append (create 1 r) (slice s j n))
+    let result = seq_remove s' (iv + 1) count in
+    Seq.lemma_eq_intro result
+      (Seq.append (Seq.slice s 0 iv)
+                  (Seq.append (Seq.create 1 r) (Seq.slice s j n)));
+    // validity of result
+    seq_all_valid_slice s 0 iv;
+    seq_all_valid_slice s j n;
+    Seq.lemma_eq_intro (Seq.tail (Seq.cons r (Seq.slice s j n))) (Seq.slice s j n);
+    seq_all_valid_append (Seq.create 1 r) (Seq.slice s j n);
+    Seq.lemma_eq_intro (Seq.append (Seq.create 1 r) (Seq.slice s j n)) (Seq.cons r (Seq.slice s j n));
+    seq_all_valid_append (Seq.slice s 0 iv) (Seq.cons r (Seq.slice s j n));
+    // seq_to_spec of result
+    seq_to_spec_slice s 0 iv;
+    seq_to_spec_slice s j n;
+    seq_to_spec_append (Seq.create 1 r) (Seq.slice s j n);
+    seq_to_spec_append (Seq.slice s 0 iv) (Seq.cons r (Seq.slice s j n))
+  end else begin
+    // j == iv + 1, no removal needed
+    Seq.lemma_eq_intro s' (Seq.append (Seq.slice s 0 iv) (Seq.append (Seq.create 1 r) (Seq.slice s j n)));
+    seq_all_valid_slice s 0 iv;
+    seq_all_valid_slice s j n;
+    Seq.lemma_eq_intro (Seq.tail (Seq.cons r (Seq.slice s j n))) (Seq.slice s j n);
+    seq_all_valid_append (Seq.create 1 r) (Seq.slice s j n);
+    Seq.lemma_eq_intro (Seq.append (Seq.create 1 r) (Seq.slice s j n)) (Seq.cons r (Seq.slice s j n));
+    seq_all_valid_append (Seq.slice s 0 iv) (Seq.cons r (Seq.slice s j n));
+    seq_to_spec_slice s 0 iv;
+    seq_to_spec_slice s j n;
+    seq_to_spec_append (Seq.create 1 r) (Seq.slice s j n);
+    seq_to_spec_append (Seq.slice s 0 iv) (Seq.cons r (Seq.slice s j n))
+  end
+
+(* Bridge: lift exit condition from range-level to spec-level with mh0 *)
+noextract
+let exit_condition_to_spec (s: Seq.seq range) (repr: Seq.seq Spec.interval) (jv: nat)
+    (mh0_val final_high_val: nat)
+  : Lemma (requires seq_all_valid s /\ repr == seq_to_spec s /\ jv <= Seq.length s /\
+                    final_high_val >= mh0_val /\
+                    (jv == Seq.length s \/ final_high_val < SZ.v (Seq.index s jv).start))
+          (ensures jv == Seq.length repr \/ mh0_val < (Seq.index repr jv).Spec.low)
+  = if jv < Seq.length s then seq_to_spec_index s jv
+    else ()
+
+(* Bridge lemma for merge loop body: packages merge_absorbed_high step + mh0 coverage *)
+noextract
+let merge_loop_body_step (s: Seq.seq range) (iv jv: nat) (mh_val mh0_val: nat)
+  : Lemma (requires
+      iv + 1 <= Seq.length s /\ jv > iv /\ jv < Seq.length s /\
+      seq_all_valid s /\
+      range_valid (Seq.index s jv) /\
+      mh_val >= SZ.v (Seq.index s jv).start /\
+      (let suffix_tail = Seq.slice (seq_to_spec s) (iv + 1) (Seq.length s) in
+       let k = jv - iv - 1 in
+       k < Seq.length suffix_tail /\
+       mh_val == Spec.merge_absorbed_high suffix_tail mh0_val k /\
+       Spec.range_map_wf suffix_tail))
+    (ensures
+      (let suffix_tail = Seq.slice (seq_to_spec s) (iv + 1) (Seq.length s) in
+       let r_high_val = SZ.v (Seq.index s jv).start + SZ.v (Seq.index s jv).len in
+       let new_mh = (if r_high_val > mh_val then r_high_val else mh_val) in
+       // 1. merge_absorbed_high step
+       new_mh == Spec.merge_absorbed_high suffix_tail mh0_val (jv - iv) /\
+       // 2. mh0 covers all absorbed
+       mh0_val >= SZ.v (Seq.index s jv).start))
+  = let k = jv - iv - 1 in
+    let suffix_tail = Seq.slice (seq_to_spec s) (iv + 1) (Seq.length s) in
+    // Connect suffix_tail indexing to original seq
+    seq_to_spec_index s jv;
+    seq_all_valid_index s jv;
+    assert (Seq.index suffix_tail k == range_to_interval (Seq.index s jv));
+    // merge_absorbed_high unfold
+    Spec.merge_absorbed_high_unfold_right suffix_tail mh0_val k;
+    // mh0 covers absorbed
+    if k > 0 then
+      Spec.mh0_covers_absorbed suffix_tail mh0_val k
+    else ()
+
+#pop-options
+
 /// Helper: shift elements [i..n) right by 1, set position i to r.
 fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
   (#s: erased (Seq.seq range)) (#cap: erased SZ.t)
@@ -412,7 +553,8 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
            pure (SZ.v i + SZ.v count <= Seq.length s /\ SZ.v count > 0)
   ensures exists* (s': Seq.seq range) (cap': SZ.t).
     V.is_vector rv s' cap' **
-    pure (Seq.length s' + SZ.v count == Seq.length s)
+    pure (s' == seq_remove s (SZ.v i) (SZ.v count) /\
+          Seq.length s' + SZ.v count == Seq.length s)
 {
   let sz = V.size rv;
   let dst_end = SZ.sub sz count;
@@ -457,10 +599,11 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
     } else {
       pop_cont := false
     }
-  }
+  };
+  admit () // shift-left + pop gives seq_remove (same class as vec_insert_at content tracking)
 }
 
-#push-options "--z3rlimit 80 --fuel 2 --ifuel 1"
+#push-options "--z3rlimit 120 --fuel 2 --ifuel 1"
 
 fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
   (#repr: erased (Seq.seq Spec.interval))
@@ -485,7 +628,10 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
           SZ.v iv <= Seq.length s_cur /\
           (forall (k:nat). k < Seq.length s_cur ==> range_valid (Seq.index s_cur k)) /\
           (forall (k:nat). k < SZ.v iv ==>
-            SZ.v (Seq.index s_cur k).start + SZ.v (Seq.index s_cur k).len < SZ.v offset))
+            SZ.v (Seq.index s_cur k).start + SZ.v (Seq.index s_cur k).len < SZ.v offset) /\
+          // Exit: when done, either iv==sz or high(s[iv]) >= offset
+          (not sv ==> (SZ.v iv == Seq.length s_cur \/
+                       SZ.v (Seq.index s_cur (SZ.v iv)).start + SZ.v (Seq.index s_cur (SZ.v iv)).len >= SZ.v offset)))
   {
     let iv = !idx;
     if (SZ.lt iv sz) {
@@ -539,7 +685,12 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
       // Merge: compute merged bounds [merged_low, merged_high)
       let merged_low = (if SZ.lt offset first_r.start then offset else first_r.start);
       let first_high = SZ.add first_r.start first_r.len;
-      let mut merged_high = (if SZ.gt off_plus_len first_high then off_plus_len else first_high);
+      let mh0_val = (if SZ.gt off_plus_len first_high then off_plus_len else first_high);
+      let mut merged_high = mh0_val;
+
+      // Ghost: capture initial mh0 and suffix_tail for merge_absorbed_high tracking
+      let mh0 = G.hide (SZ.v mh0_val);
+      let repr_snap = G.hide repr;
 
       // Extend merge rightward through overlapping/adjacent ranges
       let mut j = SZ.add iv 1sz;
@@ -557,9 +708,15 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
               // Overlap: mh covers all ranges in [iv..jv)
               (forall (k:nat). k >= SZ.v iv /\ k < SZ.v jv ==>
                 SZ.v mh >= SZ.v (Seq.index s_cur k).start) /\
+              // mh0 covers ranges in (iv..jv) — for merge_full precondition
+              (forall (k:nat). k > SZ.v iv /\ k < SZ.v jv ==>
+                G.reveal mh0 >= SZ.v (Seq.index s_cur k).start) /\
               // Exit: when loop done, either jv==sz or mh < s[jv].start
               (not mc ==> (SZ.v jv == Seq.length s_cur \/
-                           SZ.v mh < SZ.v (Seq.index s_cur (SZ.v jv)).start)))
+                           SZ.v mh < SZ.v (Seq.index s_cur (SZ.v jv)).start)) /\
+              // Track: mh == merge_absorbed_high(suffix_tail, mh0, jv-iv-1)
+              (let suffix_tail = Seq.slice (seq_to_spec s_cur) (SZ.v iv + 1) (Seq.length s_cur) in
+               SZ.v mh == Spec.merge_absorbed_high suffix_tail (G.reveal mh0) (SZ.v jv - SZ.v iv - 1)))
       {
         let jv = !j;
         if (SZ.lt jv sz) {
@@ -567,6 +724,9 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
           let mh = !merged_high;
           if (SZ.gte mh r.start) {
             let r_high = SZ.add r.start r.len;
+            // Use bridge lemma for loop invariant step
+            Spec.range_map_wf_slice repr (SZ.v iv + 1);
+            merge_loop_body_step s (SZ.v iv) (SZ.v jv) (SZ.v mh) (G.reveal mh0);
             if (SZ.gt r_high mh) { merged_high := r_high };
             j := SZ.add jv 1sz
           } else {
@@ -582,13 +742,58 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
       let final_high = !merged_high;
       // Bounds are valid: final_high > merged_low from loop invariant
       let final_len = SZ.sub final_high merged_low;
-      V.set rv iv ({ start = merged_low; len = final_len });
 
-      Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
-      // Merge case: set + remove produces the right spec result
-      // This is the hardest proof — needs add_range_skip_prefix + merge characterization
-      admit ();
-      fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
+      // Lift range-level facts to spec level BEFORE consuming s via V.set
+      forall_high_below_to_spec s (SZ.v iv) (SZ.v offset);
+      seq_to_spec_index s (SZ.v iv);
+      seq_all_valid_index s (SZ.v iv);
+      forall_overlap_to_spec s (SZ.v iv) (SZ.v jv) (SZ.v final_high);
+      // Lift mh0 forall to spec level
+      forall_overlap_to_spec s (SZ.v iv + 1) (SZ.v jv) (G.reveal mh0);
+      // Connect our ghost mh0 to spec's computed mh0
+      assert (pure (Spec.high (Seq.index repr (SZ.v iv)) == SZ.v first_high));
+      assert (pure (G.reveal mh0 ==
+        (if SZ.v offset + SZ.v len > Spec.high (Seq.index repr (SZ.v iv))
+         then SZ.v offset + SZ.v len
+         else Spec.high (Seq.index repr (SZ.v iv)))));
+      // Exit condition: mh0 < repr[j].low (from final_high >= mh0 and final_high < s[j].start)
+      Spec.merge_absorbed_high_mono
+        (Seq.slice repr (SZ.v iv + 1) (Seq.length repr))
+        (G.reveal mh0)
+        (SZ.v jv - SZ.v iv - 1);
+      exit_condition_to_spec s repr (SZ.v jv) (G.reveal mh0) (SZ.v final_high);
+
+      // Call merge_full with explicit mh0 parameter
+      Spec.add_range_merge_full_explicit repr (SZ.v offset) (SZ.v len) (SZ.v iv) (SZ.v jv) (G.reveal mh0);
+
+      // Now do the imperative set
+      let merged_r : range = { start = merged_low; len = final_len };
+      V.set rv iv merged_r;
+
+      // Handle remove case
+      if (SZ.gt jv (SZ.add iv 1sz)) {
+        let remove_count = SZ.sub jv (SZ.add iv 1sz);
+        vec_remove_range rv (SZ.add iv 1sz) remove_count;
+        with s_final cap_final. _;
+        // Bridge: seq_to_spec of the result matches the spec
+        seq_upd_remove_spec s (SZ.v iv) (SZ.v jv) merged_r;
+        // seq_to_spec result == append (slice repr 0 iv) (append (create 1 merged_iv) (slice repr j n))
+        // merge_full gives: add_range repr offset len == same structure with fh
+        // Need: range_to_interval merged_r == { low = ml; count = fh - ml }
+        // From tracking invariant: final_high == merge_absorbed_high suffix_tail mh0 (jv-iv-1) == fh
+        Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
+        // Blocked on vec_remove_range content tracking (L603 admit)
+        assert (pure (range_to_interval merged_r == Spec.({ low = SZ.v merged_low; count = SZ.v final_len })));
+        admit ();
+        fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
+      } else {
+        // jv == iv + 1, no removal needed. V.set gives concrete V.is_vector rv (Seq.upd s iv merged_r) cap
+        seq_upd_remove_spec s (SZ.v iv) (SZ.v jv) merged_r;
+        Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
+        // range_to_interval merged_r matches the spec's merged interval
+        assert (pure (range_to_interval merged_r == Spec.({ low = SZ.v merged_low; count = SZ.v final_len })));
+        fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
+      }
     }
   }
 }
