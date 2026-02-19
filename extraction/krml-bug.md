@@ -1,77 +1,78 @@
-# KaRaMeL Bug: Pulse `fn` using `box` fails Low* re-check
+# KaRaMeL Bug: Monomorphization mismatch for erased type parameter
 
-## Problematic Example
-
-`Pulse.Lib.RangeMap.fst` (no `.fsti`) defines functions that use `box` (heap-allocated mutable ref) wrapping an AVL tree from `Pulse.Lib.AVLTree` (has `.fsti`):
+## Minimal Example (`TestKrmlBug.fst`)
 
 ```fstar
-// AVLTree.fsti — polymorphic tree with erased value parameter
-type tree_t (k: Type) (v: Type) = option (node k v)
+module TestKrmlBug
+#lang-pulse
+open Pulse.Lib.Pervasives
+module SZ = FStar.SizeT
+module AVL = Pulse.Lib.AVLTree
 
-// RangeMap.fst — uses tree_t with () as the erased value
-type range_map_t = box (tree_t range unit)
-
-fn range_map_create (_: unit)
+fn my_create (_u: unit)
   requires emp
-  returns r: range_map_t
-  ensures range_map_pred r empty_rm
+  returns r: AVL.tree_t SZ.t unit
+  ensures AVL.is_tree r Pulse.Lib.Spec.AVLTree.Leaf
 {
-  let ct = AVLTree.create ();
-  alloc ct    // Box.alloc — becomes `heap newbuf` in krml AST
+  AVL.create SZ.t unit
 }
 ```
 
-## How to extract
+## Steps to reproduce
 
 ```bash
-# 1. Verify & extract to .krml
-for mod in Pulse.Lib.AVLTree Pulse.Lib.Spec.AVLTree Pulse.Lib.RangeMap Pulse.Lib.RangeMap.Spec; do
-  fstar.exe --codegen krml --extract_module $mod \
+PULSE_HOME=~/pulse
+
+# 1. Extract TestKrmlBug + AVLTree deps to .krml
+fstar.exe TestKrmlBug.fst \
+  --include $PULSE_HOME/out/lib/pulse --include $PULSE_HOME/out/lib/pulse/lib \
+  --include $PULSE_HOME/build/lib.pulse.checked --include $PULSE_HOME/build/lib.common.checked \
+  --include $PULSE_HOME/lib/pulse/lib --include $PULSE_HOME/lib/common \
+  --cache_checked_modules --cache_dir _cache --odir _output \
+  --warn_error -321 --ext optimize_let_vc --load_cmxs pulse \
+  --codegen krml --extract_module TestKrmlBug
+
+for mod in Pulse.Lib.AVLTree Pulse.Lib.Spec.AVLTree; do
+  fstar.exe $PULSE_HOME/lib/pulse/lib/${mod}.fst \
     --include $PULSE_HOME/out/lib/pulse --include $PULSE_HOME/out/lib/pulse/lib \
     --include $PULSE_HOME/build/lib.pulse.checked --include $PULSE_HOME/build/lib.common.checked \
     --include $PULSE_HOME/lib/pulse/lib --include $PULSE_HOME/lib/common \
     --cache_checked_modules --cache_dir _cache --odir _output \
     --warn_error -321 --ext optimize_let_vc --load_cmxs pulse \
-    $PULSE_HOME/lib/pulse/lib/${mod}.fst
+    --codegen krml --extract_module $mod
 done
 
 # 2. Run krml
 krml -skip-compilation -skip-makefiles -skip-linking \
-  -warn-error -2 -warn-error -15 -warn-error -4 -warn-error -26 \
-  -warn-error -18 -warn-error -9 -warn-error -17 \
-  -tmpdir _c_output \
+  -warn-error -2-4-9-15-17-18-26 \
   ~/karamel/krmllib/.extract/*.krml _output/*.krml
 ```
 
-## What happens
-
-5 functions are silently dropped:
+## Observed
 
 ```
-Cannot re-check Pulse.Lib.RangeMap.range_map_create as valid Low* and will not extract it.
-Cannot re-check Pulse.Lib.RangeMap.range_map_free as valid Low* and will not extract it.
-Cannot re-check Pulse.Lib.RangeMap.range_map_contiguous_from as valid Low* and will not extract it.
-Cannot re-check Pulse.Lib.RangeMap.range_map_max_endpoint as valid Low* and will not extract it.
-Cannot re-check Pulse.Lib.RangeMap.range_map_add as valid Low* and will not extract it.
+Cannot re-check TestKrmlBug.my_create as valid Low* and will not extract it.
+```
+
+With `-d checker`, the failing subtype check:
+
+```
+option__node__size_t_any* <=? option__node__size_t_()*
 ```
 
 ## Root cause
 
-Running with `-d checker` reveals the failing subtype check:
-
-```
-option__node__range_any* <=? option__node__range_()*
-```
-
-The monomorphizer creates **two incompatible C struct types** for the same logical type:
+`AVLTree.fsti` declares `tree_t (k v : Type)` with erased value `v`.
+After monomorphization, krml produces **two incompatible structs**:
 
 | Variant | Fields | Origin |
 |---------|--------|--------|
-| `node__range_()` | `{ key, left, right }` | RangeMap caller — erased value = `()` |
-| `node__range_any` | `{ key, value, left, right }` | AVLTree impl — erased value = `any` |
+| `node__size_t_()` | `{ key, left, right }` | Caller instantiates `v = unit` → erased to `()` |
+| `node__size_t_any` | `{ key, value, left, right }` | AVLTree impl uses `v = any` |
 
-These have different memory layouts (3 vs 4 fields), so the checker correctly rejects the subtype check — but the root problem is that they should have been unified into one type.
+`create__size_t` returns `node__size_t_any*` but the caller expects `node__size_t_()*`.
+These have different memory layouts (3 vs 4 fields), so the checker rejects.
 
-## Expected behavior
+## Expected
 
-`()` and `any` should be treated as the same erased type during monomorphization, producing a single struct type. The functions should extract to valid C.
+`()` and `any` should unify to the same monomorphized type for erased parameters, producing one struct.
