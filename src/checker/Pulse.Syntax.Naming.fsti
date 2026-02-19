@@ -171,6 +171,9 @@ let rec freevars_st (t:st_term)
     | Tm_Goto { lbl; arg } ->
       freevars lbl ++ freevars arg
 
+    | Tm_Cleanup { cleanup_pre; handler; body } ->
+      freevars cleanup_pre ++ freevars_st handler ++ freevars_st body
+
 and freevars_branches (t:list branch) : Set.set var =
   match t with
   | [] -> empty
@@ -362,6 +365,9 @@ let rec ln_st' (t:st_term) (i:int)
 
     | Tm_Goto { lbl; arg } ->
       ln' lbl i && ln' arg i
+
+    | Tm_Cleanup { cleanup_pre; handler; body } ->
+      ln' cleanup_pre i && ln_st' handler i && ln_st' body i
 
 and ln_branch' (b : branch) (i:int) : Tot bool (decreases b) =
   ln_pattern' b.pat i &&
@@ -620,6 +626,9 @@ let rec subst_st_term (t:st_term) (ss:subst)
 
     | Tm_Goto { lbl; arg } ->
       Tm_Goto { lbl=subst_term lbl ss; arg=subst_term arg ss }
+
+    | Tm_Cleanup { cleanup_pre; handler; body } ->
+      Tm_Cleanup { cleanup_pre=subst_term cleanup_pre ss; handler=subst_st_term handler ss; body=subst_st_term body ss }
 
     in
     { t with term = t' }

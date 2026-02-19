@@ -1139,6 +1139,21 @@ type st_typing : env -> st_term -> comp -> Type =
       st_typing g (wtag (Some (ctag_of_comp_st lbl_c)) (Tm_Goto { lbl = term_of_nvar lbl; arg }))
         (with_st_comp lbl_c { u; res; pre = open_term' (comp_pre lbl_c) arg 0; post })
 
+  | T_Cleanup:
+      g:env ->
+      cleanup_pre:slprop ->
+      handler:st_term ->
+      body:st_term ->
+      c_body:comp_st ->
+      c_handler:comp_st ->
+      c:comp_st { comp_pre c == comp_pre c_body /\
+                  comp_u c == comp_u c_body /\
+                  comp_res c == comp_res c_body /\
+                  comp_post c_body == tm_star (comp_post c) cleanup_pre } ->
+      st_typing (push_post g cleanup_pre) body c_body ->
+      st_typing g handler c_handler ->
+      st_typing g (wtag (Some (ctag_of_comp_st c)) (Tm_Cleanup { cleanup_pre; handler; body })) c
+
 and pats_complete : env -> term -> typ -> list R.pattern -> Type0 =
   // just check the elaborated term with the core tc
   | PC_Elab :
