@@ -20,21 +20,25 @@ module R = Pulse.Lib.Reference
 
 noeq type range = { start: SZ.t; len: SZ.t }
 
+noextract
 let range_valid (r: range) : prop =
   SZ.v r.len > 0 /\
   SZ.fits (SZ.v r.start + SZ.v r.len)
 
+noextract
 let range_to_interval (r: range)
   : Pure Spec.interval (requires range_valid r) (ensures fun _ -> True) =
   { Spec.low = SZ.v r.start; Spec.count = SZ.v r.len }
 
 let default_range : range = { start = 0sz; len = 1sz }
 
+noextract
 let rec seq_all_valid (s: Seq.seq range)
   : Tot prop (decreases Seq.length s) =
   if Seq.length s = 0 then True
   else range_valid (Seq.head s) /\ seq_all_valid (Seq.tail s)
 
+noextract
 let rec seq_all_valid_index (s: Seq.seq range) (i: nat)
   : Lemma (requires seq_all_valid s /\ i < Seq.length s)
           (ensures range_valid (Seq.index s i))
@@ -42,6 +46,7 @@ let rec seq_all_valid_index (s: Seq.seq range) (i: nat)
   if i = 0 then ()
   else seq_all_valid_index (Seq.tail s) (i - 1)
 
+noextract
 let rec seq_to_spec (s: Seq.seq range)
   : Pure (Seq.seq Spec.interval)
     (requires seq_all_valid s)
@@ -52,6 +57,7 @@ let rec seq_to_spec (s: Seq.seq range)
 
 #push-options "--fuel 2 --ifuel 1"
 
+noextract
 let rec seq_to_spec_index (s: Seq.seq range) (i: nat)
   : Lemma (requires seq_all_valid s /\ i < Seq.length s)
           (ensures range_valid (Seq.index s i) /\
@@ -61,6 +67,7 @@ let rec seq_to_spec_index (s: Seq.seq range) (i: nat)
   if i = 0 then ()
   else seq_to_spec_index (Seq.tail s) (i - 1)
 
+noextract
 let rec seq_all_valid_forall (s: Seq.seq range)
   : Lemma (requires seq_all_valid s)
           (ensures forall (k:nat). k < Seq.length s ==> range_valid (Seq.index s k))
