@@ -294,6 +294,52 @@ let seq_remove (#a:Type) (s: Seq.seq a) (i: nat) (count: nat) : Seq.seq a =
     Seq.append (Seq.slice s 0 i) (Seq.slice s (i + count) (Seq.length s))
   else s
 
+(* Bridge: pointwise shift result matches seq_remove *)
+noextract
+let shift_to_seq_remove (#a:Type) (s s_cur: Seq.seq a) (i count: nat)
+  : Lemma (requires i + count <= Seq.length s /\ count > 0 /\
+                    Seq.length s_cur == Seq.length s /\
+                    (forall (k:nat). k < i ==> Seq.index s_cur k == Seq.index s k) /\
+                    (forall (k:nat). k >= i /\ k < Seq.length s - count ==>
+                      Seq.index s_cur k == Seq.index s (k + count)) /\
+                    (forall (k:nat). k >= Seq.length s - count /\ k < Seq.length s ==>
+                      Seq.index s_cur k == Seq.index s k))
+          (ensures Seq.slice s_cur 0 (Seq.length s - count) == seq_remove s i count) =
+  let dst_end = Seq.length s - count in
+  let candidate = Seq.slice s_cur 0 dst_end in
+  let target = seq_remove s i count in
+  Seq.lemma_eq_intro candidate target
+
+(* Bridge: pointwise shift-right result matches seq_insert *)
+noextract
+let shift_to_seq_insert (#a:Type) (s s_cur: Seq.seq a) (i: nat) (r: a)
+  : Lemma (requires i < Seq.length s /\
+                    Seq.length s_cur == Seq.length s + 1 /\
+                    (forall (m:nat). m < i ==> Seq.index s_cur m == Seq.index s m) /\
+                    Seq.index s_cur i == r /\
+                    (forall (m:nat). m > i /\ m < Seq.length s_cur ==>
+                      Seq.index s_cur m == Seq.index s (m - 1)))
+          (ensures s_cur == seq_insert s i r) =
+  Seq.lemma_eq_intro s_cur (seq_insert s i r)
+
+(* Bridge: shift-right + set produces seq_insert. Call BEFORE V.set. *)
+noextract
+let shift_set_is_seq_insert (#a:Type) (s s_shifted: Seq.seq a) (i: nat) (r: a)
+  : Lemma (requires i < Seq.length s /\
+                    Seq.length s_shifted == Seq.length s + 1 /\
+                    (forall (m:nat). m < i ==> Seq.index s_shifted m == Seq.index s m) /\
+                    (forall (m:nat). m > i /\ m < Seq.length s_shifted ==>
+                      Seq.index s_shifted m == Seq.index s (m - 1)))
+          (ensures Seq.upd s_shifted i r == seq_insert s i r) =
+  Seq.lemma_eq_intro (Seq.upd s_shifted i r) (seq_insert s i r)
+
+(* Bridge: snoc is seq_insert at end *)
+noextract
+let snoc_is_seq_insert (#a:Type) (s: Seq.seq a) (r: a) (i: nat)
+  : Lemma (requires i >= Seq.length s /\ i <= Seq.length s)
+          (ensures Seq.snoc s r == seq_insert s i r) =
+  Seq.lemma_eq_intro (Seq.snoc s r) (seq_insert s i r)
+
 #push-options "--fuel 2 --ifuel 1 --z3rlimit 20"
 
 (* seq_all_valid of seq_insert *)
@@ -503,6 +549,8 @@ let merge_loop_body_step (s: Seq.seq range) (iv jv: nat) (mh_val mh0_val: nat)
 
 #pop-options
 
+#push-options "--z3rlimit 80 --fuel 2 --ifuel 1"
+
 /// Helper: shift elements [i..n) right by 1, set position i to r.
 fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
   (#s: erased (Seq.seq range)) (#cap: erased SZ.t)
@@ -524,7 +572,16 @@ fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
       R.pts_to j jv ** R.pts_to cont cv **
       V.is_vector rv s_cur cap_cur **
       pure (SZ.v jv >= SZ.v i /\ SZ.v jv < Seq.length s_cur /\
-            Seq.length s_cur == Seq.length s + 1)
+            Seq.length s_cur == Seq.length (G.reveal s) + 1 /\
+            cap_cur == cap1 /\
+            // Prefix unchanged
+            (forall (m:nat). m < SZ.v jv ==>
+              Seq.index s_cur m == Seq.index (G.reveal s) m) /\
+            // Shifted region
+            (forall (m:nat). m > SZ.v jv /\ m < Seq.length s_cur ==>
+              Seq.index s_cur m == Seq.index (G.reveal s) (m - 1)) /\
+            // Exit
+            (not cv ==> SZ.v jv == SZ.v i))
     {
       let jv = !j;
       if (SZ.gt jv i) {
@@ -537,14 +594,20 @@ fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
         cont := false
       }
     };
-    V.set rv i r;
-    // The shift-right + set produces seq_insert — standard array insert
-    admit ()
+    // Bind loop existentials; call bridge lemma BEFORE V.set
+    with _jv2 _cv2 s_after_shift _cap_shift. _;
+    shift_set_is_seq_insert (G.reveal s) s_after_shift (SZ.v i) r;
+    V.set rv i r
   } else {
-    // push_back appended r at end = seq_insert at position Seq.length s
-    admit ()
+    // else: sz <= 1 or i >= sz - 1, so i >= |s|
+    assert (pure (SZ.v i >= Seq.length (G.reveal s)));
+    assert (pure (SZ.v i <= Seq.length (G.reveal s)));
+    snoc_is_seq_insert (G.reveal s) r (SZ.v i);
+    assert (pure (Seq.snoc (G.reveal s) r == seq_insert (G.reveal s) (SZ.v i) r))
   }
 }
+
+#pop-options
 
 /// Helper: remove count elements starting at position i
 fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
@@ -558,7 +621,7 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
 {
   let sz = V.size rv;
   let dst_end = SZ.sub sz count;
-  // Phase 1: shift elements left
+  // Phase 1: shift elements left — copy s[j+count] to s[j] for j in [i..dst_end)
   let mut j = i;
   let mut shift_cont = true;
   while (!shift_cont)
@@ -566,7 +629,18 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
     R.pts_to j jv ** R.pts_to shift_cont sc **
     V.is_vector rv s_cur cap_cur **
     pure (SZ.v jv >= SZ.v i /\ SZ.v jv <= SZ.v dst_end /\
-          Seq.length s_cur == Seq.length s)
+          Seq.length s_cur == Seq.length s /\
+          cap_cur == G.reveal cap /\
+          // Prefix unchanged
+          (forall (k:nat). k < SZ.v i ==> Seq.index s_cur k == Seq.index (G.reveal s) k) /\
+          // Shifted region
+          (forall (k:nat). k >= SZ.v i /\ k < SZ.v jv ==>
+            Seq.index s_cur k == Seq.index (G.reveal s) (k + SZ.v count)) /\
+          // Suffix unchanged
+          (forall (k:nat). k >= SZ.v jv /\ k < Seq.length s_cur ==>
+            Seq.index s_cur k == Seq.index (G.reveal s) k) /\
+          // Exit
+          (not sc ==> SZ.v jv == SZ.v dst_end))
   {
     let jv = !j;
     if (SZ.lt jv dst_end) {
@@ -577,7 +651,11 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
       shift_cont := false
     }
   };
+  // After shift: first dst_end elements form seq_remove
+  with _jv1 _sc1 s_shifted _cap_shifted. _;
+  shift_to_seq_remove (G.reveal s) s_shifted (SZ.v i) (SZ.v count);
   // Phase 2: pop count elements from the end
+  let target = G.hide (seq_remove (G.reveal s) (SZ.v i) (SZ.v count));
   let mut k = 0sz;
   let mut pop_cont = true;
   while (!pop_cont)
@@ -585,7 +663,9 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
     R.pts_to k kv ** R.pts_to pop_cont pc **
     V.is_vector rv s_cur cap_cur **
     pure (SZ.v kv <= SZ.v count /\
-          Seq.length s_cur + SZ.v kv == Seq.length s /\
+          Seq.length s_cur + SZ.v kv == Seq.length (G.reveal s) /\
+          // Content: first dst_end elements as a slice match seq_remove
+          Seq.slice s_cur 0 (SZ.v dst_end) == G.reveal target /\
           (not pc ==> SZ.v kv >= SZ.v count))
   {
     let kv = !k;
@@ -600,7 +680,9 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
       pop_cont := false
     }
   };
-  admit () // shift-left + pop gives seq_remove (same class as vec_insert_at content tracking)
+  // After pop: s_cur has dst_end elements, slice 0..dst_end == s_cur == target
+  with _kv1 _pc1 s_final _cap_final. _;
+  Seq.lemma_eq_intro s_final (G.reveal target)
 }
 
 #push-options "--z3rlimit 120 --fuel 2 --ifuel 1"
@@ -775,15 +857,10 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
         let remove_count = SZ.sub jv (SZ.add iv 1sz);
         vec_remove_range rv (SZ.add iv 1sz) remove_count;
         with s_final cap_final. _;
-        // Bridge: seq_to_spec of the result matches the spec
         seq_upd_remove_spec s (SZ.v iv) (SZ.v jv) merged_r;
-        // seq_to_spec result == append (slice repr 0 iv) (append (create 1 merged_iv) (slice repr j n))
-        // merge_full gives: add_range repr offset len == same structure with fh
-        // Need: range_to_interval merged_r == { low = ml; count = fh - ml }
-        // From tracking invariant: final_high == merge_absorbed_high suffix_tail mh0 (jv-iv-1) == fh
         Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
-        // Blocked on vec_remove_range content tracking (L603 admit)
         assert (pure (range_to_interval merged_r == Spec.({ low = SZ.v merged_low; count = SZ.v final_len })));
+        // Content proved; blocked on capacity (cap_final from pop_back is existential)
         admit ();
         fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
       } else {
