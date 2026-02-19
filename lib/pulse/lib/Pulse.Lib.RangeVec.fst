@@ -292,6 +292,7 @@ fn range_vec_max_endpoint (rv: range_vec_t) (#repr: erased (Seq.seq Spec.interva
   }
 }
 
+
 (*** Add range — core operation ***)
 
 noextract
@@ -733,6 +734,101 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
   // After pop: s_cur has dst_end elements, slice 0..dst_end == s_cur == target
   with _kv1 _pc1 s_final _cap_final. _;
   Seq.lemma_eq_intro s_final (G.reveal target)
+}
+
+(*** Drain — remove/trim first entry up to new_bo ***)
+
+/// Bridge: seq_to_spec of tail
+let seq_to_spec_tail (s: Seq.seq range)
+  : Lemma (requires Seq.length s > 0 /\ seq_all_valid s)
+          (ensures seq_all_valid (Seq.tail s) /\
+                   seq_to_spec (Seq.tail s) == Seq.tail (seq_to_spec s)) =
+  let tl = Seq.tail s in
+  seq_all_valid_slice s 1 (Seq.length s);
+  assert (Seq.slice s 1 (Seq.length s) `Seq.equal` tl);
+  let spec_tl = seq_to_spec tl in
+  let tail_spec = Seq.tail (seq_to_spec s) in
+  let aux (i: nat{i < Seq.length spec_tl})
+    : Lemma (Seq.index spec_tl i == Seq.index tail_spec i) =
+    seq_to_spec_index tl i;
+    seq_all_valid_index s (i + 1);
+    seq_to_spec_index s (i + 1)
+  in
+  Classical.forall_intro aux;
+  Seq.lemma_eq_intro spec_tl tail_spec
+
+/// Bridge: updating first element maps to spec
+let seq_to_spec_upd0 (s: Seq.seq range) (r: range)
+  : Lemma (requires Seq.length s > 0 /\ seq_all_valid s /\ range_valid r)
+          (ensures seq_all_valid (Seq.upd s 0 r) /\
+                   seq_to_spec (Seq.upd s 0 r) == Seq.upd (seq_to_spec s) 0 (range_to_interval r)) =
+  let s' = Seq.upd s 0 r in
+  let aux_valid (i: nat{i < Seq.length s'})
+    : Lemma (range_valid (Seq.index s' i)) =
+    if i = 0 then ()
+    else begin
+      Seq.lemma_index_upd2 s 0 r i;
+      seq_all_valid_index s i
+    end
+  in
+  Classical.forall_intro aux_valid;
+  let spec_s' = seq_to_spec s' in
+  let upd_spec = Seq.upd (seq_to_spec s) 0 (range_to_interval r) in
+  let aux (i: nat{i < Seq.length spec_s'})
+    : Lemma (Seq.index spec_s' i == Seq.index upd_spec i) =
+    seq_to_spec_index s' i;
+    if i = 0 then ()
+    else begin
+      seq_all_valid_index s i;
+      seq_to_spec_index s i
+    end
+  in
+  Classical.forall_intro aux;
+  Seq.lemma_eq_intro spec_s' upd_spec
+
+fn range_vec_drain (rv: range_vec_t) (new_bo: SZ.t)
+  (#repr: erased (Seq.seq Spec.interval))
+  requires is_range_vec rv repr **
+    pure (Seq.length repr > 0 /\
+          (Seq.index repr 0).low <= SZ.v new_bo /\
+          SZ.v new_bo <= Spec.high (Seq.index repr 0))
+  ensures is_range_vec rv (Spec.drain_repr repr (SZ.v new_bo))
+{
+  unfold is_range_vec;
+  with s cap. _;
+  let sz = V.size rv;
+  seq_to_spec_index s 0;
+  let first = V.at rv 0sz;
+  let r_high = SZ.add first.start first.len;
+  let first_spec = Spec.Mkinterval (SZ.v first.start) (SZ.v first.len);
+  assert (pure (Seq.index repr 0 == first_spec));
+  if (SZ.lte r_high new_bo) {
+    // Remove first entry entirely
+    vec_remove_range rv 0sz 1sz;
+    with s' cap'. _;
+    // Bridge: seq_remove s 0 1 = tail s
+    Seq.lemma_eq_intro (seq_remove s 0 1) (Seq.tail s);
+    seq_to_spec_tail s;
+    Spec.drain_repr_wf repr (SZ.v new_bo);
+    Spec.drain_repr_length repr (SZ.v new_bo);
+    fold (is_range_vec rv (Spec.drain_repr repr (SZ.v new_bo)))
+  } else if (SZ.lt first.start new_bo) {
+    let new_len = SZ.sub r_high new_bo;
+    let new_range = { start = new_bo; len = new_len };
+    V.set rv 0sz new_range;
+    seq_to_spec_upd0 s new_range;
+    // Connect upd to cons form and to drain_repr
+    Seq.lemma_eq_intro (Seq.upd repr 0 (range_to_interval new_range))
+                        (Seq.cons (range_to_interval new_range) (Seq.tail repr));
+    Seq.lemma_eq_intro (Seq.upd repr 0 (range_to_interval new_range))
+                        (Spec.drain_repr repr (SZ.v new_bo));
+    Spec.drain_repr_wf repr (SZ.v new_bo);
+    Spec.drain_repr_length repr (SZ.v new_bo);
+    fold (is_range_vec rv (Spec.drain_repr repr (SZ.v new_bo)))
+  } else {
+    // No-op: new_bo == first.start, drain_repr returns s unchanged
+    fold (is_range_vec rv (Spec.drain_repr repr (SZ.v new_bo)))
+  }
 }
 
 #push-options "--z3rlimit 400 --fuel 2 --ifuel 1"

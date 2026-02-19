@@ -1542,3 +1542,109 @@ let rec wf_count_bound (s: Seq.seq interval) (lo bound: nat)
     assert (hd2.low - high hd >= 1); // separated gap >= 1
     assert (hd.low >= lo)
   end
+
+/// add_range increases length by at most 1
+let rec add_range_length (s: Seq.seq interval) (offset: nat) (len: pos)
+  : Lemma (ensures Seq.length (add_range s offset len) <= Seq.length s + 1)
+          (decreases Seq.length s) =
+  if Seq.length s = 0 then ()
+  else
+    let hd = Seq.index s 0 in
+    let tl = Seq.tail s in
+    if offset + len < hd.low then ()
+    else if high hd < offset then
+      add_range_length tl offset len
+    else
+      let merged_low = if offset < hd.low then offset else hd.low in
+      let merged_high = if offset + len > high hd then offset + len else high hd in
+      add_range_length tl merged_low (merged_high - merged_low)
+
+/// Drain the first interval (or trim it) up to new_bo.
+/// Precondition: first interval contains new_bo (base_aligned + n <= cf).
+let drain_repr (s: Seq.seq interval) (new_bo: nat)
+  : Seq.seq interval =
+  if Seq.length s = 0 then Seq.empty
+  else
+    let first = Seq.index s 0 in
+    if high first <= new_bo then Seq.tail s
+    else if first.low < new_bo then
+      Seq.cons ({ low = new_bo; count = high first - new_bo }) (Seq.tail s)
+    else s
+
+/// drain_repr preserves range_map_wf
+let drain_repr_wf (s: Seq.seq interval) (new_bo: nat)
+  : Lemma (requires range_map_wf s /\ Seq.length s > 0 /\
+                    (Seq.index s 0).low <= new_bo /\ new_bo <= high (Seq.index s 0))
+          (ensures range_map_wf (drain_repr s new_bo)) =
+  let first = Seq.index s 0 in
+  let tl = Seq.tail s in
+  if high first <= new_bo then ()
+  else if first.low < new_bo then begin
+    let trimmed = { low = new_bo; count = high first - new_bo } in
+    if Seq.length tl = 0 then
+      range_map_wf_cons trimmed tl
+    else begin
+      let next = Seq.index tl 0 in
+      assert (Seq.index s 1 == next);
+      assert (separated first next);
+      assert (high first < next.low);
+      assert (high trimmed == high first);
+      assert (high trimmed < next.low);
+      assert (separated trimmed next);
+      range_map_wf_cons trimmed tl
+    end
+  end else ()
+
+/// drain_repr preserves range_map_bounded
+let drain_repr_bounded (s: Seq.seq interval) (new_bo: nat) (bound: nat)
+  : Lemma (requires range_map_bounded s bound /\ Seq.length s > 0 /\
+                    (Seq.index s 0).low <= new_bo /\ new_bo <= high (Seq.index s 0))
+          (ensures range_map_bounded (drain_repr s new_bo) bound) =
+  let first = Seq.index s 0 in
+  let result = drain_repr s new_bo in
+  if high first <= new_bo then begin
+    let tl = Seq.tail s in
+    let aux (i:nat{i < Seq.length tl})
+      : Lemma (high (Seq.index tl i) <= bound)
+      = assert (Seq.index tl i == Seq.index s (i + 1))
+    in
+    Classical.forall_intro aux
+  end else if first.low < new_bo then begin
+    let trimmed = { low = new_bo; count = high first - new_bo } in
+    let tl = Seq.tail s in
+    assert (high trimmed == high first);
+    assert (high trimmed <= bound);
+    let aux (i:nat{i < Seq.length tl})
+      : Lemma (high (Seq.index tl i) <= bound)
+      = assert (Seq.index tl i == Seq.index s (i + 1))
+    in
+    Classical.forall_intro aux;
+    assert (Seq.index result 0 == trimmed);
+    let aux2 (i:nat{i < Seq.length result})
+      : Lemma (high (Seq.index result i) <= bound)
+      = if i = 0 then () else assert (Seq.index result i == Seq.index tl (i - 1))
+    in
+    Classical.forall_intro aux2
+  end else ()
+
+/// drain_repr decreases (or preserves) length
+let drain_repr_length (s: Seq.seq interval) (new_bo: nat)
+  : Lemma (Seq.length (drain_repr s new_bo) <= Seq.length s) = ()
+
+/// drain_repr mem: positions >= new_bo are preserved
+let drain_repr_mem_above (s: Seq.seq interval) (new_bo: nat) (x: nat)
+  : Lemma (requires range_map_wf s /\ Seq.length s > 0 /\
+                    (Seq.index s 0).low <= new_bo /\ new_bo <= high (Seq.index s 0) /\
+                    x >= new_bo)
+          (ensures mem (drain_repr s new_bo) x == mem s x) =
+  let first = Seq.index s 0 in
+  let result = drain_repr s new_bo in
+  if high first <= new_bo then begin
+    // first removed, x >= new_bo >= high first, so x not in first
+    assert (not (in_interval first x));
+    if mem s x then mem_tail s x else ()
+  end else if first.low < new_bo then begin
+    let trimmed = { low = new_bo; count = high first - new_bo } in
+    let tl = Seq.tail s in
+    mem_cons trimmed tl x
+  end else ()

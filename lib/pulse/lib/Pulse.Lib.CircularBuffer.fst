@@ -154,7 +154,8 @@ let is_circular_buffer
       Spec.phys_log_coherent st.alloc_length buf_data st.contents st.read_start /\
       Spec.ranges_match_contents repr st.contents (SZ.v cbi.bo) /\
       RMSpec.range_map_wf repr /\
-      Spec.repr_well_positioned repr (SZ.v cbi.bo)
+      Spec.repr_well_positioned repr (SZ.v cbi.bo) /\
+      Seq.length repr < RM.max_range_vec_entries
     )
 
 /// Get the length of contiguous readable data

@@ -815,6 +815,46 @@ let ranges_match_drain_padded
     RMSpec.range_map_bounded_monotone repr (base_offset + al) (base_offset + n + al)
 #pop-options
 
+/// Drain repr bridge: drain_repr preserves ranges_match_contents with new base
+let ranges_match_drain_repr
+  (repr: Seq.seq RMSpec.interval)
+  (contents: Seq.seq (option byte))
+  (base_offset: nat) (n: nat)
+  : Lemma
+    (requires ranges_match_contents repr contents base_offset /\
+             RMSpec.range_map_wf repr /\
+             base_aligned repr base_offset /\
+             n <= RMSpec.contiguous_from repr base_offset /\
+             n <= Seq.length contents)
+    (ensures ranges_match_contents
+               (RMSpec.drain_repr repr (base_offset + n))
+               (drained_contents (Seq.length contents) contents n)
+               (base_offset + n))
+  = let al = Seq.length contents in
+    let new_bo = base_offset + n in
+    let new_contents = drained_contents al contents n in
+    let new_repr = RMSpec.drain_repr repr new_bo in
+    // First: original bridge after drain (using unchanged repr)
+    ranges_match_drain_padded repr contents base_offset n;
+    // So: ranges_match_contents repr new_contents new_bo
+    // Now show: drain_repr preserves mem for positions >= new_bo
+    if Seq.length repr = 0 then ()
+    else begin
+      let first = Seq.index repr 0 in
+      assert (first.low <= base_offset);
+      assert (base_offset <= RMSpec.high first);
+      assert (new_bo <= RMSpec.high first);
+      // drain_repr_mem_above: for x >= new_bo, mem new_repr x == mem repr x
+      let aux (i:nat{i < al})
+        : Lemma (RMSpec.mem new_repr (new_bo + i) <==> Some? (Seq.index new_contents i))
+        = RMSpec.drain_repr_mem_above repr new_bo (new_bo + i)
+      in
+      FStar.Classical.forall_intro aux;
+      // Bounded
+      RMSpec.drain_repr_bounded repr new_bo (base_offset + al);
+      RMSpec.range_map_bounded_monotone new_repr (base_offset + al) (new_bo + al)
+    end
+
 /// Drain preserves base_aligned when draining at most contiguous_from bytes.
 let drain_preserves_base_aligned
   (repr: Seq.seq RMSpec.interval)
@@ -833,6 +873,7 @@ let drain_preserves_base_aligned
         assert (base_offset + n == base_offset)
       )
     )
+
 
 /// 3-way invariant: empty, gap (first starts after base), or base_aligned.
 /// Excludes the unreachable case where first starts at/before base but base is past the end.
@@ -939,6 +980,39 @@ let drain_preserves_rwp
       drain_preserves_base_aligned repr base_offset n
     )
 
+/// drain_repr preserves repr_well_positioned with new base
+let drain_repr_preserves_rwp
+  (repr: Seq.seq RMSpec.interval) (base_offset: nat) (n: nat)
+  : Lemma
+    (requires repr_well_positioned repr base_offset /\
+             RMSpec.range_map_wf repr /\
+             base_aligned repr base_offset /\
+             n <= RMSpec.contiguous_from repr base_offset)
+    (ensures repr_well_positioned (RMSpec.drain_repr repr (base_offset + n)) (base_offset + n))
+  = if Seq.length repr = 0 then ()
+    else
+      let first = Seq.index repr 0 in
+      let new_bo = base_offset + n in
+      let result = RMSpec.drain_repr repr new_bo in
+      if RMSpec.high first <= new_bo then begin
+        let tl = Seq.tail repr in
+        if Seq.length tl = 0 then ()
+        else begin
+          let next = Seq.index tl 0 in
+          assert (Seq.index repr 1 == next);
+          assert (RMSpec.separated first next);
+          assert (next.low > RMSpec.high first);
+          assert (next.low > new_bo);
+          assert (Seq.index result 0 == next)
+        end
+      end else if first.low < new_bo then begin
+        let trimmed = { RMSpec.low = new_bo; RMSpec.count = RMSpec.high first - new_bo } in
+        assert (Seq.index result 0 == trimmed);
+        assert (trimmed.low == new_bo);
+        assert (new_bo <= RMSpec.high trimmed)
+      end else
+        assert (new_bo == base_offset)
+
 /// Master lemma: write preserves cf == cpl under the 3-way invariant
 #push-options "--z3rlimit_factor 2"
 let write_preserves_cf_eq_cpl
@@ -1029,3 +1103,17 @@ let trim_write_equiv
 let needed_alloc_for_write (abs_offset: nat) (write_len: nat) (base_offset: nat) : nat =
   if abs_offset + write_len <= base_offset then 0
   else abs_offset + write_len - base_offset
+
+/// Count bound: when repr starts at/after base_offset, the count is bounded.
+/// In gap case (first.low > bo): 2n <= al
+/// In base_aligned case (first.low <= bo): 2n <= bo + al - first.low + 1
+/// For the write fold site, we only use the gap case + the empty case.
+let repr_count_bound_gap
+  (repr: Seq.seq RMSpec.interval) (base_offset: nat) (al: pos)
+  : Lemma
+    (requires RMSpec.range_map_wf repr /\
+             RMSpec.range_map_bounded repr (base_offset + al) /\
+             Seq.length repr > 0 /\
+             (Seq.index repr 0).low >= base_offset)
+    (ensures Seq.length repr + Seq.length repr <= al + 1)
+  = RMSpec.wf_count_bound repr base_offset (base_offset + al)
