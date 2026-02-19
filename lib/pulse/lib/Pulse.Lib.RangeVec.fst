@@ -172,12 +172,40 @@ fn range_vec_max_endpoint (rv: range_vec_t) (#repr: erased (Seq.seq Spec.interva
 fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
   (#s: erased (Seq.seq range)) (#cap: erased SZ.t)
   requires V.is_vector rv s cap **
-           pure (SZ.v i <= Seq.length s)
+           pure (SZ.v i <= Seq.length s /\
+                 (Seq.length s < SZ.v cap \/ SZ.fits (SZ.v cap + SZ.v cap)))
   ensures exists* (s': Seq.seq range) (cap': SZ.t).
     V.is_vector rv s' cap' **
     pure (Seq.length s' == Seq.length s + 1)
 {
-  admit ()
+  V.push_back rv r;
+  with cap1. _;
+  let sz = V.size rv;
+  if (SZ.gt sz 1sz && SZ.lt i (SZ.sub sz 1sz)) {
+    let mut j = SZ.sub sz 1sz;
+    let mut cont = true;
+    while (!cont)
+    invariant exists* jv cv s_cur cap_cur.
+      R.pts_to j jv ** R.pts_to cont cv **
+      V.is_vector rv s_cur cap_cur **
+      pure (SZ.v jv >= SZ.v i /\ SZ.v jv < Seq.length s_cur /\
+            Seq.length s_cur == Seq.length s + 1)
+    {
+      let jv = !j;
+      if (SZ.gt jv i) {
+        let prev = V.at rv (SZ.sub jv 1sz);
+        V.set rv jv prev;
+        let new_j = SZ.sub jv 1sz;
+        j := new_j;
+        if (SZ.eq new_j i) { cont := false }
+      } else {
+        cont := false
+      }
+    };
+    V.set rv i r
+  } else {
+    ()
+  }
 }
 
 /// Helper: remove count elements starting at position i
@@ -189,7 +217,50 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
     V.is_vector rv s' cap' **
     pure (Seq.length s' + SZ.v count == Seq.length s)
 {
-  admit ()
+  let sz = V.size rv;
+  let dst_end = SZ.sub sz count;
+  // Phase 1: shift elements left — for j from i to dst_end-1, set rv[j] = rv[j+count]
+  let mut j = i;
+  let mut shift_cont = true;
+  while (!shift_cont)
+  invariant exists* jv sc s_cur cap_cur.
+    R.pts_to j jv ** R.pts_to shift_cont sc **
+    V.is_vector rv s_cur cap_cur **
+    pure (SZ.v jv >= SZ.v i /\ SZ.v jv <= SZ.v dst_end /\
+          Seq.length s_cur == Seq.length s)
+  {
+    let jv = !j;
+    if (SZ.lt jv dst_end) {
+      let val_ = V.at rv (SZ.add jv count);
+      V.set rv jv val_;
+      j := SZ.add jv 1sz
+    } else {
+      shift_cont := false
+    }
+  };
+  // Phase 2: pop count elements from the end
+  let mut k = 0sz;
+  let mut pop_cont = true;
+  while (!pop_cont)
+  invariant exists* kv pc s_cur cap_cur.
+    R.pts_to k kv ** R.pts_to pop_cont pc **
+    V.is_vector rv s_cur cap_cur **
+    pure (SZ.v kv <= SZ.v count /\
+          Seq.length s_cur + SZ.v kv == Seq.length s /\
+          (not pc ==> SZ.v kv >= SZ.v count))
+  {
+    let kv = !k;
+    if (SZ.lt kv count) {
+      let _ = V.pop_back rv;
+      let new_k = SZ.add kv 1sz;
+      k := new_k;
+      if (SZ.eq new_k count) {
+        pop_cont := false
+      }
+    } else {
+      pop_cont := false
+    }
+  }
 }
 
 #push-options "--z3rlimit 80 --fuel 2 --ifuel 1"
