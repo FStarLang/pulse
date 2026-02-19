@@ -155,6 +155,7 @@ let is_circular_buffer
       Spec.ranges_match_contents repr st.contents (SZ.v cbi.bo) /\
       RMSpec.range_map_wf repr /\
       Spec.repr_well_positioned repr (SZ.v cbi.bo) /\
+      (Seq.length repr = 0 \/ (Seq.index repr 0).low >= SZ.v cbi.bo) /\
       Seq.length repr < RM.max_range_vec_entries
     )
 
@@ -559,6 +560,17 @@ fn write_buffer_core
   // cf == cpl after write
   Spec.write_preserves_cf_eq_cpl repr st.contents (SZ.v cb_val.bo) (SZ.v offset) (reveal src_data);
 
+  // Bounded: add_range preserves boundedness
+  RMSpec.add_range_bounded repr (SZ.v abs_offset) (SZ.v write_len) (SZ.v cb_val.bo + SZ.v cb_val.al);
+
+  // Count bound: first.low >= bo preserved by add_range
+  RMSpec.add_range_first_low repr (SZ.v abs_offset) (SZ.v write_len) (SZ.v cb_val.bo);
+  // now: |add_range repr ...| > 0 /\ first'.low >= bo
+  // so repr_count_bound_gap applies
+  Spec.repr_count_bound_gap (RMSpec.add_range repr (SZ.v abs_offset) (SZ.v write_len))
+    (SZ.v cb_val.bo) (SZ.v cb_val.al);
+  // gives: 2 * |repr'| <= al + 1 <= pow2_63 + 1, so |repr'| <= pow2_62 < max
+
   fold (is_circular_buffer cb rm
     { st with contents =
         GT.write_range_contents_t st.contents (SZ.v offset) (reveal src_data) });
@@ -780,6 +792,14 @@ fn write_buffer
         Spec.write_preserves_rwp repr2 (SZ.v cb_val2.bo) (SZ.v rel_offset) (SZ.v trimmed_len);
         Spec.write_preserves_cf_eq_cpl repr2 (reveal rs_st).contents (SZ.v cb_val2.bo) (SZ.v rel_offset) (reveal trimmed_data);
 
+        // Bounded: add_range preserves boundedness
+        RMSpec.add_range_bounded repr2 (SZ.v rm_abs) (SZ.v trimmed_len) (SZ.v cb_val2.bo + SZ.v cb_val2.al);
+
+        // Count bound: first.low >= bo preserved, then derive count < max
+        RMSpec.add_range_first_low repr2 (SZ.v rm_abs) (SZ.v trimmed_len) (SZ.v cb_val2.bo);
+        Spec.repr_count_bound_gap (RMSpec.add_range repr2 (SZ.v rm_abs) (SZ.v trimmed_len))
+          (SZ.v cb_val2.bo) (SZ.v cb_val2.al);
+
         fold (is_circular_buffer cb rm
           { Spec.resize_result st (SZ.v new_al) with contents = reveal new_st_contents });
         { wrote = true; new_data_ready = ndr; resize_failed = false }
@@ -863,6 +883,14 @@ fn write_buffer
       Spec.write_preserves_rwp repr (SZ.v cb_val.bo) (SZ.v rel_offset) (SZ.v trimmed_len);
       Spec.write_preserves_cf_eq_cpl repr st.contents (SZ.v cb_val.bo) (SZ.v rel_offset) (reveal trimmed_data);
 
+      // Bounded: add_range preserves boundedness
+      RMSpec.add_range_bounded repr (SZ.v rm_abs) (SZ.v trimmed_len) (SZ.v cb_val.bo + SZ.v cb_val.al);
+
+      // Count bound: first.low >= bo preserved, then derive count < max
+      RMSpec.add_range_first_low repr (SZ.v rm_abs) (SZ.v trimmed_len) (SZ.v cb_val.bo);
+      Spec.repr_count_bound_gap (RMSpec.add_range repr (SZ.v rm_abs) (SZ.v trimmed_len))
+        (SZ.v cb_val.bo) (SZ.v cb_val.al);
+
       fold (is_circular_buffer cb rm
         { st with contents =
             GT.write_range_contents_t st.contents (SZ.v rel_offset) (reveal trimmed_data) });
@@ -897,32 +925,45 @@ fn drain
   let new_rs = SZ.rem temp cb_val.al;
   let new_bo = SZ.add cb_val.bo n;
 
-  // Compute new prefix length from range map with new base_offset
-  let new_pl = RM.range_vec_contiguous_from rm new_bo;
+  if (SZ.gt n 0sz) {
+    // n > 0: drain range vec + fold with drain_repr
+    RM.range_vec_drain rm new_bo;
 
-  let new_cbi = Mkcb_internal cb_val.buf new_rs cb_val.al new_pl cb_val.vl new_bo;
-  ( := ) cb new_cbi;
-  rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to new_cbi.buf buf_data);
+    let new_pl = RM.range_vec_contiguous_from rm new_bo;
+    let new_cbi = Mkcb_internal cb_val.buf new_rs cb_val.al new_pl cb_val.vl new_bo;
+    ( := ) cb new_cbi;
+    rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to new_cbi.buf buf_data);
 
-  // Physical coherence preserved under drain
-  Spec.drain_preserves_coherence st.alloc_length buf_data st.contents st.read_start (SZ.v n);
+    Spec.drain_preserves_coherence st.alloc_length buf_data st.contents st.read_start (SZ.v n);
+    Spec.ranges_match_drain_repr repr st.contents (SZ.v cb_val.bo) (SZ.v n);
+    RMSpec.drain_repr_wf repr (SZ.v new_bo);
+    Spec.drain_repr_preserves_rwp repr (SZ.v cb_val.bo) (SZ.v n);
+    Spec.rwp_cf_eq_cpl (RMSpec.drain_repr repr (SZ.v new_bo))
+      (Spec.drained_contents st.alloc_length st.contents (SZ.v n))
+      (SZ.v new_bo);
+    Spec.drain_prefix_length st.alloc_length st.contents (SZ.v n);
+    RMSpec.drain_repr_length repr (SZ.v new_bo);
 
-  // Bridge preserved by index substitution with padding (trivial!)
-  Spec.ranges_match_drain_padded repr st.contents (SZ.v cb_val.bo) (SZ.v n);
+    fold (is_circular_buffer cb rm (Spec.drain_result st (SZ.v n)));
+    SZ.eq new_pl 0sz
+  } else {
+    // n = 0: no drain, fold with original repr
+    let new_pl = RM.range_vec_contiguous_from rm new_bo;
+    let new_cbi = Mkcb_internal cb_val.buf new_rs cb_val.al new_pl cb_val.vl new_bo;
+    ( := ) cb new_cbi;
+    rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to new_cbi.buf buf_data);
 
-  // repr_well_positioned preserved
-  Spec.drain_preserves_rwp repr (SZ.v cb_val.bo) (SZ.v n);
+    Spec.drain_preserves_coherence st.alloc_length buf_data st.contents st.read_start (SZ.v n);
+    Spec.ranges_match_drain_padded repr st.contents (SZ.v cb_val.bo) (SZ.v n);
+    Spec.drain_preserves_rwp repr (SZ.v cb_val.bo) (SZ.v n);
+    Spec.rwp_cf_eq_cpl repr
+      (Spec.drained_contents st.alloc_length st.contents (SZ.v n))
+      (SZ.v new_bo);
+    Spec.drain_prefix_length st.alloc_length st.contents (SZ.v n);
 
-  // cf == cpl after drain
-  Spec.rwp_cf_eq_cpl repr
-    (Spec.drained_contents st.alloc_length st.contents (SZ.v n))
-    (SZ.v new_bo);
-
-  // Drain prefix: new_cpl = old_cpl - n, so new_cpl == 0 iff old_cpl == n
-  Spec.drain_prefix_length st.alloc_length st.contents (SZ.v n);
-
-  fold (is_circular_buffer cb rm (Spec.drain_result st (SZ.v n)));
-  SZ.eq new_pl 0sz
+    fold (is_circular_buffer cb rm (Spec.drain_result st (SZ.v n)));
+    SZ.eq new_pl 0sz
+  }
 }
 #pop-options
 

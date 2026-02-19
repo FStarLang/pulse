@@ -25,7 +25,7 @@ assume val platform_is_64bit : squash SZ.fits_u64
 /// Strictly greater than the maximum number of separated intervals that can
 /// fit in a CircularBuffer with alloc_length ≤ pow2_63 (which is ≤ pow2_62).
 /// The bound ensures vector capacity doubling is always representable.
-assume val max_range_vec_entries : n:pos{n <= pow2 62 + 1}
+assume val max_range_vec_entries : n:pos{n == pow2 62 + 1}
 
 (*** Types ***)
 

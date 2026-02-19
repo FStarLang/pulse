@@ -1648,3 +1648,24 @@ let drain_repr_mem_above (s: Seq.seq interval) (new_bo: nat) (x: nat)
     let tl = Seq.tail s in
     mem_cons trimmed tl x
   end else ()
+
+/// add_range preserves first.low >= lo when offset >= lo
+let rec add_range_first_low (s: Seq.seq interval) (offset: nat) (len: pos) (lo: nat)
+  : Lemma (requires range_map_wf s /\
+                    (Seq.length s = 0 \/ (Seq.index s 0).low >= lo) /\ offset >= lo)
+          (ensures Seq.length (add_range s offset len) > 0 /\
+                   (Seq.index (add_range s offset len) 0).low >= lo)
+          (decreases Seq.length s) =
+  if Seq.length s = 0 then ()
+  else
+    let hd = Seq.index s 0 in
+    let tl = Seq.tail s in
+    if offset + len < hd.low then ()
+    else if high hd < offset then
+      // add_range returns cons hd (add_range tl offset len)
+      ()
+    else
+      let merged_low = if offset < hd.low then offset else hd.low in
+      let merged_high = if offset + len > high hd then offset + len else high hd in
+      range_map_wf_tail s;
+      add_range_first_low tl merged_low (merged_high - merged_low) lo
