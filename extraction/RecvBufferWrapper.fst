@@ -11,15 +11,15 @@ module Spec = Pulse.Lib.CircularBuffer.Spec
 open Pulse.Lib.CircularBuffer.Spec
 module GT = Pulse.Lib.CircularBuffer.GapTrack
 module Pow2 = Pulse.Lib.CircularBuffer.Pow2
-module RM = Pulse.Lib.RangeMap
+module RM = Pulse.Lib.RangeVec
 module RMSpec = Pulse.Lib.RangeMap.Spec
 open Pulse.Lib.Trade
 
 type byte = Spec.byte
 
-/// Re-export circular_buffer and range_map_t types
+/// Re-export circular_buffer and range_vec_t types
 let circular_buffer = CB.circular_buffer
-let range_map_t = RM.range_map_t
+let range_vec_t = RM.range_vec_t
 let write_result = CB.write_result
 
 /// Re-export read_view
@@ -34,7 +34,7 @@ fn create
     SZ.v alloc_len <= SZ.v virt_len /\
     SZ.v alloc_len <= Spec.cb_max_length /\
     SZ.v virt_len <= CB.pow2_63)
-  returns res : (circular_buffer & range_map_t)
+  returns res : (circular_buffer & range_vec_t)
   ensures exists* st.
     CB.is_circular_buffer (fst res) (snd res) st **
     pure (Spec.cb_wf st /\
@@ -48,7 +48,7 @@ fn create
 
 fn free
   (cb: circular_buffer)
-  (rm: range_map_t)
+  (rm: range_vec_t)
   (#st: erased Spec.cb_state)
   requires CB.is_circular_buffer cb rm st
   ensures emp
@@ -57,7 +57,7 @@ fn free
 }
 
 fn read_length
-  (cb: circular_buffer) (rm: range_map_t)
+  (cb: circular_buffer) (rm: range_vec_t)
   (#st: erased Spec.cb_state)
   requires CB.is_circular_buffer cb rm st
   returns n : SZ.t
@@ -68,7 +68,7 @@ fn read_length
 }
 
 fn get_total_length
-  (cb: circular_buffer) (rm: range_map_t)
+  (cb: circular_buffer) (rm: range_vec_t)
   (#st: erased Spec.cb_state)
   requires CB.is_circular_buffer cb rm st
   returns n: SZ.t
@@ -80,7 +80,7 @@ fn get_total_length
 
 fn get_alloc_length
   (cb: circular_buffer)
-  (rm: range_map_t)
+  (rm: range_vec_t)
   (#st: erased Spec.cb_state)
   requires CB.is_circular_buffer cb rm st ** pure (Spec.cb_wf st)
   returns n : SZ.t
@@ -91,7 +91,7 @@ fn get_alloc_length
 
 fn drain
   (cb: circular_buffer)
-  (rm: range_map_t)
+  (rm: range_vec_t)
   (n: SZ.t)
   (#st: erased Spec.cb_state)
   requires
@@ -108,7 +108,7 @@ fn drain
 }
 
 fn write_buffer
-  (cb: circular_buffer) (rm: range_map_t)
+  (cb: circular_buffer) (rm: range_vec_t)
   (abs_offset: SZ.t) (src: A.array byte) (write_len: SZ.t)
   (#p: perm)
   (#src_data: erased (Seq.seq byte))
@@ -141,7 +141,7 @@ fn write_buffer
 
 fn read_buffer
   (cb: circular_buffer)
-  (rm: range_map_t)
+  (rm: range_vec_t)
   (dst: A.array byte)
   (read_len: SZ.t)
   (#dst_data: erased (Seq.seq byte))
@@ -169,7 +169,7 @@ fn read_buffer
 }
 
 fn resize
-  (cb: circular_buffer) (rm: range_map_t) (new_al: SZ.t{SZ.v new_al > 0})
+  (cb: circular_buffer) (rm: range_vec_t) (new_al: SZ.t{SZ.v new_al > 0})
   (#st: erased Spec.cb_state)
   requires CB.is_circular_buffer cb rm st **
     pure (Spec.cb_wf st /\ Pow2.is_pow2 (SZ.v new_al) /\
@@ -183,7 +183,7 @@ fn resize
 }
 
 fn set_virtual_length
-  (cb: circular_buffer) (rm: range_map_t) (new_vl: SZ.t{SZ.v new_vl > 0})
+  (cb: circular_buffer) (rm: range_vec_t) (new_vl: SZ.t{SZ.v new_vl > 0})
   (#st: erased Spec.cb_state)
   requires CB.is_circular_buffer cb rm st **
     pure (Spec.cb_wf st /\
@@ -197,7 +197,7 @@ fn set_virtual_length
 
 fn read_zerocopy
   (cb: circular_buffer)
-  (rm: range_map_t)
+  (rm: range_vec_t)
   (read_len: SZ.t)
   (#st: erased Spec.cb_state)
   requires
@@ -220,7 +220,7 @@ fn read_zerocopy
 
 fn release_read
   (cb: circular_buffer)
-  (rm: range_map_t)
+  (rm: range_vec_t)
   (rv: read_view)
   (#st: erased Spec.cb_state)
   (#s1 #s2: erased (Seq.seq byte))
@@ -235,7 +235,7 @@ fn release_read
 
 fn drain_after_read
   (cb: circular_buffer)
-  (rm: range_map_t)
+  (rm: range_vec_t)
   (rv: read_view)
   (drain_len: SZ.t)
   (#st: erased Spec.cb_state)
