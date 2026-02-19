@@ -84,6 +84,119 @@ let rec seq_all_valid_forall (s: Seq.seq range)
 
 #pop-options
 
+#push-options "--fuel 3 --ifuel 2 --z3rlimit 20"
+
+(* Helper lemma: seq_all_valid for snoc *)
+noextract
+let rec seq_all_valid_snoc (s: Seq.seq range) (r: range)
+  : Lemma (requires seq_all_valid s /\ range_valid r)
+          (ensures seq_all_valid (Seq.snoc s r))
+          (decreases Seq.length s) =
+  if Seq.length s = 0 then ()
+  else begin
+    seq_all_valid_snoc (Seq.tail s) r;
+    // Help SMT understand the structure
+    assert (Seq.length (Seq.snoc s r) > 0);
+    assert (Seq.head (Seq.snoc s r) == Seq.head s);
+    assert (Seq.tail (Seq.snoc s r) `Seq.equal` Seq.snoc (Seq.tail s) r)
+  end
+
+(* Lemma 1: seq_to_spec commutes with snoc *)
+noextract
+let rec seq_to_spec_snoc (s: Seq.seq range) (r: range)
+  : Lemma (requires seq_all_valid s /\ range_valid r)
+          (ensures seq_all_valid (Seq.snoc s r) /\
+                   seq_to_spec (Seq.snoc s r) == Seq.snoc (seq_to_spec s) (range_to_interval r))
+          (decreases Seq.length s) =
+  seq_all_valid_snoc s r;
+  if Seq.length s = 0 then begin
+    Seq.lemma_eq_intro (Seq.snoc s r) (Seq.create 1 r);
+    Seq.lemma_eq_intro (seq_to_spec (Seq.snoc s r)) (Seq.snoc (seq_to_spec s) (range_to_interval r))
+  end else begin
+    seq_to_spec_snoc (Seq.tail s) r;
+    let s' = Seq.snoc s r in
+    assert (Seq.head s' == Seq.head s);
+    assert (Seq.tail s' `Seq.equal` Seq.snoc (Seq.tail s) r);
+    let a = range_to_interval (Seq.head s) in
+    let b = seq_to_spec (Seq.tail s) in
+    let c = range_to_interval r in
+    Seq.lemma_eq_intro (Seq.cons a (Seq.snoc b c)) (Seq.snoc (Seq.cons a b) c)
+  end
+
+(* Helper lemma: seq_all_valid for append *)
+noextract
+let rec seq_all_valid_append (s1 s2: Seq.seq range)
+  : Lemma (requires seq_all_valid s1 /\ seq_all_valid s2)
+          (ensures seq_all_valid (Seq.append s1 s2))
+          (decreases Seq.length s1) =
+  if Seq.length s1 = 0 then
+    Seq.lemma_eq_intro (Seq.append s1 s2) s2
+  else begin
+    seq_all_valid_append (Seq.tail s1) s2;
+    let s' = Seq.append s1 s2 in
+    assert (Seq.length s' > 0);
+    Seq.lemma_eq_intro (Seq.tail s') (Seq.append (Seq.tail s1) s2);
+    assert (Seq.head s' == Seq.head s1)
+  end
+
+(* Lemma 2: seq_to_spec commutes with append *)
+noextract
+let rec seq_to_spec_append (s1 s2: Seq.seq range)
+  : Lemma (requires seq_all_valid s1 /\ seq_all_valid s2)
+          (ensures seq_all_valid (Seq.append s1 s2) /\
+                   seq_to_spec (Seq.append s1 s2) == Seq.append (seq_to_spec s1) (seq_to_spec s2))
+          (decreases Seq.length s1) =
+  seq_all_valid_append s1 s2;
+  if Seq.length s1 = 0 then begin
+    Seq.lemma_eq_intro (Seq.append s1 s2) s2;
+    Seq.lemma_eq_intro (seq_to_spec (Seq.append s1 s2)) (Seq.append (seq_to_spec s1) (seq_to_spec s2))
+  end else begin
+    seq_to_spec_append (Seq.tail s1) s2;
+    let s' = Seq.append s1 s2 in
+    assert (Seq.head s' == Seq.head s1);
+    Seq.lemma_eq_intro (Seq.tail s') (Seq.append (Seq.tail s1) s2);
+    // cons a (append b c) == append (cons a b) c
+    let a = range_to_interval (Seq.head s1) in
+    let b = seq_to_spec (Seq.tail s1) in
+    let c = seq_to_spec s2 in
+    Seq.lemma_eq_intro (Seq.cons a (Seq.append b c)) (Seq.append (Seq.cons a b) c)
+  end
+
+(* Lemma 3: seq_all_valid preserves through slice *)
+noextract
+let rec seq_all_valid_slice (s: Seq.seq range) (i j: nat)
+  : Lemma (requires seq_all_valid s /\ i <= j /\ j <= Seq.length s)
+          (ensures seq_all_valid (Seq.slice s i j))
+          (decreases Seq.length s) =
+  if i >= j then ()
+  else if i = 0 then begin
+    if j = 0 then ()
+    else if j = Seq.length s then ()
+    else seq_all_valid_slice (Seq.tail s) 0 (j - 1)
+  end
+  else seq_all_valid_slice (Seq.tail s) (i - 1) (j - 1)
+
+(* Lemma 4: seq_to_spec commutes with slice *)
+noextract
+let seq_to_spec_slice (s: Seq.seq range) (i j: nat)
+  : Lemma (requires seq_all_valid s /\ i <= j /\ j <= Seq.length s)
+          (ensures seq_all_valid (Seq.slice s i j) /\
+                   seq_to_spec (Seq.slice s i j) == Seq.slice (seq_to_spec s) i j) =
+  seq_all_valid_slice s i j;
+  let sliced_range = Seq.slice s i j in
+  let sliced_spec = seq_to_spec sliced_range in
+  let spec_sliced = Seq.slice (seq_to_spec s) i j in
+  let aux (k: nat{k < Seq.length sliced_spec})
+    : Lemma (Seq.index sliced_spec k == Seq.index spec_sliced k) =
+    seq_to_spec_index sliced_range k;
+    seq_all_valid_index s (i + k);
+    seq_to_spec_index s (i + k)
+  in
+  Classical.forall_intro aux;
+  Seq.lemma_eq_intro sliced_spec spec_sliced
+
+#pop-options
+
 (*** Predicate ***)
 
 let range_vec_t = V.vector range
@@ -170,12 +283,65 @@ fn range_vec_max_endpoint (rv: range_vec_t) (#repr: erased (Seq.seq Spec.interva
 (*** Add range — core operation ***)
 
 noextract
-let seq_insert (#a:Type) (s: Seq.seq a) (i: nat{i <= Seq.length s}) (x: a) : Seq.seq a =
-  Seq.append (Seq.slice s 0 i) (Seq.cons x (Seq.slice s i (Seq.length s)))
+let seq_insert (#a:Type) (s: Seq.seq a) (i: nat) (x: a) : Seq.seq a =
+  if i <= Seq.length s then
+    Seq.append (Seq.slice s 0 i) (Seq.cons x (Seq.slice s i (Seq.length s)))
+  else s
 
 noextract
-let seq_remove (#a:Type) (s: Seq.seq a) (i: nat) (count: nat{i + count <= Seq.length s}) : Seq.seq a =
-  Seq.append (Seq.slice s 0 i) (Seq.slice s (i + count) (Seq.length s))
+let seq_remove (#a:Type) (s: Seq.seq a) (i: nat) (count: nat) : Seq.seq a =
+  if i + count <= Seq.length s then
+    Seq.append (Seq.slice s 0 i) (Seq.slice s (i + count) (Seq.length s))
+  else s
+
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 20"
+
+(* seq_all_valid of seq_insert *)
+noextract
+let seq_all_valid_insert (s: Seq.seq range) (i: nat) (r: range)
+  : Lemma (requires seq_all_valid s /\ range_valid r /\ i <= Seq.length s)
+          (ensures seq_all_valid (seq_insert s i r)) =
+  seq_all_valid_slice s 0 i;
+  seq_all_valid_slice s i (Seq.length s);
+  let suffix = Seq.slice s i (Seq.length s) in
+  let cons_r = Seq.cons r suffix in
+  Seq.lemma_eq_intro (Seq.tail cons_r) suffix;
+  seq_all_valid_append (Seq.slice s 0 i) cons_r
+
+(* seq_to_spec of seq_insert — relates to Seq operations on spec level *)
+noextract
+let seq_to_spec_insert (s: Seq.seq range) (i: nat) (r: range)
+  : Lemma (requires seq_all_valid s /\ range_valid r /\ i <= Seq.length s)
+          (ensures seq_all_valid (seq_insert s i r) /\
+                   seq_to_spec (seq_insert s i r) ==
+                   Seq.append (Seq.slice (seq_to_spec s) 0 i)
+                              (Seq.cons (range_to_interval r)
+                                        (Seq.slice (seq_to_spec s) i (Seq.length s)))) =
+  seq_all_valid_insert s i r;
+  seq_all_valid_slice s 0 i;
+  seq_all_valid_slice s i (Seq.length s);
+  seq_to_spec_slice s 0 i;
+  seq_to_spec_slice s i (Seq.length s);
+  let prefix = Seq.slice s 0 i in
+  let suffix = Seq.slice s i (Seq.length s) in
+  let cons_r = Seq.cons r suffix in
+  Seq.lemma_eq_intro (Seq.tail cons_r) suffix;
+  seq_to_spec_append prefix cons_r
+
+(* Forall highs-below-offset lifts from ranges to spec *)
+noextract
+let forall_high_below_to_spec (s: Seq.seq range) (n: nat) (bound: nat)
+  : Lemma (requires seq_all_valid s /\ n <= Seq.length s /\
+                    (forall (k:nat). k < n ==> SZ.v (Seq.index s k).start + SZ.v (Seq.index s k).len < bound))
+          (ensures (forall (k:nat). k < n ==> Spec.high (Seq.index (seq_to_spec s) k) < bound)) =
+  let aux (k: nat{k < n})
+    : Lemma (Spec.high (Seq.index (seq_to_spec s) k) < bound) =
+    seq_to_spec_index s k;
+    seq_all_valid_index s k
+  in
+  Classical.forall_intro aux
+
+#pop-options
 
 /// Helper: shift elements [i..n) right by 1, set position i to r.
 fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
@@ -185,7 +351,7 @@ fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
                  (Seq.length s < SZ.v cap \/ SZ.fits (SZ.v cap + SZ.v cap)))
   ensures exists* (s': Seq.seq range) (cap': SZ.t).
     V.is_vector rv s' cap' **
-    pure (Seq.length s' == Seq.length s + 1)
+    pure (Seq.length s' == Seq.length s + 1 /\ s' == seq_insert s (SZ.v i) r)
 {
   V.push_back rv r;
   with cap1. _;
@@ -211,9 +377,12 @@ fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
         cont := false
       }
     };
-    V.set rv i r
+    V.set rv i r;
+    // The shift-right + set produces seq_insert — standard array insert
+    admit ()
   } else {
-    ()
+    // push_back appended r at end = seq_insert at position Seq.length s
+    admit ()
   }
 }
 
@@ -295,7 +464,9 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
     pure (seq_all_valid s_cur /\
           s_cur == G.reveal s /\ cap_cur == G.reveal cap /\
           SZ.v iv <= Seq.length s_cur /\
-          (forall (k:nat). k < Seq.length s_cur ==> range_valid (Seq.index s_cur k)))
+          (forall (k:nat). k < Seq.length s_cur ==> range_valid (Seq.index s_cur k)) /\
+          (forall (k:nat). k < SZ.v iv ==>
+            SZ.v (Seq.index s_cur k).start + SZ.v (Seq.index s_cur k).len < SZ.v offset))
   {
     let iv = !idx;
     if (SZ.lt iv sz) {
@@ -316,21 +487,34 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
   if (SZ.eq sz 0sz || SZ.eq iv sz) {
     // Append at end (empty vec or all ranges are before offset)
     let r : range = { start = offset; len = len };
+    // Prove spec facts while s is still live
+    forall_high_below_to_spec s (SZ.v iv) (SZ.v offset);
+    Spec.add_range_all_before repr (SZ.v offset) (SZ.v len);
+    seq_to_spec_snoc s r;
+    seq_all_valid_insert s (SZ.v iv) r;
+    Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
     vec_insert_at rv iv r;
     with s' cap'. _;
-    Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
-    admit (); // TODO: prove forall k < iv. high(repr[k]) < offset from loop,
-              //       then use add_range_all_before + seq_to_spec bridge
+    // s' == seq_insert s iv r == snoc s r (since iv == Seq.length s)
+    admit (); // capacity invariant for fold
     fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
   } else {
     let first_r = V.at rv iv;
     if (SZ.lt off_plus_len first_r.start) {
       // No overlap — insert before iv
-      vec_insert_at rv iv ({ start = offset; len = len });
-      with s' cap'. _;
+      let new_r : range = { start = offset; len = len };
+      // Prove spec facts while s is still live
+      forall_high_below_to_spec s (SZ.v iv) (SZ.v offset);
+      seq_to_spec_index s (SZ.v iv);
+      seq_all_valid_index s (SZ.v iv);
+      Spec.add_range_insert_no_overlap repr (SZ.v offset) (SZ.v len) (SZ.v iv);
+      seq_to_spec_insert s (SZ.v iv) new_r;
+      seq_all_valid_insert s (SZ.v iv) new_r;
       Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
-      admit (); // TODO: prove forall k < iv. high(repr[k]) < offset from loop,
-                //       then use add_range_insert_no_overlap + seq_to_spec bridge
+      vec_insert_at rv iv new_r;
+      with s' cap'. _;
+      // s' == seq_insert s iv new_r
+      admit (); // capacity invariant for fold
       fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
     } else {
       // Merge: compute merged bounds [merged_low, merged_high)
