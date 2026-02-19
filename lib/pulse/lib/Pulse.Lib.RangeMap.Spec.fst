@@ -1040,3 +1040,229 @@ let rec add_range_skip_prefix (s: Seq.seq interval) (offset: nat) (len: pos) (k:
       (Seq.append (Seq.slice s 0 k) (add_range (Seq.slice s k n) offset len))
   )
 #pop-options
+
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 40"
+
+/// Helper: prove transitive sortedness from range_map_wf
+let rec range_map_wf_sorted (s: Seq.seq interval) (i j: nat)
+  : Lemma (requires range_map_wf s /\ i < j /\ j < Seq.length s)
+          (ensures high (Seq.index s i) < (Seq.index s j).low)
+          (decreases %[Seq.length s; j - i]) =
+  if i + 1 = j then begin
+    // Adjacent case: directly from wf
+    if i = 0 then begin
+      assert (separated (Seq.index s 0) (Seq.index s 1))
+    end else begin
+      range_map_wf_tail s;
+      range_map_wf_sorted (Seq.tail s) (i - 1) (j - 1)
+    end
+  end else begin
+    // Transitive case: i < i+1 < j
+    range_map_wf_sorted s i (i + 1);
+    range_map_wf_sorted s (i + 1) j;
+    // Now we have: high s[i] < s[i+1].low < high s[i+1] < s[j].low
+    assert (high (Seq.index s i) < (Seq.index s (i + 1)).low);
+    assert ((Seq.index s (i + 1)).low < high (Seq.index s (i + 1)));
+    assert (high (Seq.index s (i + 1)) < (Seq.index s j).low)
+  end
+
+/// Helper: compute final merged high value after absorbing k elements
+let rec merge_absorbed_high (s: Seq.seq interval) (mh: nat) (k: nat{k <= Seq.length s})
+  : Tot nat (decreases k) =
+  if k = 0 then mh
+  else let hd = Seq.index s 0 in
+       merge_absorbed_high (Seq.tail s) (if mh > high hd then mh else high hd) (k - 1)
+
+/// Monotonicity of merge_absorbed_high
+let rec merge_absorbed_high_mono (s: Seq.seq interval) (mh: nat) (k: nat{k <= Seq.length s})
+  : Lemma (ensures merge_absorbed_high s mh k >= mh)
+          (decreases k) =
+  if k = 0 then ()
+  else merge_absorbed_high_mono (Seq.tail s) (if mh > high (Seq.index s 0) then mh else high (Seq.index s 0)) (k - 1)
+
+/// Lemma 1: Trivial unfolding lemma for the merge branch
+let add_range_merge_step (s: Seq.seq interval) (offset: nat) (len: pos)
+  : Lemma (requires Seq.length s > 0 /\
+                    (let hd = Seq.index s 0 in
+                     ~(offset + len < hd.low) /\ ~(high hd < offset)))
+          (ensures (let hd = Seq.index s 0 in
+                    let tl = Seq.tail s in
+                    let ml = (if offset < hd.low then offset else hd.low) in
+                    let mh = (if offset + len > high hd then offset + len else high hd) in
+                    mh > ml /\
+                    add_range s offset len == add_range tl ml (mh - ml)))
+  = let hd = Seq.index s 0 in
+    let ml = (if offset < hd.low then offset else hd.low) in
+    let mh = (if offset + len > high hd then offset + len else high hd) in
+    // Show mh > ml
+    assert (offset + len > offset);
+    assert (~(offset + len < hd.low));
+    assert (offset + len >= hd.low);
+    assert (~(high hd < offset));
+    assert (high hd >= offset);
+    assert (mh >= offset);
+    assert (ml <= offset);
+    // Unfold add_range definition
+    assert (add_range s offset len == 
+            (let hd' = Seq.index s 0 in
+             let tl' = Seq.tail s in
+             if offset + len < hd'.low then Seq.cons ({ low = offset; count = len }) s
+             else if high hd' < offset then Seq.cons hd' (add_range tl' offset len)
+             else
+               let merged_low = if offset < hd'.low then offset else hd'.low in
+               let merged_high = if offset + len > high hd' then offset + len else high hd' in
+               add_range tl' merged_low (merged_high - merged_low)))
+
+/// Lemma 2: Characterize recursive merge
+let rec add_range_merge_scan (s: Seq.seq interval) (ml: nat) (mh: nat) (k: nat)
+  : Lemma (requires range_map_wf s /\ mh > ml /\
+                    k <= Seq.length s /\
+                    (k > 0 ==> ml <= (Seq.index s 0).low) /\
+                    (forall (i:nat). i < k ==> mh >= (Seq.index s i).low) /\
+                    (k = Seq.length s \/ mh < (Seq.index s k).low))
+          (ensures (let fh = merge_absorbed_high s mh k in
+                    fh > ml /\
+                    add_range s ml (mh - ml) ==
+                    Seq.append (Seq.create 1 ({ low = ml; count = fh - ml }))
+                               (Seq.slice s k (Seq.length s))))
+          (decreases k) =
+  if k = 0 then begin
+    // No overlaps to absorb
+    merge_absorbed_high_mono s mh 0;
+    assert (merge_absorbed_high s mh 0 = mh);
+    
+    if Seq.length s = 0 then begin
+      // Empty sequence case
+      let iv = { low = ml; count = mh - ml } in
+      assert (add_range s ml (mh - ml) == Seq.create 1 iv);
+      Seq.lemma_eq_intro (Seq.slice s 0 0) Seq.empty;
+      Seq.lemma_eq_intro (Seq.append (Seq.create 1 iv) Seq.empty) (Seq.create 1 iv)
+    end else begin
+      // mh < s[0].low, insert before first element
+      let iv = { low = ml; count = mh - ml } in
+      assert (ml + (mh - ml) = mh);
+      assert (mh < (Seq.index s 0).low);
+      assert (add_range s ml (mh - ml) == Seq.cons iv s);
+      Seq.lemma_eq_intro (Seq.slice s 0 (Seq.length s)) s;
+      Seq.lemma_eq_intro (Seq.cons iv s) (Seq.append (Seq.create 1 iv) s)
+    end
+  end else begin
+    // k > 0: first element overlaps
+    let hd = Seq.index s 0 in
+    let tl = Seq.tail s in
+    let n = Seq.length s in
+    
+    // Establish overlap conditions
+    assert (mh >= hd.low); // from forall with i=0
+    assert (~(ml + (mh - ml) < hd.low)); // since ml + (mh - ml) = mh >= hd.low
+    
+    // Show ~(high hd < ml)
+    assert (ml <= hd.low); // from precondition k > 0
+    assert (high hd = hd.low + hd.count);
+    assert (hd.count > 0);
+    assert (high hd > hd.low);
+    assert (high hd >= ml); // since high hd > hd.low >= ml
+    assert (~(high hd < ml));
+    
+    // Merge branch is taken
+    let ml' = (if ml < hd.low then ml else hd.low) in
+    let mh' = (if mh > high hd then mh else high hd) in
+    
+    // ml' = ml since ml <= hd.low
+    assert (ml' = ml);
+    
+    // mh' = max(mh, high hd)
+    assert (mh' >= mh);
+    assert (mh' >= high hd);
+    assert (mh' > ml);
+    
+    // Establish IH preconditions for tl with k-1
+    range_map_wf_tail s;
+    assert (range_map_wf tl);
+    
+    // Show: forall i < k-1. mh' >= (Seq.index tl i).low
+    // Seq.index tl i = Seq.index s (i+1)
+    assert (forall (i:nat). i < k - 1 ==> (
+      let si1 = Seq.index s (i + 1) in
+      let ti = Seq.index tl i in
+      ti == si1
+    ));
+    
+    assert (forall (i:nat). i < k - 1 ==> mh >= (Seq.index s (i + 1)).low);
+    assert (forall (i:nat). i < k - 1 ==> mh' >= (Seq.index tl i).low);
+    
+    // Show: k-1 = Seq.length tl \/ mh' < (Seq.index tl (k-1)).low
+    assert (Seq.length tl = n - 1);
+    if k = n then begin
+      assert (k - 1 = Seq.length tl)
+    end else begin
+      // mh < s[k].low, need to show mh' < s[k].low
+      assert (mh < (Seq.index s k).low);
+      
+      // By wf, high hd < s[1].low
+      if k >= 2 then begin
+        assert (separated hd (Seq.index s 1));
+        assert (high hd < (Seq.index s 1).low);
+        range_map_wf_sorted s 1 k;
+        assert (high (Seq.index s 1) < (Seq.index s k).low);
+        assert ((Seq.index s 1).low < high (Seq.index s 1));
+        assert ((Seq.index s 1).low < (Seq.index s k).low);
+        assert (high hd < (Seq.index s 1).low);
+        assert (high hd < (Seq.index s k).low)
+      end else begin
+        // k = 1, so we need mh' < s[1].low
+        assert (k = 1);
+        assert (separated hd (Seq.index s 1));
+        assert (high hd < (Seq.index s 1).low)
+      end;
+      
+      // mh' = max(mh, high hd), both < s[k].low
+      assert (mh' < (Seq.index s k).low);
+      assert (Seq.index tl (k - 1) == Seq.index s k);
+      assert (mh' < (Seq.index tl (k - 1)).low)
+    end;
+    
+    // Show: k-1 > 0 ==> ml <= (Seq.index tl 0).low
+    if k - 1 > 0 then begin
+      assert (k >= 2);
+      assert (Seq.index tl 0 == Seq.index s 1);
+      assert (ml <= hd.low);
+      assert (separated hd (Seq.index s 1));
+      assert (high hd < (Seq.index s 1).low);
+      assert (hd.low < (Seq.index s 1).low);
+      assert (ml <= (Seq.index tl 0).low)
+    end;
+    
+    // Apply IH
+    add_range_merge_scan tl ml mh' (k - 1);
+    
+    // Now we have: add_range tl ml (mh' - ml) = 
+    //              append (create 1 {ml, merge_absorbed_high tl mh' (k-1) - ml})
+    //                     (slice tl (k-1) (length tl))
+    
+    // Show: merge_absorbed_high s mh k = merge_absorbed_high tl mh' (k-1)
+    assert (merge_absorbed_high s mh k = 
+            merge_absorbed_high tl (if mh > high hd then mh else high hd) (k - 1));
+    assert (merge_absorbed_high s mh k = merge_absorbed_high tl mh' (k - 1));
+    
+    let fh = merge_absorbed_high s mh k in
+    
+    // Show: add_range s ml (mh - ml) = add_range tl ml (mh' - ml)
+    assert (add_range s ml (mh - ml) == add_range tl ml (mh' - ml));
+    
+    // From IH: add_range tl ml (mh' - ml) = append (create 1 {ml, fh - ml}) (slice tl (k-1) (n-1))
+    
+    // Show: slice tl (k-1) (n-1) = slice s k n
+    assert (forall (i:nat). i < Seq.length (Seq.slice tl (k - 1) (n - 1)) ==> 
+            Seq.index (Seq.slice tl (k - 1) (n - 1)) i == 
+            Seq.index (Seq.slice s k n) i);
+    Seq.lemma_eq_intro (Seq.slice tl (k - 1) (n - 1)) (Seq.slice s k n);
+    
+    // Conclude
+    Seq.lemma_eq_intro 
+      (add_range s ml (mh - ml))
+      (Seq.append (Seq.create 1 ({ low = ml; count = fh - ml }))
+                  (Seq.slice s k n))
+  end
+
+#pop-options

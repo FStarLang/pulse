@@ -343,6 +343,25 @@ let forall_high_below_to_spec (s: Seq.seq range) (n: nat) (bound: nat)
 
 #pop-options
 
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 30"
+
+(* Overlap forall lifts from ranges to spec *)
+noextract
+let forall_overlap_to_spec (s: Seq.seq range) (iv j: nat) (mh: nat)
+  : Lemma (requires seq_all_valid s /\ iv <= j /\ j <= Seq.length s /\
+                    (forall (k:nat). k >= iv /\ k < j ==>
+                      SZ.v (Seq.index s k).start <= mh))
+          (ensures (forall (k:nat). k >= iv /\ k < j ==>
+                     mh >= (Seq.index (seq_to_spec s) k).Spec.low)) =
+  let aux (k: nat{k >= iv /\ k < j})
+    : Lemma (mh >= (Seq.index (seq_to_spec s) k).Spec.low) =
+    seq_to_spec_index s k;
+    seq_all_valid_index s k
+  in
+  Classical.forall_intro aux
+
+#pop-options
+
 /// Helper: shift elements [i..n) right by 1, set position i to r.
 fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
   (#s: erased (Seq.seq range)) (#cap: erased SZ.t)
@@ -534,7 +553,13 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
               SZ.v jv > SZ.v iv /\ SZ.v jv <= Seq.length s_cur /\
               SZ.v mh > SZ.v merged_low /\
               SZ.fits (SZ.v mh) /\
-              (forall (k:nat). k < Seq.length s_cur ==> range_valid (Seq.index s_cur k)))
+              (forall (k:nat). k < Seq.length s_cur ==> range_valid (Seq.index s_cur k)) /\
+              // Overlap: mh covers all ranges in [iv..jv)
+              (forall (k:nat). k >= SZ.v iv /\ k < SZ.v jv ==>
+                SZ.v mh >= SZ.v (Seq.index s_cur k).start) /\
+              // Exit: when loop done, either jv==sz or mh < s[jv].start
+              (not mc ==> (SZ.v jv == Seq.length s_cur \/
+                           SZ.v mh < SZ.v (Seq.index s_cur (SZ.v jv)).start)))
       {
         let jv = !j;
         if (SZ.lt jv sz) {
