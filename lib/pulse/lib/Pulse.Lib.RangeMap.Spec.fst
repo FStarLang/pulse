@@ -1498,3 +1498,47 @@ let add_range_merge_full_explicit (s: Seq.seq interval) (offset: nat) (len: pos)
   add_range_merge_full s offset len iv j
 
 #pop-options
+
+(*** Length bounds ***)
+
+/// drain_ranges never increases the number of intervals
+let rec drain_ranges_length (s: Seq.seq interval) (n: nat)
+  : Lemma (ensures Seq.length (drain_ranges s n) <= Seq.length s)
+          (decreases Seq.length s) =
+  if Seq.length s = 0 then ()
+  else
+    let hd = Seq.index s 0 in
+    let tl = Seq.tail s in
+    drain_ranges_length tl n
+
+/// Separated intervals span at least 2n-1 offsets within [lo, bound).
+/// From range_map_wf (gaps >= 1) and count >= 1 per interval.
+let rec wf_count_bound (s: Seq.seq interval) (lo bound: nat)
+  : Lemma (requires range_map_wf s /\ range_map_bounded s bound /\
+                    Seq.length s > 0 /\ (Seq.index s 0).low >= lo)
+          (ensures Seq.length s + Seq.length s <= bound - lo + 1)
+          (decreases Seq.length s) =
+  let hd = Seq.index s 0 in
+  if Seq.length s = 1 then
+    // Single interval: count >= 1, so high hd <= bound and hd.low >= lo
+    // high hd - lo >= hd.count >= 1 = 2*1 - 1
+    ()
+  else begin
+    let tl = Seq.tail s in
+    let hd2 = Seq.index s 1 in
+    // separated hd hd2: high hd < hd2.low (gap >= 1)
+    assert (Seq.index tl 0 == hd2);
+    range_map_wf_tail s;
+    // range_map_bounded for tail
+    let aux (i:nat{i < Seq.length tl}) : Lemma (high (Seq.index tl i) <= bound) =
+      assert (Seq.index tl i == Seq.index s (i + 1))
+    in
+    Classical.forall_intro aux;
+    // Recurse: 2*(|tl|) - 1 <= bound - hd2.low
+    wf_count_bound tl hd2.low bound;
+    // hd spans [hd.low, high hd), count >= 1
+    // gap: hd2.low > high hd, so hd2.low >= high hd + 1
+    assert (high hd - hd.low >= 1);  // count >= 1
+    assert (hd2.low - high hd >= 1); // separated gap >= 1
+    assert (hd.low >= lo)
+  end
