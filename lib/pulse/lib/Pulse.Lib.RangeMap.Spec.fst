@@ -1266,3 +1266,85 @@ let rec add_range_merge_scan (s: Seq.seq interval) (ml: nat) (mh: nat) (k: nat)
   end
 
 #pop-options
+
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 80"
+
+let rec range_map_wf_slice (s: Seq.seq interval) (i: nat)
+  : Lemma (requires range_map_wf s /\ i <= Seq.length s)
+          (ensures range_map_wf (Seq.slice s i (Seq.length s)))
+          (decreases i) =
+  if i = 0 then Seq.lemma_eq_intro (Seq.slice s 0 (Seq.length s)) s
+  else begin
+    range_map_wf_tail s;
+    range_map_wf_slice (Seq.tail s) (i - 1);
+    Seq.lemma_eq_intro (Seq.slice s i (Seq.length s)) (Seq.slice (Seq.tail s) (i - 1) (Seq.length (Seq.tail s)))
+  end
+
+#pop-options
+
+#push-options "--fuel 1 --ifuel 0 --z3rlimit 40 --split_queries always"
+
+/// Helper: the suffix part of the merge
+/// add_range (slice s iv n) offset len == append (create 1 merged) (slice s j n)
+let add_range_merge_suffix (s: Seq.seq interval) (offset: nat) (len: pos) (iv j: nat)
+  : Lemma (requires range_map_wf s /\
+                    iv < Seq.length s /\ j > iv /\ j <= Seq.length s /\
+                    ~(offset + len < (Seq.index s iv).low) /\
+                    ~(high (Seq.index s iv) < offset) /\
+                    (let ml = (if offset < (Seq.index s iv).low then offset else (Seq.index s iv).low) in
+                     let mh0 = (if offset + len > high (Seq.index s iv) then offset + len else high (Seq.index s iv)) in
+                     (forall (i:nat). i > iv /\ i < j ==> mh0 >= (Seq.index s i).low) /\
+                     (j = Seq.length s \/ mh0 < (Seq.index s j).low)))
+          (ensures (let ml = (if offset < (Seq.index s iv).low then offset else (Seq.index s iv).low) in
+                    let mh0 = (if offset + len > high (Seq.index s iv) then offset + len else high (Seq.index s iv)) in
+                    let suffix_tail = Seq.slice s (iv + 1) (Seq.length s) in
+                    let fh = merge_absorbed_high suffix_tail mh0 (j - iv - 1) in
+                    fh > ml /\
+                    add_range (Seq.slice s iv (Seq.length s)) offset len ==
+                    Seq.append (Seq.create 1 ({ low = ml; count = fh - ml }))
+                               (Seq.slice s j (Seq.length s)))) =
+  let n = Seq.length s in
+  let ml = (if offset < (Seq.index s iv).low then offset else (Seq.index s iv).low) in
+  let mh0 = (if offset + len > high (Seq.index s iv) then offset + len else high (Seq.index s iv)) in
+  let k = j - iv - 1 in
+  let suffix = Seq.slice s iv n in
+  let stail = Seq.tail suffix in
+
+  // merge step on first element of suffix
+  range_map_wf_slice s iv;
+  add_range_merge_step suffix offset len;
+
+  // merge scan using stail
+  Seq.lemma_eq_intro stail (Seq.slice s (iv + 1) n);
+  range_map_wf_slice s (iv + 1);
+  if k > 0 then range_map_wf_sorted s iv (iv + 1);
+  add_range_merge_scan stail ml mh0 k;
+  merge_absorbed_high_mono stail mh0 k;
+
+  // Relate slice stail k to slice s j n
+  Seq.lemma_eq_intro (Seq.slice stail k (Seq.length stail)) (Seq.slice s j n)
+
+/// Full merge: combines skip_prefix + merge_suffix
+let add_range_merge_full (s: Seq.seq interval) (offset: nat) (len: pos) (iv j: nat)
+  : Lemma (requires range_map_wf s /\
+                    iv < Seq.length s /\ j > iv /\ j <= Seq.length s /\
+                    (forall (i:nat). i < iv ==> high (Seq.index s i) < offset) /\
+                    ~(offset + len < (Seq.index s iv).low) /\
+                    ~(high (Seq.index s iv) < offset) /\
+                    (let ml = (if offset < (Seq.index s iv).low then offset else (Seq.index s iv).low) in
+                     let mh0 = (if offset + len > high (Seq.index s iv) then offset + len else high (Seq.index s iv)) in
+                     (forall (i:nat). i > iv /\ i < j ==> mh0 >= (Seq.index s i).low) /\
+                     (j = Seq.length s \/ mh0 < (Seq.index s j).low)))
+          (ensures (let ml = (if offset < (Seq.index s iv).low then offset else (Seq.index s iv).low) in
+                    let mh0 = (if offset + len > high (Seq.index s iv) then offset + len else high (Seq.index s iv)) in
+                    let suffix_tail = Seq.slice s (iv + 1) (Seq.length s) in
+                    let fh = merge_absorbed_high suffix_tail mh0 (j - iv - 1) in
+                    fh > ml /\
+                    add_range s offset len ==
+                    Seq.append (Seq.slice s 0 iv)
+                               (Seq.append (Seq.create 1 ({ low = ml; count = fh - ml }))
+                                           (Seq.slice s j (Seq.length s))))) =
+  add_range_skip_prefix s offset len iv;
+  add_range_merge_suffix s offset len iv j
+
+#pop-options
