@@ -77,7 +77,9 @@ fn push_back (#t:Type0) (v:vector t) (x:t)
            pure (Seq.length s < SZ.v cap \/ SZ.fits (SZ.v cap + SZ.v cap))
   ensures exists* (cap':SZ.t).
     is_vector v (Seq.snoc s x) cap' **
-    pure (SZ.v cap' >= Seq.length s + 1 /\ SZ.v cap' > 0)
+    pure (SZ.v cap' >= Seq.length s + 1 /\ SZ.v cap' > 0 /\
+          (Seq.length s < SZ.v cap ==> cap' == cap) /\
+          (Seq.length s == SZ.v cap ==> SZ.v cap' == SZ.v cap + SZ.v cap))
 
 /// Remove and return the last element. Halves capacity when size == floor(cap/2).
 /// Requires: vector is non-empty
@@ -88,7 +90,11 @@ fn pop_back (#t:Type0) (v:vector t)
   ensures exists* (cap':SZ.t).
     is_vector v (Seq.slice s 0 (Seq.length s - 1)) cap' **
     pure (x == Seq.index s (Seq.length s - 1) /\
-          SZ.v cap' >= Seq.length s - 1 /\ SZ.v cap' > 0)
+          SZ.v cap' >= Seq.length s - 1 /\ SZ.v cap' > 0 /\
+          (Seq.length s - 1 == SZ.v cap / 2 /\ SZ.v cap / 2 > 0
+             ==> SZ.v cap' == SZ.v cap / 2) /\
+          (~(Seq.length s - 1 == SZ.v cap / 2 /\ SZ.v cap / 2 > 0)
+             ==> cap' == cap))
 
 /// Resize the vector to new_size elements.
 /// Preserves the first min(old_size, new_size) elements.
