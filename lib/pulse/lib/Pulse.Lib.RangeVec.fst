@@ -16,6 +16,16 @@ module B = Pulse.Lib.Box
 module G = FStar.Ghost
 module R = Pulse.Lib.Reference
 
+(*** Platform and bounds ***)
+
+/// 64-bit platform assumption — standard for Pulse/SizeT code
+assume val platform_is_64bit : squash SZ.fits_u64
+
+/// Upper bound on range vector entries.
+/// In practice, limited by CircularBuffer alloc_length (≤ pow2_63).
+/// The bound ensures vector capacity doubling is always representable.
+assume val max_range_vec_entries : n:pos{n <= pow2 62}
+
 (*** Types ***)
 
 noeq type range = { start: SZ.t; len: SZ.t }
@@ -207,6 +217,7 @@ let is_range_vec (rv: range_vec_t) (repr: Seq.seq Spec.interval) : slprop =
     pure (seq_all_valid s /\
           seq_to_spec s == repr /\
           Spec.range_map_wf repr /\
+          Seq.length s <= max_range_vec_entries /\
           (Seq.length s < SZ.v cap \/ SZ.fits (SZ.v cap + SZ.v cap)))
 
 (*** Create / Free ***)
@@ -382,7 +393,8 @@ let insert_capacity_condition (sz cap cap': nat)
   : Lemma (requires (sz < cap \/ SZ.fits (cap + cap)) /\
                     (cap' == cap \/ cap' == cap + cap) /\
                     sz <= cap /\
-                    sz + 1 <= cap')
+                    sz + 1 <= cap' /\
+                    sz < max_range_vec_entries)
           (ensures sz + 1 < cap' \/ SZ.fits (cap' + cap')) =
   if cap' = cap + cap then begin
     // Resize: cap' = 2*cap.
@@ -395,7 +407,12 @@ let insert_capacity_condition (sz cap cap': nat)
   end else begin
     // No resize: cap' == cap.
     if sz + 1 < cap then ()
-    else admit () // Edge case: cap ≥ 2^63, unreachable in practice
+    else begin
+      // sz + 1 == cap. cap = sz + 1 <= max_range_vec_entries <= pow2 62.
+      // cap + cap <= 2 * max_range_vec_entries <= 2 * pow2 62 = pow2 63 < pow2 64.
+      // With fits_u64: SZ.fits(cap + cap).
+      SZ.fits_u64_implies_fits (cap + cap)
+    end
   end
 
 (* Forall highs-below-offset lifts from ranges to spec *)
@@ -580,6 +597,7 @@ fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
   (#s: erased (Seq.seq range)) (#cap: erased SZ.t)
   requires V.is_vector rv s cap **
            pure (SZ.v i <= Seq.length s /\
+                 Seq.length s < max_range_vec_entries /\
                  (Seq.length s < SZ.v cap \/ SZ.fits (SZ.v cap + SZ.v cap)))
   ensures exists* (s': Seq.seq range) (cap': SZ.t).
     V.is_vector rv s' cap' **
@@ -720,7 +738,9 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
 
 fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
   (#repr: erased (Seq.seq Spec.interval))
-  requires is_range_vec rv repr ** pure (SZ.fits (SZ.v offset + SZ.v len))
+  requires is_range_vec rv repr **
+           pure (SZ.fits (SZ.v offset + SZ.v len) /\
+                 Seq.length repr < max_range_vec_entries)
   ensures is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len))
 {
   unfold is_range_vec;
