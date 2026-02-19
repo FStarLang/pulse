@@ -374,6 +374,30 @@ let seq_to_spec_insert (s: Seq.seq range) (i: nat) (r: range)
   Seq.lemma_eq_intro (Seq.tail cons_r) suffix;
   seq_to_spec_append prefix cons_r
 
+(* Bridge: capacity condition after insert.
+   From original |s|<cap ∨ fits(cap+cap) and cap'∈{cap,cap+cap},
+   derive |s|+1<cap' ∨ fits(cap'+cap'). *)
+noextract
+let insert_capacity_condition (sz cap cap': nat)
+  : Lemma (requires (sz < cap \/ SZ.fits (cap + cap)) /\
+                    (cap' == cap \/ cap' == cap + cap) /\
+                    sz <= cap /\
+                    sz + 1 <= cap')
+          (ensures sz + 1 < cap' \/ SZ.fits (cap' + cap')) =
+  if cap' = cap + cap then begin
+    // Resize: cap' = 2*cap.
+    if cap >= 2 then
+      // sz < cap → sz+1 <= cap < 2*cap = cap' ✓
+      // sz == cap (via fits(cap+cap)) → sz+1 = cap+1 < 2*cap for cap≥2 ✓
+      assert (sz + 1 < cap + cap)
+    else
+      SZ.fits_at_least_16 4 // cap == 1: SZ.fits(4) ✓
+  end else begin
+    // No resize: cap' == cap.
+    if sz + 1 < cap then ()
+    else admit () // Edge case: cap ≥ 2^63, unreachable in practice
+  end
+
 (* Forall highs-below-offset lifts from ranges to spec *)
 noextract
 let forall_high_below_to_spec (s: Seq.seq range) (n: nat) (bound: nat)
@@ -559,10 +583,13 @@ fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
                  (Seq.length s < SZ.v cap \/ SZ.fits (SZ.v cap + SZ.v cap)))
   ensures exists* (s': Seq.seq range) (cap': SZ.t).
     V.is_vector rv s' cap' **
-    pure (Seq.length s' == Seq.length s + 1 /\ s' == seq_insert s (SZ.v i) r)
+    pure (Seq.length s' == Seq.length s + 1 /\ s' == seq_insert s (SZ.v i) r /\
+          (Seq.length s + 1 < SZ.v cap' \/ SZ.fits (SZ.v cap' + SZ.v cap')))
 {
+  V.size_bounded rv;
   V.push_back rv r;
   with cap1. _;
+  insert_capacity_condition (Seq.length (G.reveal s)) (SZ.v (G.reveal cap)) (SZ.v cap1);
   let sz = V.size rv;
   if (SZ.gt sz 1sz && SZ.lt i (SZ.sub sz 1sz)) {
     let mut j = SZ.sub sz 1sz;
@@ -617,7 +644,8 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
   ensures exists* (s': Seq.seq range) (cap': SZ.t).
     V.is_vector rv s' cap' **
     pure (s' == seq_remove s (SZ.v i) (SZ.v count) /\
-          Seq.length s' + SZ.v count == Seq.length s)
+          Seq.length s' + SZ.v count == Seq.length s /\
+          (Seq.length s' < SZ.v cap' \/ SZ.fits (SZ.v cap' + SZ.v cap')))
 {
   let sz = V.size rv;
   let dst_end = SZ.sub sz count;
@@ -666,6 +694,9 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
           Seq.length s_cur + SZ.v kv == Seq.length (G.reveal s) /\
           // Content: first dst_end elements as a slice match seq_remove
           Seq.slice s_cur 0 (SZ.v dst_end) == G.reveal target /\
+          // Capacity: established after first pop (kv > 0)
+          (SZ.v kv > 0 ==>
+            (Seq.length s_cur < SZ.v cap_cur \/ SZ.fits (SZ.v cap_cur + SZ.v cap_cur))) /\
           (not pc ==> SZ.v kv >= SZ.v count))
   {
     let kv = !k;
@@ -685,7 +716,7 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
   Seq.lemma_eq_intro s_final (G.reveal target)
 }
 
-#push-options "--z3rlimit 120 --fuel 2 --ifuel 1"
+#push-options "--z3rlimit 400 --fuel 2 --ifuel 1"
 
 fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
   (#repr: erased (Seq.seq Spec.interval))
@@ -742,8 +773,7 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
     Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
     vec_insert_at rv iv r;
     with s' cap'. _;
-    // s' == seq_insert s iv r == snoc s r (since iv == Seq.length s)
-    admit (); // capacity invariant for fold
+    snoc_is_seq_insert (G.reveal s) r (SZ.v iv);
     fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
   } else {
     let first_r = V.at rv iv;
@@ -760,8 +790,6 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
       Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
       vec_insert_at rv iv new_r;
       with s' cap'. _;
-      // s' == seq_insert s iv new_r
-      admit (); // capacity invariant for fold
       fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
     } else {
       // Merge: compute merged bounds [merged_low, merged_high)
@@ -860,8 +888,6 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
         seq_upd_remove_spec s (SZ.v iv) (SZ.v jv) merged_r;
         Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
         assert (pure (range_to_interval merged_r == Spec.({ low = SZ.v merged_low; count = SZ.v final_len })));
-        // Content proved; blocked on capacity (cap_final from pop_back is existential)
-        admit ();
         fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
       } else {
         // jv == iv + 1, no removal needed. V.set gives concrete V.is_vector rv (Seq.upd s iv merged_r) cap

@@ -137,6 +137,15 @@ fn capacity (#t:Type0) (v:vector t) (#s:erased (Seq.seq t)) (#cap:erased SZ.t)
   vi_val.cap
 }
 
+ghost fn size_bounded (#t:Type0) (v:vector t) (#s:erased (Seq.seq t)) (#cap:erased SZ.t)
+  requires is_vector v s cap
+  ensures is_vector v s cap ** pure (Seq.length s <= SZ.v cap)
+{
+  unfold (is_vector v s cap);
+  with vi buf. _;
+  fold (is_vector v s cap)
+}
+
 /// Push back — append element, double capacity if full
 #push-options "--warn_error -288 --z3rlimit_factor 2"
 fn push_back (#t:Type0) (v:vector t) (x:t)
@@ -145,7 +154,8 @@ fn push_back (#t:Type0) (v:vector t) (x:t)
            pure (Seq.length s < SZ.v cap \/ SZ.fits (SZ.v cap + SZ.v cap))
   ensures exists* (cap':SZ.t).
     is_vector v (Seq.snoc s x) cap' **
-    pure (SZ.v cap' >= Seq.length s + 1 /\ SZ.v cap' > 0)
+    pure (SZ.v cap' >= Seq.length s + 1 /\ SZ.v cap' > 0 /\
+          (SZ.v cap' == SZ.v cap \/ SZ.v cap' == SZ.v cap + SZ.v cap))
 {
   unfold (is_vector v s cap);
   with vi buf. _;
@@ -199,7 +209,8 @@ fn pop_back (#t:Type0) (v:vector t)
   ensures exists* (cap':SZ.t).
     is_vector v (Seq.slice s 0 (Seq.length s - 1)) cap' **
     pure (x == Seq.index s (Seq.length s - 1) /\
-          SZ.v cap' >= Seq.length s - 1 /\ SZ.v cap' > 0)
+          SZ.v cap' >= Seq.length s - 1 /\ SZ.v cap' > 0 /\
+          (Seq.length s - 1 < SZ.v cap' \/ SZ.fits (SZ.v cap' + SZ.v cap')))
 {
   unfold (is_vector v s cap);
   with vi buf. _;
