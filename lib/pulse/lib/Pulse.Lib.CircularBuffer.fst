@@ -16,7 +16,7 @@ module Pow2 = Pulse.Lib.CircularBuffer.Pow2
 module GT = Pulse.Lib.CircularBuffer.GapTrack
 module Mod = Pulse.Lib.CircularBuffer.Modular
 module A = Pulse.Lib.Array
-module RM = Pulse.Lib.RangeMap
+module RM = Pulse.Lib.RangeVec
 module RMSpec = Pulse.Lib.RangeMap.Spec
 module PTR = Pulse.Lib.Array.PtsToRange
 open Pulse.Lib.Trade
@@ -132,12 +132,12 @@ type circular_buffer = box cb_internal
 
 let is_circular_buffer
   ([@@@mkey]cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (st: Spec.cb_state) : slprop =
   exists* (cbi: cb_internal) (buf_data: Seq.seq byte) (repr: Seq.seq RMSpec.interval).
     B.pts_to cb cbi **
     Vec.pts_to cbi.buf buf_data **
-    RM.is_range_map rm repr **
+    RM.is_range_vec rm repr **
     pure (
       SZ.v cbi.al > 0 /\
       SZ.v cbi.al == st.alloc_length /\
@@ -159,7 +159,7 @@ let is_circular_buffer
 
 /// Get the length of contiguous readable data
 fn read_length
-  (cb: circular_buffer) (rm: RM.range_map_t)
+  (cb: circular_buffer) (rm: RM.range_vec_t)
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st
   returns n : SZ.t
@@ -177,7 +177,7 @@ fn read_length
 }
 
 fn get_total_length
-  (cb: circular_buffer) (rm: RM.range_map_t)
+  (cb: circular_buffer) (rm: RM.range_vec_t)
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st
   returns n: SZ.t
@@ -188,7 +188,7 @@ fn get_total_length
   with cbi buf_data repr. _;
   let cb_val = !cb;
   rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
-  let n = RM.range_map_max_endpoint rm;
+  let n = RM.range_vec_max_endpoint rm;
   rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
   RMSpec.range_map_max_endpoint_bounded repr (SZ.v cbi.bo + SZ.v cbi.al);
   fold (is_circular_buffer cb rm st);
@@ -196,7 +196,7 @@ fn get_total_length
 }
 
 fn set_virtual_length
-  (cb: circular_buffer) (rm: RM.range_map_t) (new_vl: SZ.t{SZ.v new_vl > 0})
+  (cb: circular_buffer) (rm: RM.range_vec_t) (new_vl: SZ.t{SZ.v new_vl > 0})
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st **
     pure (Spec.cb_wf st /\
@@ -226,7 +226,7 @@ fn create
     SZ.v alloc_len <= SZ.v virt_len /\
     SZ.v alloc_len <= Spec.cb_max_length /\
     SZ.v virt_len <= pow2_63)
-  returns res : (circular_buffer & RM.range_map_t)
+  returns res : (circular_buffer & RM.range_vec_t)
   ensures exists* st.
     is_circular_buffer (fst res) (snd res) st **
     pure (Spec.cb_wf st /\
@@ -241,7 +241,7 @@ fn create
 
   let vi = Mkcb_internal buf_vec 0sz al_v 0sz vl_v 0sz;
   let cb = B.alloc vi;
-  let rm = RM.range_map_create ();
+  let rm = RM.range_vec_create ();
 
   with buf_data. assert (Vec.pts_to buf_vec buf_data);
   lemma_nones_coherent (SZ.v alloc_len) buf_data 0;
@@ -261,7 +261,7 @@ fn create
 
 /// Resize: grow buffer while preserving range map bridge.
 fn resize
-  (cb: circular_buffer) (rm: RM.range_map_t) (new_al: SZ.t{SZ.v new_al > 0})
+  (cb: circular_buffer) (rm: RM.range_vec_t) (new_al: SZ.t{SZ.v new_al > 0})
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st **
     pure (Spec.cb_wf st /\ Pow2.is_pow2 (SZ.v new_al) /\
@@ -282,7 +282,7 @@ fn resize
   while (let vi = R.read i; SZ.lt vi cb_val.al)
   invariant exists* vi new_v.
     B.pts_to cb cbi ** Vec.pts_to cb_val.buf buf_data **
-    RM.is_range_map rm repr **
+    RM.is_range_vec rm repr **
     R.pts_to i vi ** Vec.pts_to new_vec new_v **
     pure (SZ.v vi <= SZ.v cb_val.al /\
       Seq.length new_v == SZ.v new_al /\
@@ -332,7 +332,7 @@ fn resize
 }
 
 fn free
-  (cb: circular_buffer) (rm: RM.range_map_t) (#st: erased Spec.cb_state)
+  (cb: circular_buffer) (rm: RM.range_vec_t) (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st
   ensures emp
 {
@@ -341,12 +341,12 @@ fn free
   let cb_val = !cb;
   rewrite (Vec.pts_to cbi.buf buf_data) as (Vec.pts_to cb_val.buf buf_data);
   Vec.free cb_val.buf;
-  RM.range_map_free rm;
+  RM.range_vec_free rm;
   B.free cb;
 }
 
 fn get_alloc_length
-  (cb: circular_buffer) (rm: RM.range_map_t) (#st: erased Spec.cb_state)
+  (cb: circular_buffer) (rm: RM.range_vec_t) (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st ** pure (Spec.cb_wf st)
   returns n : SZ.t
   ensures is_circular_buffer cb rm st ** pure (SZ.v n == st.alloc_length)
@@ -364,7 +364,7 @@ fn get_alloc_length
 #push-options "--z3rlimit_factor 4"
 fn read_buffer
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (dst: A.array byte)
   (read_len: SZ.t)
   (#dst_data: erased (Seq.seq byte))
@@ -398,7 +398,7 @@ fn read_buffer
   while (let vi = R.read ri; SZ.lt vi read_len)
   invariant exists* (vi: SZ.t) (cur_dst: Seq.seq byte).
     B.pts_to cb cbi ** Vec.pts_to cb_val.buf buf_data **
-    RM.is_range_map rm repr **
+    RM.is_range_vec rm repr **
     A.pts_to dst cur_dst **
     R.pts_to ri vi **
     pure (
@@ -445,7 +445,7 @@ fn read_buffer
 #push-options "--z3rlimit_factor 32 --fuel 2 --ifuel 1"
 fn write_buffer_core
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (offset: SZ.t)
   (src: A.array byte)
   (write_len: SZ.t)
@@ -485,7 +485,7 @@ fn write_buffer_core
   invariant exists* (vi: SZ.t) (cur_phys: Seq.seq byte).
     B.pts_to cb cbi ** Vec.pts_to cb_val.buf cur_phys **
     A.pts_to src #p src_data **
-    RM.is_range_map rm repr **
+    RM.is_range_vec rm repr **
     R.pts_to wi vi **
     pure (
       SZ.v vi <= SZ.v write_len /\
@@ -538,14 +538,14 @@ fn write_buffer_core
 
   // Update range map with absolute offset (bo + offset)
   let abs_offset = SZ.add cb_val.bo offset;
-  RM.range_map_add rm abs_offset write_len;
+  RM.range_vec_add rm abs_offset write_len;
 
   // Bridge preservation (using absolute offsets)
   RMSpec.add_range_wf repr (SZ.v abs_offset) (SZ.v write_len);
   Spec.ranges_match_write repr st.contents (SZ.v cb_val.bo) (SZ.v offset) (reveal src_data);
 
   // Compute new prefix length from range map using base_offset
-  let new_pl = RM.range_map_contiguous_from rm cb_val.bo;
+  let new_pl = RM.range_vec_contiguous_from rm cb_val.bo;
 
   // Update cb with new pl
   let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al new_pl cb_val.vl cb_val.bo;
@@ -569,7 +569,7 @@ fn write_buffer_core
 /// Returns write_result with wrote/new_data_ready/resize_failed flags.
 #push-options "--z3rlimit_factor 32 --fuel 2 --ifuel 1"
 fn write_buffer
-  (cb: circular_buffer) (rm: RM.range_map_t)
+  (cb: circular_buffer) (rm: RM.range_vec_t)
   (abs_offset: SZ.t) (src: A.array byte) (write_len: SZ.t)
   (#p: perm)
   (#src_data: erased (Seq.seq byte))
@@ -656,7 +656,7 @@ fn write_buffer
         invariant exists* (nal_v: SZ.t).
           B.pts_to cb cbi ** Vec.pts_to cb_val.buf buf_data **
           A.pts_to src #p src_data **
-          RM.is_range_map rm repr **
+          RM.is_range_vec rm repr **
           R.pts_to nal_ref nal_v **
           pure (
             SZ.v nal_v >= SZ.v al /\
@@ -703,7 +703,7 @@ fn write_buffer
         invariant exists* (vi: SZ.t) (cur_phys: Seq.seq byte).
           B.pts_to cb cbi2 ** Vec.pts_to cb_val2.buf cur_phys **
           A.pts_to src #p src_data **
-          RM.is_range_map rm repr2 **
+          RM.is_range_vec rm repr2 **
           R.pts_to wi vi **
           pure (
             SZ.v vi <= SZ.v trimmed_len /\
@@ -764,11 +764,11 @@ fn write_buffer
 
         // Update range map with absolute offset
         let rm_abs = SZ.add cb_val2.bo rel_offset;
-        RM.range_map_add rm rm_abs trimmed_len;
+        RM.range_vec_add rm rm_abs trimmed_len;
         RMSpec.add_range_wf repr2 (SZ.v rm_abs) (SZ.v trimmed_len);
         Spec.ranges_match_write repr2 rs_contents (SZ.v cb_val2.bo) (SZ.v rel_offset) (reveal trimmed_data);
 
-        let new_pl = RM.range_map_contiguous_from rm cb_val2.bo;
+        let new_pl = RM.range_vec_contiguous_from rm cb_val2.bo;
         let ndr = SZ.gt new_pl 0sz && SZ.eq old_pl 0sz;
 
         let new_cbi = Mkcb_internal cb_val2.buf cb_val2.rs cb_val2.al new_pl cb_val2.vl cb_val2.bo;
@@ -796,7 +796,7 @@ fn write_buffer
       invariant exists* (vi: SZ.t) (cur_phys: Seq.seq byte).
         B.pts_to cb cbi ** Vec.pts_to cb_val.buf cur_phys **
         A.pts_to src #p src_data **
-        RM.is_range_map rm repr **
+        RM.is_range_vec rm repr **
         R.pts_to wi vi **
         pure (
           SZ.v vi <= SZ.v trimmed_len /\
@@ -848,11 +848,11 @@ fn write_buffer
       Spec.write_range_preserves_wf st (SZ.v rel_offset) (reveal trimmed_data);
 
       let rm_abs = SZ.add cb_val.bo rel_offset;
-      RM.range_map_add rm rm_abs trimmed_len;
+      RM.range_vec_add rm rm_abs trimmed_len;
       RMSpec.add_range_wf repr (SZ.v rm_abs) (SZ.v trimmed_len);
       Spec.ranges_match_write repr st.contents (SZ.v cb_val.bo) (SZ.v rel_offset) (reveal trimmed_data);
 
-      let new_pl = RM.range_map_contiguous_from rm cb_val.bo;
+      let new_pl = RM.range_vec_contiguous_from rm cb_val.bo;
       let ndr = SZ.gt new_pl 0sz && SZ.eq old_pl 0sz;
 
       let new_cbi = Mkcb_internal cb_val.buf cb_val.rs cb_val.al new_pl cb_val.vl cb_val.bo;
@@ -875,7 +875,7 @@ fn write_buffer
 /// The range map is UNCHANGED — this is the key advantage of absolute offsets.
 #push-options "--z3rlimit_factor 8 --fuel 2 --ifuel 1"
 fn drain
-  (cb: circular_buffer) (rm: RM.range_map_t) (n: SZ.t)
+  (cb: circular_buffer) (rm: RM.range_vec_t) (n: SZ.t)
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st **
     pure (Spec.cb_wf st /\ SZ.v n <= st.alloc_length /\
@@ -897,7 +897,7 @@ fn drain
   let new_bo = SZ.add cb_val.bo n;
 
   // Compute new prefix length from range map with new base_offset
-  let new_pl = RM.range_map_contiguous_from rm new_bo;
+  let new_pl = RM.range_vec_contiguous_from rm new_bo;
 
   let new_cbi = Mkcb_internal cb_val.buf new_rs cb_val.al new_pl cb_val.vl new_bo;
   ( := ) cb new_cbi;
@@ -1070,7 +1070,7 @@ fn read_zerocopy_core
 /// Zero-copy read: unfold is_circular_buffer, call core, compose trade
 fn read_zerocopy
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (read_len: SZ.t)
   (#st: erased Spec.cb_state)
   requires
@@ -1102,7 +1102,7 @@ fn read_zerocopy
   // Fold trade: raw resources → is_circular_buffer (captures RM as extra)
   intro (trade (B.pts_to cb cb_val ** Vec.pts_to cb_val.buf buf_data)
                (is_circular_buffer cb rm st))
-    #(RM.is_range_map rm repr) fn _ {
+    #(RM.is_range_vec rm repr) fn _ {
     rewrite (B.pts_to cb cb_val) as (B.pts_to cb cbi);
     rewrite (Vec.pts_to cb_val.buf buf_data) as (Vec.pts_to cbi.buf buf_data);
     fold (is_circular_buffer cb rm st);
@@ -1120,7 +1120,7 @@ fn read_zerocopy
 /// Release zero-copy read without draining (cancel)
 fn release_read
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (rv: read_view)
   (#st: erased Spec.cb_state)
   (#s1 #s2: erased (Seq.seq byte))
@@ -1137,7 +1137,7 @@ fn release_read
 #push-options "--z3rlimit_factor 8 --fuel 1 --ifuel 1"
 fn drain_after_read
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (rv: read_view)
   (drain_len: SZ.t)
   (#st: erased Spec.cb_state)

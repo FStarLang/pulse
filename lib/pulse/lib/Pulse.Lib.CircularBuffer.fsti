@@ -10,7 +10,7 @@ module Spec = Pulse.Lib.CircularBuffer.Spec
 module Pow2 = Pulse.Lib.CircularBuffer.Pow2
 module GT = Pulse.Lib.CircularBuffer.GapTrack
 module A = Pulse.Lib.Array
-module RM = Pulse.Lib.RangeMap
+module RM = Pulse.Lib.RangeVec
 module RMSpec = Pulse.Lib.RangeMap.Spec
 open Pulse.Lib.Trade
 
@@ -31,7 +31,7 @@ val circular_buffer : Type0
 /// Always RM-tracked: exact prefix via RangeMap bridge.
 val is_circular_buffer
   ([@@@mkey]cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (st: Spec.cb_state) : slprop
 
 /// Create a new empty circular buffer with an empty range map.
@@ -44,7 +44,7 @@ fn create
     SZ.v alloc_len <= SZ.v virt_len /\
     SZ.v alloc_len <= Spec.cb_max_length /\
     SZ.v virt_len <= pow2_63)
-  returns res : (circular_buffer & RM.range_map_t)
+  returns res : (circular_buffer & RM.range_vec_t)
   ensures exists* st.
     is_circular_buffer (fst res) (snd res) st **
     pure (Spec.cb_wf st /\
@@ -55,7 +55,7 @@ fn create
 
 /// Get the length of contiguous readable data
 fn read_length
-  (cb: circular_buffer) (rm: RM.range_map_t)
+  (cb: circular_buffer) (rm: RM.range_vec_t)
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st
   returns n : SZ.t
@@ -64,7 +64,7 @@ fn read_length
 
 /// Get total length: max absolute offset with data
 fn get_total_length
-  (cb: circular_buffer) (rm: RM.range_map_t)
+  (cb: circular_buffer) (rm: RM.range_vec_t)
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st
   returns n: SZ.t
@@ -75,7 +75,7 @@ fn get_total_length
 /// The range map is UNCHANGED — this is the key advantage of absolute offsets.
 fn drain
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (n: SZ.t)
   (#st: erased Spec.cb_state)
   requires
@@ -90,7 +90,7 @@ fn drain
 
 /// Resize (grow) the buffer while preserving range map bridge.
 fn resize
-  (cb: circular_buffer) (rm: RM.range_map_t) (new_al: SZ.t{SZ.v new_al > 0})
+  (cb: circular_buffer) (rm: RM.range_vec_t) (new_al: SZ.t{SZ.v new_al > 0})
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st **
     pure (Spec.cb_wf st /\ Pow2.is_pow2 (SZ.v new_al) /\
@@ -103,7 +103,7 @@ fn resize
 /// Free the circular buffer
 fn free
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st
   ensures emp
@@ -111,7 +111,7 @@ fn free
 /// Get the current alloc_length
 fn get_alloc_length
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st ** pure (Spec.cb_wf st)
   returns n : SZ.t
@@ -119,7 +119,7 @@ fn get_alloc_length
 
 /// Increase virtual buffer length
 fn set_virtual_length
-  (cb: circular_buffer) (rm: RM.range_map_t) (new_vl: SZ.t{SZ.v new_vl > 0})
+  (cb: circular_buffer) (rm: RM.range_vec_t) (new_vl: SZ.t{SZ.v new_vl > 0})
   (#st: erased Spec.cb_state)
   requires is_circular_buffer cb rm st **
     pure (Spec.cb_wf st /\
@@ -131,7 +131,7 @@ fn set_virtual_length
 /// Write data at an absolute stream offset with trim, auto-resize, and failure handling.
 /// Handles stale writes (no-op), partial overlap trim, auto-resize up to cb_max_length.
 fn write_buffer
-  (cb: circular_buffer) (rm: RM.range_map_t)
+  (cb: circular_buffer) (rm: RM.range_vec_t)
   (abs_offset: SZ.t) (src: A.array byte) (write_len: SZ.t)
   (#p: perm)
   (#src_data: erased (Seq.seq byte))
@@ -164,7 +164,7 @@ fn write_buffer
 /// The circular buffer state is unchanged.
 fn read_buffer
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (dst: A.array byte)
   (read_len: SZ.t)
   (#dst_data: erased (Seq.seq byte))
@@ -209,7 +209,7 @@ let zc_segs (rv: read_view) (s1 s2: Seq.seq byte) : slprop =
 /// Up to 2 segments for wrap-around (like MsQuic's QuicRecvBufferRead).
 fn read_zerocopy
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (read_len: SZ.t)
   (#st: erased Spec.cb_state)
   requires
@@ -230,7 +230,7 @@ fn read_zerocopy
 /// Release zero-copy read without draining (cancel)
 fn release_read
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (rv: read_view)
   (#st: erased Spec.cb_state)
   (#s1 #s2: erased (Seq.seq byte))
@@ -243,7 +243,7 @@ fn release_read
 /// Release zero-copy read AND drain
 fn drain_after_read
   (cb: circular_buffer)
-  (rm: RM.range_map_t)
+  (rm: RM.range_vec_t)
   (rv: read_view)
   (drain_len: SZ.t)
   (#st: erased Spec.cb_state)
