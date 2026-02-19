@@ -93,7 +93,8 @@ let is_range_vec (rv: range_vec_t) (repr: Seq.seq Spec.interval) : slprop =
     V.is_vector rv s cap **
     pure (seq_all_valid s /\
           seq_to_spec s == repr /\
-          Spec.range_map_wf repr)
+          Spec.range_map_wf repr /\
+          (Seq.length s < SZ.v cap \/ SZ.fits (SZ.v cap + SZ.v cap)))
 
 (*** Create / Free ***)
 
@@ -168,7 +169,15 @@ fn range_vec_max_endpoint (rv: range_vec_t) (#repr: erased (Seq.seq Spec.interva
 
 (*** Add range — core operation ***)
 
-/// Helper: shift elements [i..n) right by 1, set position i to r
+noextract
+let seq_insert (#a:Type) (s: Seq.seq a) (i: nat{i <= Seq.length s}) (x: a) : Seq.seq a =
+  Seq.append (Seq.slice s 0 i) (Seq.cons x (Seq.slice s i (Seq.length s)))
+
+noextract
+let seq_remove (#a:Type) (s: Seq.seq a) (i: nat) (count: nat{i + count <= Seq.length s}) : Seq.seq a =
+  Seq.append (Seq.slice s 0 i) (Seq.slice s (i + count) (Seq.length s))
+
+/// Helper: shift elements [i..n) right by 1, set position i to r.
 fn vec_insert_at (rv: range_vec_t) (i: SZ.t) (r: range)
   (#s: erased (Seq.seq range)) (#cap: erased SZ.t)
   requires V.is_vector rv s cap **
@@ -219,7 +228,7 @@ fn vec_remove_range (rv: range_vec_t) (i: SZ.t) (count: SZ.t)
 {
   let sz = V.size rv;
   let dst_end = SZ.sub sz count;
-  // Phase 1: shift elements left — for j from i to dst_end-1, set rv[j] = rv[j+count]
+  // Phase 1: shift elements left
   let mut j = i;
   let mut shift_cont = true;
   while (!shift_cont)
@@ -306,22 +315,22 @@ fn range_vec_add (rv: range_vec_t) (offset: SZ.t) (len: SZ.t{SZ.v len > 0})
 
   if (SZ.eq sz 0sz || SZ.eq iv sz) {
     // Append at end (empty vec or all ranges are before offset)
-    admit (); // TODO: prove against Spec.add_range
     let r : range = { start = offset; len = len };
     vec_insert_at rv iv r;
     with s' cap'. _;
     Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
-    admit (); // TODO: seq_to_spec bridge
+    admit (); // TODO: prove forall k < iv. high(repr[k]) < offset from loop,
+              //       then use add_range_all_before + seq_to_spec bridge
     fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
   } else {
     let first_r = V.at rv iv;
     if (SZ.lt off_plus_len first_r.start) {
       // No overlap — insert before iv
-      admit ();
       vec_insert_at rv iv ({ start = offset; len = len });
       with s' cap'. _;
       Spec.add_range_wf repr (SZ.v offset) (SZ.v len);
-      admit ();
+      admit (); // TODO: prove forall k < iv. high(repr[k]) < offset from loop,
+                //       then use add_range_insert_no_overlap + seq_to_spec bridge
       fold (is_range_vec rv (Spec.add_range repr (SZ.v offset) (SZ.v len)))
     } else {
       // Merge: compute merged bounds [merged_low, merged_high)

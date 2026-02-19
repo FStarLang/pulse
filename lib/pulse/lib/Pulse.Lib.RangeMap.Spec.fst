@@ -678,3 +678,242 @@ let add_range_at_base_establishes_aligned
                     base <= high (Seq.index r 0)))
   = add_range_first_lower_bound s base len;
     add_range_first_high_bound s base len
+
+(*** Lemmas bridging add_range to imperative implementation ***)
+
+/// When all intervals have high < offset, add_range appends at the end
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 40"
+let rec add_range_all_before (s: Seq.seq interval) (offset: nat) (len: pos)
+  : Lemma (requires range_map_wf s /\
+                    (forall (i:nat). i < Seq.length s ==> high (Seq.index s i) < offset))
+          (ensures add_range s offset len == Seq.snoc s ({ low = offset; count = len }))
+          (decreases Seq.length s)
+  = let iv = { low = offset; count = len } in
+    if Seq.length s = 0 then (
+      // Base case: empty sequence
+      // add_range s offset len = Seq.create 1 iv
+      // Seq.snoc s iv = Seq.snoc Seq.empty iv = Seq.create 1 iv
+      assert (add_range s offset len `Seq.equal` Seq.create 1 iv);
+      assert (Seq.snoc s iv `Seq.equal` Seq.create 1 iv)
+    ) else (
+      // Inductive case: s is non-empty
+      let hd = Seq.index s 0 in
+      let tl = Seq.tail s in
+      
+      // From precondition, high hd < offset (using i=0)
+      assert (high hd < offset);
+      
+      // By definition of add_range, since high hd < offset:
+      // add_range s offset len = Seq.cons hd (add_range tl offset len)
+      
+      // Establish precondition for tail:
+      // forall i < Seq.length tl. high (Seq.index tl i) < offset
+      let tail_pre () : Lemma (forall (i:nat). i < Seq.length tl ==> high (Seq.index tl i) < offset) =
+        let aux (i:nat{i < Seq.length tl}) : Lemma (high (Seq.index tl i) < offset) =
+          assert (Seq.index tl i == Seq.index s (i + 1))
+        in
+        FStar.Classical.forall_intro aux
+      in
+      tail_pre ();
+      
+      // Apply IH to tail
+      range_map_wf_tail s;
+      add_range_all_before tl offset len;
+      
+      // Now we have: add_range tl offset len == Seq.snoc tl iv
+      // So: add_range s offset len = Seq.cons hd (Seq.snoc tl iv)
+      // Goal: Seq.cons hd (Seq.snoc tl iv) == Seq.snoc s iv
+      
+      // We need to show Seq.cons hd (Seq.snoc tl iv) == Seq.snoc (Seq.cons hd tl) iv
+      // and Seq.cons hd tl == s
+      
+      let result_lhs = Seq.cons hd (Seq.snoc tl iv) in
+      let result_rhs = Seq.snoc s iv in
+      
+      // Show sequences are equal by extensionality
+      let len_eq () : Lemma (Seq.length result_lhs == Seq.length result_rhs) =
+        assert (Seq.length result_lhs == Seq.length (Seq.snoc tl iv) + 1);
+        assert (Seq.length (Seq.snoc tl iv) == Seq.length tl + 1);
+        assert (Seq.length result_lhs == Seq.length tl + 2);
+        assert (Seq.length s == Seq.length tl + 1);
+        assert (Seq.length result_rhs == Seq.length s + 1);
+        assert (Seq.length result_rhs == Seq.length tl + 2)
+      in
+      len_eq ();
+      
+      let elem_eq (i:nat{i < Seq.length result_lhs}) 
+        : Lemma (Seq.index result_lhs i == Seq.index result_rhs i) =
+        if i = 0 then (
+          assert (Seq.index result_lhs 0 == hd);
+          assert (Seq.index result_rhs 0 == Seq.index s 0);
+          assert (Seq.index s 0 == hd)
+        ) else if i < Seq.length result_lhs - 1 then (
+          assert (Seq.index result_lhs i == Seq.index (Seq.snoc tl iv) (i - 1));
+          assert (Seq.index (Seq.snoc tl iv) (i - 1) == Seq.index tl (i - 1));
+          assert (Seq.index tl (i - 1) == Seq.index s i);
+          assert (Seq.index result_rhs i == Seq.index s i)
+        ) else (
+          assert (i == Seq.length result_lhs - 1);
+          assert (Seq.index result_lhs i == Seq.index (Seq.snoc tl iv) (i - 1));
+          assert (i - 1 == Seq.length tl);
+          assert (Seq.index (Seq.snoc tl iv) (Seq.length tl) == iv);
+          assert (Seq.index result_rhs i == iv)
+        )
+      in
+      FStar.Classical.forall_intro elem_eq;
+      Seq.lemma_eq_intro result_lhs result_rhs
+    )
+#pop-options
+
+/// When intervals [0..k) have high < offset, and offset+len < s[k].low, 
+/// add_range inserts at position k
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 40"
+let rec add_range_insert_no_overlap (s: Seq.seq interval) (offset: nat) (len: pos) (k: nat)
+  : Lemma (requires range_map_wf s /\ k < Seq.length s /\
+                    (forall (i:nat). i < k ==> high (Seq.index s i) < offset) /\
+                    offset + len < (Seq.index s k).low)
+          (ensures add_range s offset len == 
+                   Seq.append (Seq.slice s 0 k) 
+                              (Seq.cons ({ low = offset; count = len }) (Seq.slice s k (Seq.length s))))
+          (decreases k)
+  = let iv = { low = offset; count = len } in
+    if k = 0 then (
+      // Base case: insert at position 0
+      let hd = Seq.index s 0 in
+      
+      // From precondition: offset + len < hd.low
+      assert (offset + len < hd.low);
+      
+      // By definition of add_range, this branch returns Seq.cons iv s
+      assert (add_range s offset len `Seq.equal` Seq.cons iv s);
+      
+      // RHS = Seq.append (Seq.slice s 0 0) (Seq.cons iv (Seq.slice s 0 (Seq.length s)))
+      //     = Seq.append Seq.empty (Seq.cons iv s)
+      //     = Seq.cons iv s
+      assert (Seq.slice s 0 0 `Seq.equal` Seq.empty);
+      assert (Seq.slice s 0 (Seq.length s) `Seq.equal` s);
+      assert (Seq.cons iv s `Seq.equal` Seq.append Seq.empty (Seq.cons iv s))
+    ) else (
+      // Inductive case: k > 0
+      let hd = Seq.index s 0 in
+      let tl = Seq.tail s in
+      
+      // From precondition with i=0: high hd < offset
+      assert (high hd < offset);
+      
+      // By definition of add_range, since high hd < offset:
+      // add_range s offset len = Seq.cons hd (add_range tl offset len)
+      
+      // Establish preconditions for tail with k-1:
+      // 1. range_map_wf tl
+      range_map_wf_tail s;
+      
+      // 2. k - 1 < Seq.length tl
+      assert (k < Seq.length s);
+      assert (Seq.length tl == Seq.length s - 1);
+      assert (k - 1 < Seq.length tl);
+      
+      // 3. forall i < k-1. high (Seq.index tl i) < offset
+      let tail_forall () : Lemma (forall (i:nat). i < k - 1 ==> high (Seq.index tl i) < offset) =
+        let aux (i:nat{i < k - 1}) : Lemma (high (Seq.index tl i) < offset) =
+          assert (Seq.index tl i == Seq.index s (i + 1));
+          assert (i + 1 < k)
+        in
+        FStar.Classical.forall_intro aux
+      in
+      tail_forall ();
+      
+      // 4. offset + len < (Seq.index tl (k-1)).low
+      assert (Seq.index tl (k - 1) == Seq.index s k);
+      assert (offset + len < (Seq.index tl (k - 1)).low);
+      
+      // Apply IH to tail with k-1
+      add_range_insert_no_overlap tl offset len (k - 1);
+      
+      // IH gives us: add_range tl offset len == 
+      //              Seq.append (Seq.slice tl 0 (k-1)) 
+      //                         (Seq.cons iv (Seq.slice tl (k-1) (Seq.length tl)))
+      
+      // So: add_range s offset len = Seq.cons hd (add_range tl offset len)
+      //                            = Seq.cons hd (Seq.append (Seq.slice tl 0 (k-1))
+      //                                                      (Seq.cons iv (Seq.slice tl (k-1) (Seq.length tl))))
+      
+      // Goal: This equals Seq.append (Seq.slice s 0 k) (Seq.cons iv (Seq.slice s k (Seq.length s)))
+      
+      // Key observations:
+      // - Seq.slice s 0 k = Seq.cons hd (Seq.slice tl 0 (k-1))
+      // - Seq.slice s k (Seq.length s) = Seq.slice tl (k-1) (Seq.length tl)
+      
+      let lhs = add_range s offset len in
+      let rhs = Seq.append (Seq.slice s 0 k) (Seq.cons iv (Seq.slice s k (Seq.length s))) in
+      
+      // Prove Seq.slice s 0 k == Seq.cons hd (Seq.slice tl 0 (k-1))
+      let slice_s_eq () : Lemma (Seq.slice s 0 k `Seq.equal` Seq.cons hd (Seq.slice tl 0 (k - 1))) =
+        let s_prefix = Seq.slice s 0 k in
+        let tl_prefix = Seq.slice tl 0 (k - 1) in
+        let expected = Seq.cons hd tl_prefix in
+        
+        assert (Seq.length s_prefix == k);
+        assert (Seq.length expected == k);
+        
+        let aux (i:nat{i < k}) : Lemma (Seq.index s_prefix i == Seq.index expected i) =
+          if i = 0 then (
+            assert (Seq.index s_prefix 0 == Seq.index s 0);
+            assert (Seq.index s 0 == hd);
+            assert (Seq.index expected 0 == hd)
+          ) else (
+            assert (Seq.index s_prefix i == Seq.index s i);
+            assert (Seq.index s i == Seq.index tl (i - 1));
+            assert (Seq.index tl (i - 1) == Seq.index tl_prefix (i - 1));
+            assert (Seq.index expected i == Seq.index tl_prefix (i - 1))
+          )
+        in
+        FStar.Classical.forall_intro aux;
+        Seq.lemma_eq_intro s_prefix expected
+      in
+      slice_s_eq ();
+      
+      // Prove Seq.slice s k (Seq.length s) == Seq.slice tl (k-1) (Seq.length tl)
+      let slice_s_suffix_eq () : Lemma (Seq.slice s k (Seq.length s) `Seq.equal` Seq.slice tl (k - 1) (Seq.length tl)) =
+        let s_suffix = Seq.slice s k (Seq.length s) in
+        let tl_suffix = Seq.slice tl (k - 1) (Seq.length tl) in
+        
+        assert (Seq.length s_suffix == Seq.length s - k);
+        assert (Seq.length tl_suffix == Seq.length tl - (k - 1));
+        assert (Seq.length tl == Seq.length s - 1);
+        assert (Seq.length tl_suffix == Seq.length s - k);
+        
+        let aux (i:nat{i < Seq.length s - k}) : Lemma (Seq.index s_suffix i == Seq.index tl_suffix i) =
+          assert (Seq.index s_suffix i == Seq.index s (k + i));
+          assert (Seq.index s (k + i) == Seq.index tl (k + i - 1));
+          assert (Seq.index tl_suffix i == Seq.index tl (k - 1 + i))
+        in
+        FStar.Classical.forall_intro aux;
+        Seq.lemma_eq_intro s_suffix tl_suffix
+      in
+      slice_s_suffix_eq ();
+      
+      // Now prove the final equality using associativity of append and cons
+      // lhs = Seq.cons hd (Seq.append (Seq.slice tl 0 (k-1)) (Seq.cons iv (Seq.slice tl (k-1) (Seq.length tl))))
+      // rhs = Seq.append (Seq.cons hd (Seq.slice tl 0 (k-1))) (Seq.cons iv (Seq.slice tl (k-1) (Seq.length tl)))
+      
+      // Use the property: Seq.cons x (Seq.append a b) == Seq.append (Seq.cons x a) b
+      let cons_append_assoc (x: interval) (a b: Seq.seq interval)
+        : Lemma (Seq.cons x (Seq.append a b) `Seq.equal` Seq.append (Seq.cons x a) b) =
+        let lhs = Seq.cons x (Seq.append a b) in
+        let rhs = Seq.append (Seq.cons x a) b in
+        assert (Seq.length lhs == 1 + Seq.length a + Seq.length b);
+        assert (Seq.length rhs == (1 + Seq.length a) + Seq.length b);
+        let aux (i:nat{i < Seq.length lhs}) : Lemma (Seq.index lhs i == Seq.index rhs i) =
+          if i = 0 then ()
+          else if i <= Seq.length a then ()
+          else ()
+        in
+        FStar.Classical.forall_intro aux;
+        Seq.lemma_eq_intro lhs rhs
+      in
+      cons_append_assoc hd (Seq.slice tl 0 (k - 1)) (Seq.cons iv (Seq.slice tl (k - 1) (Seq.length tl)));
+      
+      Seq.lemma_eq_intro lhs rhs
+    )
+#pop-options
