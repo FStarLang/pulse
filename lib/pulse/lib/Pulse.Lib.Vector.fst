@@ -21,6 +21,7 @@ module Pulse.Lib.Vector
 open Pulse.Lib.Pervasives
 module Seq = FStar.Seq
 module SZ = FStar.SizeT
+module V = Pulse.Lib.Vec
 module A = Pulse.Lib.Array
 module Box = Pulse.Lib.Box
 open Pulse.Lib.Box
@@ -28,7 +29,7 @@ open Pulse.Lib.Box
 /// Internal representation
 noeq
 type vector_internal (t:Type0) = {
-  arr:         A.array t;
+  arr:         V.vec t;
   sz:          SZ.t;
   cap:         SZ.t;
   default_val: t;
@@ -40,14 +41,14 @@ let vector t = box (vector_internal t)
 let is_vector #t (v:vector t) (s:Seq.seq t) (cap:SZ.t) : slprop =
   exists* (vi:vector_internal t) (buf:Seq.seq t).
     pts_to v vi **
-    A.pts_to vi.arr buf **
+    V.pts_to vi.arr buf **
     pure (
       SZ.v vi.sz == Seq.length s /\
-      SZ.v vi.cap == A.length vi.arr /\
+      SZ.v vi.cap == V.length vi.arr /\
       vi.cap == cap /\
       SZ.v vi.sz <= SZ.v vi.cap /\
       SZ.v vi.cap > 0 /\
-      A.is_full_array vi.arr /\
+      V.is_full_vec vi.arr /\
       Seq.length buf == SZ.v vi.cap /\
       s `Seq.equal` Seq.slice buf 0 (SZ.v vi.sz)
     )
@@ -58,13 +59,13 @@ fn create (#t:Type0) (default:t) (n:SZ.t{SZ.v n > 0})
   returns v:vector t
   ensures is_vector v (Seq.create (SZ.v n) default) n
 {
-  let arr = A.alloc default n;
-  A.pts_to_len arr;
+  let arr = V.alloc default n;
+  V.pts_to_len arr;
   let n' : SZ.t = n;
   let vi = Mkvector_internal #t arr n' n' default;
   let v = alloc vi;
-  rewrite (A.pts_to arr (Seq.create (SZ.v n) default))
-       as (A.pts_to vi.arr (Seq.create (SZ.v n) default));
+  rewrite (V.pts_to arr (Seq.create (SZ.v n) default))
+       as (V.pts_to vi.arr (Seq.create (SZ.v n) default));
   fold (is_vector v (Seq.create (SZ.v n) default) n);
   v
 }
@@ -81,12 +82,12 @@ fn at (#t:Type0) (v:vector t) (i:SZ.t)
   with vi buf. _;
 
   let vi_val = !v;
-  rewrite (A.pts_to vi.arr buf) as (A.pts_to vi_val.arr buf);
+  rewrite (V.pts_to vi.arr buf) as (V.pts_to vi_val.arr buf);
 
-  A.pts_to_len vi_val.arr;
-  let x = A.op_Array_Access vi_val.arr i;
+  V.pts_to_len vi_val.arr;
+  let x = V.op_Array_Access vi_val.arr i;
 
-  rewrite (A.pts_to vi_val.arr buf) as (A.pts_to vi.arr buf);
+  rewrite (V.pts_to vi_val.arr buf) as (V.pts_to vi.arr buf);
   fold (is_vector v s cap);
   x
 }
@@ -101,13 +102,13 @@ fn set (#t:Type0) (v:vector t) (i:SZ.t) (x:t)
   with vi buf. _;
 
   let vi_val = !v;
-  rewrite (A.pts_to vi.arr buf) as (A.pts_to vi_val.arr buf);
+  rewrite (V.pts_to vi.arr buf) as (V.pts_to vi_val.arr buf);
 
-  A.pts_to_len vi_val.arr;
-  A.op_Array_Assignment vi_val.arr i x;
-  with buf'. assert (A.pts_to vi_val.arr buf');
+  V.pts_to_len vi_val.arr;
+  V.op_Array_Assignment vi_val.arr i x;
+  with buf'. assert (V.pts_to vi_val.arr buf');
 
-  rewrite (A.pts_to vi_val.arr buf') as (A.pts_to vi.arr buf');
+  rewrite (V.pts_to vi_val.arr buf') as (V.pts_to vi.arr buf');
   fold (is_vector v (Seq.upd s (SZ.v i) x) cap)
 }
 
@@ -161,18 +162,18 @@ fn push_back (#t:Type0) (v:vector t) (x:t)
   with vi buf. _;
 
   let vi_val = !v;
-  rewrite (A.pts_to vi.arr buf) as (A.pts_to vi_val.arr buf);
-  A.pts_to_len vi_val.arr;
+  rewrite (V.pts_to vi.arr buf) as (V.pts_to vi_val.arr buf);
+  V.pts_to_len vi_val.arr;
 
   if SZ.lt vi_val.sz vi_val.cap
   {
     // No resize needed — just insert at position size
-    A.op_Array_Assignment vi_val.arr vi_val.sz x;
-    with buf'. assert (A.pts_to vi_val.arr buf');
+    V.op_Array_Assignment vi_val.arr vi_val.sz x;
+    with buf'. assert (V.pts_to vi_val.arr buf');
     let new_vi = Mkvector_internal #t vi_val.arr (SZ.add vi_val.sz 1sz) vi_val.cap vi_val.default_val;
     ( := ) v new_vi;
 
-    rewrite (A.pts_to vi_val.arr buf') as (A.pts_to new_vi.arr buf');
+    rewrite (V.pts_to vi_val.arr buf') as (V.pts_to new_vi.arr buf');
     fold (is_vector v (Seq.snoc s x) cap);
     ()
   }
@@ -180,20 +181,24 @@ fn push_back (#t:Type0) (v:vector t) (x:t)
   {
     // Resize: allocate double, copy, write new element, free old
     let new_cap = SZ.add vi_val.cap vi_val.cap;
-    let new_arr = A.alloc vi_val.default_val new_cap;
-    A.pts_to_len new_arr;
+    let new_arr = V.alloc vi_val.default_val new_cap;
+    V.pts_to_len new_arr;
 
-    let _sq = A.memcpy_l vi_val.cap vi_val.arr new_arr;
+    V.to_array_pts_to vi_val.arr;
+    V.to_array_pts_to new_arr;
+    let _sq = A.memcpy_l vi_val.cap (V.vec_to_array vi_val.arr) (V.vec_to_array new_arr);
+    V.to_vec_pts_to vi_val.arr;
+    V.to_vec_pts_to new_arr;
 
-    A.op_Array_Assignment new_arr vi_val.sz x;
-    with buf'. assert (A.pts_to new_arr buf');
+    V.op_Array_Assignment new_arr vi_val.sz x;
+    with buf'. assert (V.pts_to new_arr buf');
 
-    A.free vi_val.arr;
+    V.free vi_val.arr;
 
     let new_vi = Mkvector_internal #t new_arr (SZ.add vi_val.sz 1sz) new_cap vi_val.default_val;
     ( := ) v new_vi;
 
-    rewrite (A.pts_to new_arr buf') as (A.pts_to new_vi.arr buf');
+    rewrite (V.pts_to new_arr buf') as (V.pts_to new_vi.arr buf');
     fold (is_vector v (Seq.snoc s x) new_cap);
     ()
   }
@@ -216,11 +221,11 @@ fn pop_back (#t:Type0) (v:vector t)
   with vi buf. _;
 
   let vi_val = !v;
-  rewrite (A.pts_to vi.arr buf) as (A.pts_to vi_val.arr buf);
-  A.pts_to_len vi_val.arr;
+  rewrite (V.pts_to vi.arr buf) as (V.pts_to vi_val.arr buf);
+  V.pts_to_len vi_val.arr;
 
   let last_idx = SZ.sub vi_val.sz 1sz;
-  let x = A.op_Array_Access vi_val.arr last_idx;
+  let x = V.op_Array_Access vi_val.arr last_idx;
 
   let new_sz = last_idx;
   let half_cap = SZ.div vi_val.cap 2sz;
@@ -229,18 +234,22 @@ fn pop_back (#t:Type0) (v:vector t)
   if should_shrink
   {
     // Shrink: allocate half, copy surviving elements, free old
-    let new_arr = A.alloc vi_val.default_val half_cap;
-    A.pts_to_len new_arr;
+    let new_arr = V.alloc vi_val.default_val half_cap;
+    V.pts_to_len new_arr;
 
-    let _sq = A.memcpy_l new_sz vi_val.arr new_arr;
+    V.to_array_pts_to vi_val.arr;
+    V.to_array_pts_to new_arr;
+    let _sq = A.memcpy_l new_sz (V.vec_to_array vi_val.arr) (V.vec_to_array new_arr);
+    V.to_vec_pts_to vi_val.arr;
+    V.to_vec_pts_to new_arr;
 
-    A.free vi_val.arr;
+    V.free vi_val.arr;
 
     let new_vi = Mkvector_internal #t new_arr new_sz half_cap vi_val.default_val;
     ( := ) v new_vi;
 
-    with buf_new. assert (A.pts_to new_arr buf_new);
-    rewrite (A.pts_to new_arr buf_new) as (A.pts_to new_vi.arr buf_new);
+    with buf_new. assert (V.pts_to new_arr buf_new);
+    rewrite (V.pts_to new_arr buf_new) as (V.pts_to new_vi.arr buf_new);
     fold (is_vector v (Seq.slice s 0 (Seq.length s - 1)) half_cap);
     x
   }
@@ -250,7 +259,7 @@ fn pop_back (#t:Type0) (v:vector t)
     let new_vi = Mkvector_internal #t vi_val.arr new_sz vi_val.cap vi_val.default_val;
     ( := ) v new_vi;
 
-    rewrite (A.pts_to vi_val.arr buf) as (A.pts_to new_vi.arr buf);
+    rewrite (V.pts_to vi_val.arr buf) as (V.pts_to new_vi.arr buf);
     fold (is_vector v (Seq.slice s 0 (Seq.length s - 1)) cap);
     x
   }
@@ -273,29 +282,35 @@ fn resize (#t:Type0) (v:vector t) (new_size:SZ.t{SZ.v new_size > 0})
   with vi buf. _;
 
   let vi_val = !v;
-  rewrite (A.pts_to vi.arr buf) as (A.pts_to vi_val.arr buf);
-  A.pts_to_len vi_val.arr;
+  rewrite (V.pts_to vi.arr buf) as (V.pts_to vi_val.arr buf);
+  V.pts_to_len vi_val.arr;
 
   if SZ.lte new_size vi_val.cap
   {
     let ns : SZ.t = new_size;
     let new_vi = Mkvector_internal #t vi_val.arr ns vi_val.cap vi_val.default_val;
     ( := ) v new_vi;
-    rewrite (A.pts_to vi_val.arr buf) as (A.pts_to new_vi.arr buf);
+    rewrite (V.pts_to vi_val.arr buf) as (V.pts_to new_vi.arr buf);
     fold (is_vector v (Seq.slice buf 0 (SZ.v new_size)) cap);
     ()
   }
   else
   {
-    let new_arr = A.alloc vi_val.default_val new_size;
-    A.pts_to_len new_arr;
-    let _sq = A.memcpy_l vi_val.sz vi_val.arr new_arr;
-    A.free vi_val.arr;
+    let new_arr = V.alloc vi_val.default_val new_size;
+    V.pts_to_len new_arr;
+
+    V.to_array_pts_to vi_val.arr;
+    V.to_array_pts_to new_arr;
+    let _sq = A.memcpy_l vi_val.sz (V.vec_to_array vi_val.arr) (V.vec_to_array new_arr);
+    V.to_vec_pts_to vi_val.arr;
+    V.to_vec_pts_to new_arr;
+
+    V.free vi_val.arr;
     let ns : SZ.t = new_size;
     let new_vi = Mkvector_internal #t new_arr ns ns vi_val.default_val;
     ( := ) v new_vi;
-    with buf'. assert (A.pts_to new_arr buf');
-    rewrite (A.pts_to new_arr buf') as (A.pts_to new_vi.arr buf');
+    with buf'. assert (V.pts_to new_arr buf');
+    rewrite (V.pts_to new_arr buf') as (V.pts_to new_vi.arr buf');
     fold (is_vector v (Seq.slice buf' 0 (SZ.v new_size)) new_size);
     ()
   }
@@ -311,9 +326,9 @@ fn free (#t:Type0) (v:vector t) (#s:erased (Seq.seq t)) (#cap:erased SZ.t)
   with vi buf. _;
 
   let vi_val = !v;
-  rewrite (A.pts_to vi.arr buf) as (A.pts_to vi_val.arr buf);
+  rewrite (V.pts_to vi.arr buf) as (V.pts_to vi_val.arr buf);
 
-  A.free vi_val.arr;
+  V.free vi_val.arr;
   Box.free v;
   ()
 }
