@@ -8,6 +8,7 @@
   "include_dirs": [
     "out/lib/pulse",
     "share/pulse/examples",
+    "tutorial/code",
     "share/pulse/examples/by-example",
     "share/pulse/examples/parallel",
     "share/pulse/examples/dice",
