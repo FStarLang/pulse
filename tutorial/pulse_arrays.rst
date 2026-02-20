@@ -22,7 +22,7 @@ between ``vec t`` and ``array t``.
 We illustrate the basics of ``array t`` with the help of the following example
 that reads an array:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //readi$
    :end-before: //end readi$
@@ -48,7 +48,7 @@ s (SZ.v i))``. The body of the function uses the array read operator
 
 As another example, let's write to the ``i``-th element of an array:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //writei$
    :end-before: //end writei$
@@ -61,7 +61,7 @@ While any permission suffices for reading, writing requires
 ``1.0R``.  For example, implementing ``write_i`` without
 ``1.0R`` is rejected, as shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //writeipbegin$
    :end-before: //writeipend$
@@ -85,7 +85,7 @@ Compare
 
 Let's implement a function that compares two arrays for equality:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //comparesigbegin$
    :end-before: //comparesigend$
@@ -101,7 +101,7 @@ decidable equality.
 One way to implement ``compare`` is to use a ``while`` loop, reading the two arrays
 using a mutable counter and checking that the corresponding elements are equal.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //compareimplbegin$
    :end-before: //compareimplend$
@@ -118,7 +118,7 @@ Copy
 As our next example, let's implement a ``copy`` function that copies the contents
 of the array ``a2`` to ``a1``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //copy$
    :end-before: //end copy$
@@ -132,7 +132,7 @@ The reader will notice that the postcondition of ``copy`` is a little convoluted
 A better signature would be the following, where we directly state that the
 contents of ``a1`` are same as ``'s2``:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //copy2sigbegin$
    :end-before: //copy2sigend$
@@ -140,7 +140,7 @@ contents of ``a1`` are same as ``'s2``:
 We can implement this signature, but it requires one step of rewriting at the end
 after the ``while`` loop to get the postcondition in this exact shape:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //copy2rewriting$
    :end-before: //copy2rewritingend$
@@ -160,7 +160,7 @@ length ``n`` sequence of ``v``. The following example allocates two
 arrays on the stack and compares them using the ``compare`` function
 above.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //compare_stack_arrays$
    :end-before: //end compare_stack_arrays$
@@ -169,7 +169,7 @@ As with the stack references, stack arrays don't need to be deallocated or
 dropped, they are reclaimed automatically when the function returns. As a result,
 returning them from the function is not allowed:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //ret_stack_array$
    :end-before: //ret_stack_array_end$
@@ -187,7 +187,7 @@ assertion with support for fractional permissions, ``share`` and
 functions. However, unlike ``array``, the ``Vec`` library provides
 allocation and free functions.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //heaparray$
    :end-before: //heaparrayend$
@@ -199,7 +199,7 @@ back-and-forth; the library provides ``to_array_pts_to`` and ``to_vec_pts_to`` l
 The following example illustrates the pattern. It copies the contents of a stack array into a heap array,
 using the ``copy2`` function we wrote above.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Array.fst
+.. literalinclude:: ../code/PulseTutorial.Array.fst
    :language: pulse
    :start-after: //copyuse$
    :end-before: //end copyuse$

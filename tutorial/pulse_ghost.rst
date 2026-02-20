@@ -32,7 +32,7 @@ Ghost Functions
 Here's a Pulse function that fails to check, with the error message
 below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //incr_erased_non_ghost$
    :end-before: //end incr_erased_non_ghost$
@@ -50,7 +50,7 @@ But, if we tag the function with the ``ghost`` qualifier, then this
 works:
 
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //incr_erased$
    :end-before: //end incr_erased$
@@ -64,7 +64,7 @@ However, for this to be sound, no compilable code is allowed to depend
 on the return value of a ``ghost`` function. So, the following code
 fails with the error below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //try_use_incr_erased$
    :end-before: //end try_use_incr_erased$
@@ -86,7 +86,7 @@ result. There are a few ways of doing this.
 Here's a verbose but explicit way, where we define a nested ghost
 function to wrap the call to ``incr_erased``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //use_incr_erased$
    :end-before: //end use_incr_erased$
@@ -94,7 +94,7 @@ function to wrap the call to ``incr_erased``.
 The library also contains ``Pulse.Lib.Pervasives.call_ghost`` that is
 a higher-order combinator to erase the result of a ghost call.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //use_incr_erased_alt$
    :end-before: //end use_incr_erased_alt$
@@ -105,14 +105,14 @@ in the following way.
 
 Suppose we have a binary ghost function, like ``add_erased``:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //add_erased$
    :end-before: //end add_erased$
 
 To call it in a non-ghost context, one can do the following:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //use_add_erased$
    :end-before: //end use_add_erased$
@@ -122,7 +122,7 @@ types to be usable in non-ghost contexts, it's usually best to define
 them that way to start with, rather than having to wrap them at each
 call site, as shown below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //add_erased_erased$
    :end-before: //end add_erased_erased$
@@ -145,7 +145,7 @@ The ``rewrite`` primitive that we saw :ref:`previously
 <Pulse_rewriting>` is in fact a defined function in the Pulse
 library. Its signature looks like this:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //__rewrite_sig$
    :end-before:  //end __rewrite_sig$
@@ -157,7 +157,7 @@ Other primitives like ``introduce exists*`` are also implemented in
 terms of library ``ghost`` functions, with signatures like the one
 below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //intro_exists_sig$
    :end-before:  //end intro_exists_sig$
@@ -181,7 +181,7 @@ Say you have a list of references and want to describe that they all
 contain integers whose value is at most ``n``. The recursive predicate
 ``all_at_most l n`` does just that:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: fstar
    :start-after: //all_at_most$
    :end-before:  //end all_at_most$
@@ -203,7 +203,7 @@ To see this in action, let's write a ghost function to prove that
 ``all_at_most l n`` can be weakened to ``all_at_most l m`` when ``n <=
 m``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //weaken_at_most$
    :end-before: //end weaken_at_most$               
@@ -293,7 +293,7 @@ First, we define a predicate ``correlated`` that holds full permission
 to a reference and half permission to a ghost reference, forcing them
 to hold the same value.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //correlated$
    :end-before: //end correlated$
@@ -303,7 +303,7 @@ from its signature alone, one might think that the witness ``v0``
 bound in the precondition is unrelated to the ``v1`` bound in the
 postcondition.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //use_temp_sig$
    :end-before: //end use_temp_sig$
@@ -313,7 +313,7 @@ cannot mutate it. So, although it can mutate the reference itself, in
 order to return its postcondition, it must reset the reference to its
 initial value.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //use_temp_body$
    :end-before: //end use_temp_body$
@@ -322,7 +322,7 @@ This property can be exploited by a caller to pass a reference to
 ``use_temp`` and be assured that the value is unchanged when it
 returns.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ghost.fst
+.. literalinclude:: ../code/PulseTutorial.Ghost.fst
    :language: pulse
    :start-after: //use_correlated$
    :end-before: //end use_correlated$

@@ -34,7 +34,7 @@ reference. We have already seen ``ref t`` used in the ``incr``
 function of the previous section. We show below another common
 function to swap the contents of two references:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //swap$
    :end-before: //end swap$
@@ -45,7 +45,7 @@ Reading a reference
 Let's start by taking a closer look at how dereferencing works in the
 function ``value_of`` below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //value_of$
    :end-before: //end value_of$
@@ -54,7 +54,7 @@ Its slightly more explicit form is shown below, where ``w:erased a``
 is an erased value witnessing the current contents referenced by
 ``r``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //value_of_explicit$
    :end-before: //end value_of_explicit$
@@ -73,7 +73,7 @@ in a non-ghost computation. For example, if instead of reading the
 reference, we attempt to just return ``reveal w``, the
 code fails to check with the error shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //value_of_explicit_fail$
    :end-before: //end value_of_explicit_fail$
@@ -89,7 +89,7 @@ The function ``assign`` below shows how to mutate the contents of a
 reference---the specification shows that when the function returns,
 ``r`` points to the assigned value ``v``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //assign$
    :end-before: //end assign$
@@ -108,7 +108,7 @@ values must be passed explicitly.
 The function ``add`` takes both a reference ``r:ref int`` and a value
 ``n:int`` as arguments:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //add$
    :end-before: //end add$
@@ -116,7 +116,7 @@ The function ``add`` takes both a reference ``r:ref int`` and a value
 Meanwhile, the function ``quadruple`` calls ``add`` twice to double
 the value stored in ``r`` each time.
                 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //quadruple$
    :end-before: //end quadruple$
@@ -156,7 +156,7 @@ Here below is the ``quadruple`` program again, with the proof states
 annotated at each point, and a ``show_proof_state`` command in the
 middle.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //quadruple_show_proof_state$
    :end-before: //end quadruple_show_proof_state$
@@ -236,7 +236,7 @@ The ``pts_to r #1.0R v`` represents exclusive, read/write
 permission on a reference. Revisiting the ``assign`` function from
 previously, we can write down the permissions explicitly.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //assign_1.0R$
    :end-before: //end assign_1.0R$
@@ -244,7 +244,7 @@ previously, we can write down the permissions explicitly.
 In contrast, when reading a reference, any permission ``p`` will do,
 as shown below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //value_of_perm$
    :end-before: //end value_of_perm$
@@ -252,7 +252,7 @@ as shown below:
 If we try to write to a reference without holding full permission on
 it, Pulse rejects the program, as shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //assign_perm FAIL$
    :end-before: //end assign_perm FAIL$
@@ -269,12 +269,12 @@ The full error message requires the F* option ``--print_implicits``.
 The functions ``share`` and ``gather`` allow one to divide and combine
 permissions on references, as shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //share_ref$
    :end-before: //end share_ref$
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //gather_ref$
    :end-before: //end gather_ref$
@@ -294,7 +294,7 @@ Stack references
 To create a new ``ref t``, one uses the ``let mut`` construct of
 Pulse, as shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //one
    :end-before: //end one
@@ -341,7 +341,7 @@ Stack references are scoped and implicitly reclaimed
 To emphasize that stack references allocated with ``let mut`` are
 scoped, let's look at the program below that Pulse refuses to check:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //refs_as_scoped FAIL
    :end-before: //end refs_as_scoped FAIL
@@ -377,7 +377,7 @@ that we have with regular references, including ``pts_to``, ``(!)``,
 explicitly allocated using ``alloc`` and deallocated using ``free``,
 as shown below. 
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Box.fst
+.. literalinclude:: ../code/PulseTutorial.Box.fst
    :language: pulse
    :start-after: //new_heap_ref$
    :end-before: //end new_heap_ref$
@@ -388,7 +388,7 @@ function, unlike a ``let mut`` scoped, stack-allocated reference.
 In the following example, we use ``open Box;`` to open the namespace
 ``Box`` in the following scope.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Box.fst
+.. literalinclude:: ../code/PulseTutorial.Box.fst
    :language: pulse
    :start-after: //last_value_of$
    :end-before: //end last_value_of$
@@ -400,7 +400,7 @@ convert ``Box.pts_to r 'v`` to a regular ``pts_to (box_to_ref r) 'v``;
 then calling ``incr (box_to_ref r)``; and then converting back to a
 ``Box.pts_to``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Box.fst
+.. literalinclude:: ../code/PulseTutorial.Box.fst
    :language: pulse
    :start-after: //incr_box$
    :end-before: //end incr_box$

@@ -56,7 +56,7 @@ component.
 Using ``parallel``, one can easily program the ``par`` combinator
 below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //par$
    :end-before: //end par$
@@ -64,7 +64,7 @@ below:
 As we saw in the :ref:`introduction to Pulse <PartPulse>`, it's easy
 to increment two separate references in parallel:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Intro.fst
+.. literalinclude:: ../code/PulseTutorial.Intro.fst
    :language: pulse
    :start-after: //par_incr$
    :end-before: //end par_incr$
@@ -104,7 +104,7 @@ behaviors.
 
 To enforce synchronization, we could use a lock, e.g., shown below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //attempt$
    :end-before: //end attempt$
@@ -140,7 +140,7 @@ shared variable. Let's see how this works in Pulse.
 The main idea is captured by ``lock_inv``, the type of the predicate
 protected by the lock:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: fstar
    :start-after: //lock_inv$
    :end-before: //end lock_inv$
@@ -163,7 +163,7 @@ each threads contribution in our specifications.
 
 Here's the code for the left thread, ``incr_left``:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //incr_left$
    :end-before: //end incr_left$
@@ -203,14 +203,14 @@ The code of the right thread is symmetrical, but in this, our first
 take, we have to essentially repeat the code---we'll see how to remedy
 this shortly.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //incr_right$
    :end-before: //end incr_right$
 
 Finally, we can implement ``add2`` with the specification we want:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //add2$
    :end-before: //end add2$
@@ -250,7 +250,7 @@ specification of ``incr`` so that it works with any user-chosen
 abstract predicate, rather than ``contributions`` and ``left/right``
 ghost state. Here's how:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //incr$
    :end-before: //end incr$
@@ -282,7 +282,7 @@ there are only two ghost references, not three.
 Here's one way to instantiate ``incr``, proving the same specification
 as ``add2``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //add2_v2$
    :end-before: //end add2_v2$
@@ -322,7 +322,7 @@ two atomic operations on unbounded integers---this will allow us to
 not worry about possible integer overflow. We leave as an exercise the
 problem of adapting this to ``U32.t``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: fstar
    :start-after: //atomic_primitives$
    :end-before: //end atomic_primitives$
@@ -406,7 +406,7 @@ An increment operation
 Our first step is to build an increment operation from an
 ``atomic_read`` and a ``cas``. Here is its specification:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //incr_atomic_spec$
    :end-before: //end incr_atomic_spec$
@@ -421,7 +421,7 @@ the current value is still ``v``.
 
 The ``read`` function is relatively easy:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //incr_atomic_body_read$
    :end-before: //end incr_atomic_body_read$
@@ -432,7 +432,7 @@ The ``read`` function is relatively easy:
 
 The main loop of ``incr_atomic`` is next, shown below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //incr_atomic_body_loop$
    :end-before: //end incr_atomic_body_loop$
@@ -463,7 +463,7 @@ we are not allowed to also set ``continue`` inside the
 Finally, we implement our parallel increment again, ``add2_v3``, this
 time using invariants, though it has the same specification as before.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ParallelIncrement.fst
+.. literalinclude:: ../code/PulseTutorial.ParallelIncrement.fst
    :language: pulse
    :start-after: //add2_v3$
    :end-before: //end add2_v3$

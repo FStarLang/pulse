@@ -28,7 +28,7 @@ spinning, or looping, until the lock is available.
 We'll represent a lock as a pair of reference to a ``U32.t`` and an
 invariant:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.SpinLock.fst
+.. literalinclude:: ../code/PulseTutorial.SpinLock.fst
    :language: fstar
    :start-after: //lock$
    :end-before: //end lock$
@@ -50,7 +50,7 @@ To create a lock, we implement ``new_lock`` below. It requires the
 caller to provide ``p``, ceding ownership of ``p`` to the newly
 allocated ``l:lock``
 
-.. literalinclude:: ../code/pulse/PulseTutorial.SpinLock.fst
+.. literalinclude:: ../code/PulseTutorial.SpinLock.fst
    :language: pulse
    :start-after: //new_lock$
    :end-before: //end new_lock$
@@ -73,7 +73,7 @@ threads. The ``lock_alive l p`` expresses ownership of a lock---but,
 since ``lock_alive`` is just an invariant, we can use ``dup_inv`` to
 duplicate ``lock_alive``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.SpinLock.fst
+.. literalinclude:: ../code/PulseTutorial.SpinLock.fst
    :language: pulse
    :start-after: //dup_lock_alive$
    :end-before: //end dup_lock_alive$
@@ -86,7 +86,7 @@ The signature of ``acquire`` is shown below: it says that with
 ``lock_alive l p``, we can get back ``p`` without proving anything,
 i.e., the precondition is ``emp``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.SpinLock.fst
+.. literalinclude:: ../code/PulseTutorial.SpinLock.fst
    :language: pulse
    :start-after: //acquire_sig$
    :end-before: //end acquire_sig$
@@ -121,7 +121,7 @@ learn that the initial value (``i``) of ``r`` was equal to ``u``.
 Using ``cas_box``, we can implement ``acquire`` using a tail-recursive
 function:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.SpinLock.fst
+.. literalinclude:: ../code/PulseTutorial.SpinLock.fst
    :language: pulse
    :start-after: //acquire_body$
    :end-before: //end acquire_body$
@@ -160,7 +160,7 @@ Releasing a lock is somewhat easier, at least for a simple version.
 The signature is the dual of ``acquire``: the caller has to give up
 ``p`` to the lock.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.SpinLock.fst
+.. literalinclude:: ../code/PulseTutorial.SpinLock.fst
    :language: pulse
    :start-after: //release$
    :end-before: //end release$

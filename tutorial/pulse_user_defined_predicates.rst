@@ -16,7 +16,7 @@ Fold and Unfold with Diagonal Pairs
 
 A simple example of a user-defined abstraction is show below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: pulse
    :start-after: //pts_to_diag$
    :end-before: //end pts_to_diag$
@@ -27,7 +27,7 @@ reference to a pair whose components are equal.
 We can use this abstraction in a Pulse program, though we have to be
 explicit about folding and unfolding the predicate.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: pulse
    :start-after: //double$
    :end-before: //end double$
@@ -55,7 +55,7 @@ folded/unfolded. For instance, in the code below, we just mention the
 name of the predicate to be unfolded/folded, without needing to
 provide all the arguments.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: pulse
    :start-after: //double_alt$
    :end-before: //end double_alt$
@@ -68,7 +68,7 @@ abstraction, we look at defining a simple mutable data structure: a
 structure with two mutable integer fields, representing a
 2-dimensional point.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: fstar
    :start-after: //point$
    :end-before: //end point$
@@ -82,7 +82,7 @@ the logical point ``xy``, where ``xy`` is pure, mathematical pair.
 We can define a function ``move``, which translates a point by some
 offset ``dx, dy``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: pulse
    :start-after: //move$
    :end-before: //end move$
@@ -112,7 +112,7 @@ predicates that are indexed by complex values, e.g., pairs or
 records. It's common enough that it is usually more convenient to
 define a helper function to fold the predicate, as shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: pulse
    :start-after: //fold_is_point$
    :end-before: //end fold_is_point$
@@ -124,7 +124,7 @@ define a helper function to fold the predicate, as shown below.
    
 This allows  type inference to work better, as shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: pulse
    :start-after: //move_alt$
    :end-before: //end move_alt$
@@ -151,7 +151,7 @@ proceeds to check ``subst(rest)``.
 
 To illustrate this at work, consider the program below:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: pulse
    :start-after: //create_and_move$
    :end-before: //end create_and_move$
@@ -211,7 +211,7 @@ the entire current ``slprop`` context.
   
 Using ``rewrite each ...`` makes the code somewhat shorter:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.UserDefinedPredicates.fst
+.. literalinclude:: ../code/PulseTutorial.UserDefinedPredicates.fst
    :language: pulse
    :start-after: //create_and_move_alt$
    :end-before: //end create_and_move_alt$

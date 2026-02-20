@@ -33,7 +33,7 @@ Looking back to the ``assign`` example from the previous chapter
 variable ``'v`` in precondition of the specification, since it is
 never actually used in any other predicate.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Ref.fst
+.. literalinclude:: ../code/PulseTutorial.Ref.fst
    :language: pulse
    :start-after: //assign$
    :end-before: //end assign$
@@ -41,7 +41,7 @@ never actually used in any other predicate.
 And indeed, another way to write the specification of ``assign``, without
 the logical variable argument, is shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Existentials.fst
+.. literalinclude:: ../code/PulseTutorial.Existentials.fst
    :language: pulse
    :start-after: //assign$
    :end-before: //end assign$
@@ -60,7 +60,7 @@ To illustrate, the following attempted specification of ``incr`` does
 not work, since the existentially bound ``w0`` is not in scope for the
 postcondition.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Existentials.fst
+.. literalinclude:: ../code/PulseTutorial.Existentials.fst
    :language: pulse
    :start-after: //incr_fail$
    :end-before: //end incr_fail$
@@ -73,7 +73,7 @@ type states that it sets the contents of ``x`` to some even number
 quantification in its precondition, since its postcondition does not
 depend on the initial value of ``x``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Existentials.fst
+.. literalinclude:: ../code/PulseTutorial.Existentials.fst
    :language: pulse
    :start-after: //make_even$
    :end-before: //end make_even$
@@ -90,7 +90,7 @@ automation takes care of introducing and eliminating existentials
 behind the scenes. However, the explicit operations are sometimes
 useful, and we show a first example of how they work below
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Existentials.fst
+.. literalinclude:: ../code/PulseTutorial.Existentials.fst
    :language: pulse
    :start-after: //make_even_explicit$
    :end-before: //end make_even_explicit$
@@ -121,7 +121,7 @@ w0)`` in context.
 Here is another example usage of ``with``, this time with multiple
 binders.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Existentials.fst
+.. literalinclude:: ../code/PulseTutorial.Existentials.fst
    :language: pulse
    :start-after: //make_even_explicit_alt$
    :end-before: //end make_even_explicit_alt$

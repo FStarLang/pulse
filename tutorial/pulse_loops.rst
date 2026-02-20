@@ -69,7 +69,7 @@ Countdown
 Here's our first Pulse program with a loop: ``count_down`` repeatedly
 decrements a reference until it reaches ``0``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: pulse
    :start-after: //count_down$
    :end-before: //end count_down$
@@ -81,7 +81,7 @@ version of ``count_down`` where the ``guard`` does all the work and
 the loop body is empty, and we don't need an auxiliary ``keep_going``
 variable.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: pulse
    :start-after: //count_down3$
    :end-before: //end count_down3$
@@ -93,7 +93,7 @@ Partial correctness
 The partial correctness interpretation means that the following
 infinitely looping variant of our program is also accepted:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: pulse
    :start-after: //count_down_loopy$
    :end-before: //end count_down_loopy$
@@ -119,7 +119,7 @@ often cited as the first paper about proving the correctness of a
 computer program. The program that Turing describes is one that
 implements multiplication by repeated addition.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: pulse
    :start-after: //multiply_by_repeated_addition$
    :end-before: //end multiply_by_repeated_addition$
@@ -147,7 +147,7 @@ We start with a specification of ``sum``, a simple recursive function
 in F* along with a lemma that proves the well-known identity about
 this sum.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: fstar
    :start-after: //sum$
    :end-before: //end sum$
@@ -156,7 +156,7 @@ Now, let's say we want to implement ``isum``, an iterative version of
 ``sum``, and prove that it satisfies the identity proven by
 ``sum_lemma``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: pulse
    :start-after: //isum$
    :end-before: //end isum$
@@ -189,7 +189,7 @@ later.
 Let's start with a standard F* (doubly) recursive definition that
 computes the nth Fibonacci number.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: fstar
    :start-after: //fib$
    :end-before: //end fib$
@@ -198,7 +198,7 @@ One can also implement it in Pulse, as ``fib_rec`` while using an
 out-parameter to hold that values of the last two Fibonacci numbers in
 the sequence.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: pulse
    :start-after: //fib_rec$
    :end-before: //end fib_rec$
@@ -217,7 +217,7 @@ Some points to note here:
 Of course, one can also define fibonacci iteratively, with a while
 loop, as shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Loops.fst
+.. literalinclude:: ../code/PulseTutorial.Loops.fst
    :language: pulse
    :start-after: //fib_loop$
    :end-before: //end fib_loop$

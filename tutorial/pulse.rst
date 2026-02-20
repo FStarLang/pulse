@@ -25,14 +25,14 @@ Logic <https://en.wikipedia.org/wiki/Separation_logic>`_.
 As a first taste of Pulse, here's a function to increment a mutable
 integer reference.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Intro.fst
+.. literalinclude:: ../code/PulseTutorial.Intro.fst
    :language: pulse
    :start-after: //incr
    :end-before: //end incr
 
 And here's a function to increment two references in parallel.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.Intro.fst
+.. literalinclude:: ../code/PulseTutorial.Intro.fst
    :language: pulse
    :start-after: //par_incr
    :end-before: //end par_incr

@@ -58,7 +58,7 @@ Share and Gather
 
 Here's a small example to see ``p @==> q`` at work.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: fstar
    :start-after: //regain_half$
    :end-before: //end regain_half$
@@ -74,7 +74,7 @@ eliminator can combine the two to return the full permission.
 
 Let's look at how to introduce ``regain_half``:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: pulse
    :start-after: //intro_regain_half$
    :end-before: //end intro_regain_half$
@@ -97,7 +97,7 @@ Later on, if want to use ``regain_half``, we can call its
 eliminator---which, effectively, calls ``aux`` with the needed
 permission, as shown below.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: pulse
    :start-after: //use_regain_half$
    :end-before: //end use_regain_half$
@@ -113,7 +113,7 @@ Universal Quantification
 
 Let's look at our ``regain_half`` predicate again:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: fstar
    :start-after: //regain_half$
    :end-before: //end regain_half$
@@ -135,7 +135,7 @@ need is a universal quantifier.
 
 Here's the right version of ``regain_half``:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: fstar
    :start-after: //regain_half_q$
    :end-before: //end regain_half_q$
@@ -199,7 +199,7 @@ Share and Gather, Again
 
 Here's how one introduces ``regain_half_q``:
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: pulse
    :start-after: //intro_regain_half_q$
    :end-before: //end intro_regain_half_q$
@@ -207,7 +207,7 @@ Here's how one introduces ``regain_half_q``:
 Now, when we want to use it, we can trade in any half-permission on
 ``pts_to x #one_half u``, for a full permission with the same ``u``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: pulse
    :start-after: //use_regain_half_q$
    :end-before: //end use_regain_half_q$
@@ -230,7 +230,7 @@ Here's a predicate ``can_update`` which says that one can trade a half
 permission to ``pts_to x #one_half u`` for a full permission to a
 *different value* ``pts_to x v``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: fstar
    :start-after: //can_update$
    :end-before: //end can_update$
@@ -238,7 +238,7 @@ permission to ``pts_to x #one_half u`` for a full permission to a
 In ``make_can_update``, we package a ghost-state update function into
 a binary quantifier ``forall* u v. ...``.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: pulse
    :start-after: //make_can_update$
    :end-before: //end make_can_update$
@@ -247,7 +247,7 @@ And in ``update``, below, we instantiate it to update the reference
 ``x`` from ``'u`` to ``k``, and also return back a ``can_update``
 predicate to the caller, for further use.
 
-.. literalinclude:: ../code/pulse/PulseTutorial.ImplicationAndForall.fst
+.. literalinclude:: ../code/PulseTutorial.ImplicationAndForall.fst
    :language: pulse
    :start-after: //update$
    :end-before: //end update$
