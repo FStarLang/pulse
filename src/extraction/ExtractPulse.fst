@@ -173,6 +173,11 @@ let pulse_translate_expr : translate_expr_t = fun env e ->
     when string_of_mlpath p = "Pulse.Lib.Array.Core.sub" ->
     EBufSub (translate_expr env a, translate_expr env i)
 
+  | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ l; src; dst; _; _; _ ])
+    when string_of_mlpath p = "Pulse.Lib.Array.memcpy_l" ->
+    let zero = EConstant (SizeT, "0") in
+    EBufBlit (translate_expr env src, zero, translate_expr env dst, zero, translate_expr env l)
+
   | MLE_App ({ expr = MLE_TApp({ expr = MLE_Name p }, _) }, [ r; _p; _w ])
     when string_of_mlpath p = "Pulse.Lib.Reference.to_array_mask" ->
     translate_expr env r
