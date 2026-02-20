@@ -21,7 +21,7 @@ open Pulse.Lib.Trade.Util
 open Pulse.Lib.Forall.Util
 module I = Pulse.Lib.Trade.Util
 module GR = Pulse.Lib.GhostReference
-open GR
+open Pulse.Lib.GhostReference
 
 //regain_half$
 let regain_half (#a: Type0) (x:GR.ref a) (v:a) =

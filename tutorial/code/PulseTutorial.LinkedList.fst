@@ -225,7 +225,7 @@ ensures pure (n == k + List.Tot.length 'l)
 
 
 module I = Pulse.Lib.Trade.Util
-open I
+open Pulse.Lib.Trade.Util
 
 //tail$
 fn tail (#t:Type) (x:llist t)
