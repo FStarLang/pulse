@@ -10,6 +10,7 @@ PULSE_EXAMPLES_ROOT ?= $(PULSE_ROOT)/share/pulse/examples
 SRC:=$(PULSE_EXAMPLES_ROOT) # Actually does not matter much
 
 SRC_DIRS := $(addprefix $(PULSE_EXAMPLES_ROOT)/,. by-example dice/cbor dice/external dice/external/hacl dice/external/l0 dice/dpe dice/engine dice/l0)
+SRC_DIRS += $(PULSE_ROOT)/tutorial/code
 
 # I don't like this
 OTHERFLAGS += $(addprefix --include ,$(SRC_DIRS))
@@ -23,6 +24,7 @@ OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/_cache
 OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/by-example/_cache
 OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/_cache
 OTHERFLAGS += --include $(PULSE_EXAMPLES_ROOT)/dice/common/hacl-c/_cache
+OTHERFLAGS += --include $(PULSE_ROOT)/tutorial/code/_cache
 OTHERFLAGS += --include $(PULSE_ROOT)/test
 OTHERFLAGS += --include $(PULSE_ROOT)/test/_cache
 
