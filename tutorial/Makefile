@@ -4,5 +4,5 @@ PULSE_ROOT ?= ..
 include $(PULSE_ROOT)/mk/test.mk
 
 .PHONY: sphinx
-sphinx:
+sphinx: code.__all
 	sphinx-build . _build/

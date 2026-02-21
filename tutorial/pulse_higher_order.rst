@@ -13,7 +13,7 @@ Pulse Computation Types
 Here's perhaps the simplest higher-order function: ``apply`` abstracts
 function application.
 
-.. literalinclude:: ../code/PulseTutorial.HigherOrder.fst
+.. literalinclude:: code/PulseTutorial.HigherOrder.fst
    :language: pulse
    :start-after: //apply$
    :end-before: //end apply$
@@ -47,7 +47,7 @@ most important is the constructor for ghost computations. We show
 below ``apply_ghost``, the analog of ``apply`` but for ``ghost``
 functions.
 
-.. literalinclude:: ../code/PulseTutorial.HigherOrder.fst
+.. literalinclude:: code/PulseTutorial.HigherOrder.fst
    :language: pulse
    :start-after: //apply_ghost$
    :end-before: //end apply_ghost$
@@ -102,7 +102,7 @@ For a slightly more interesting use of higher order programming, let's
 look at how to program a mutable counter. We'll start by defining the
 type ``ctr`` of a counter.
 
-.. literalinclude:: ../code/PulseTutorial.HigherOrder.fst
+.. literalinclude:: code/PulseTutorial.HigherOrder.fst
    :language: fstar
    :start-after: //ctr$
    :end-before: //end ctr$
@@ -122,7 +122,7 @@ A counter packages the following:
 One way to implement a ``ctr`` is to represent the state with a
 heap-allocated reference. This is what ``new_counter`` does below:
 
-.. literalinclude:: ../code/PulseTutorial.HigherOrder.fst
+.. literalinclude:: code/PulseTutorial.HigherOrder.fst
    :language: pulse
    :start-after: //new_counter$
    :end-before: //end new_counter$
@@ -144,7 +144,7 @@ In a caller's context, such as ``test_counter`` below, the fact that
 the counter is implemented using a single mutable heap reference is
 completely hidden.
 
-.. literalinclude:: ../code/PulseTutorial.HigherOrder.fst
+.. literalinclude:: code/PulseTutorial.HigherOrder.fst
    :language: pulse
    :start-after: //test_counter$
    :end-before: //end test_counter$

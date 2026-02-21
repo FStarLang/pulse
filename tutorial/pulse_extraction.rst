@@ -15,7 +15,7 @@ The algorithm finds majority vote in an array of votes in linear time
 
 We implement the algorithm in Pulse with the following specification:
 
-.. literalinclude:: ../code/PulseTutorial.Algorithms.fst
+.. literalinclude:: code/PulseTutorial.Algorithms.fst
     :language: pulse
     :start-after: //majorityspec$
     :end-before: //majorityspecend$
@@ -40,7 +40,7 @@ majority candidate and assigns ``k = 1``. Otherwise, if the ``i-th`` vote is sam
 The second phase then is another while loop that counts the number of votes
 for the majority candidate from the first phase.
 
-.. literalinclude:: ../code/PulseTutorial.Algorithms.fst
+.. literalinclude:: code/PulseTutorial.Algorithms.fst
     :language: pulse
     :start-after: //majorityphase1$
     :end-before: //majorityphase1end$
@@ -53,7 +53,7 @@ Pulse automatically proves the program, with an hint for the behavior of the ``c
 function as we increment the loop counter, the following ``count_until_next`` lemma
 captures the behavior, and we invoke the lemma in both the while loops:
 
-.. literalinclude:: ../code/PulseTutorial.Algorithms.fst
+.. literalinclude:: code/PulseTutorial.Algorithms.fst
     :language: pulse
     :start-after: //countlemma$
     :end-before: //countlemmaend$
@@ -88,7 +88,7 @@ and then the second command extracts the Rust code to ``voting.rs``. (These comm
 
 The output Rust code is as shown below:
 
-.. literalinclude:: ../code/voting.rs
+.. literalinclude:: code/voting.rs
     :language: pulse
     :start-after: //majorityrust$
     :end-before: //majorityrustend$
@@ -97,7 +97,7 @@ We can test it by adding the following in ``voting.rs`` and running the tests
 (using ``cargo test``, it requires a ``Cargo.toml`` file, we provide an example file
 in the repo that can be used):
 
-.. literalinclude:: ../code/voting.rs
+.. literalinclude:: code/voting.rs
     :language: pulse
     :start-after: //majorityrusttest$
     :end-before: //majorityrusttestend$
@@ -132,7 +132,7 @@ of support of polymorphism in C, Karamel monomorphizes polymorphic functions bas
 their uses. So, we write a monomorphic version of the ``majority`` function for ``u32``,
 that internally calls the polymorphic ``majority`` function:
 
-.. literalinclude:: ../code/PulseTutorial.Algorithms.fst
+.. literalinclude:: code/PulseTutorial.Algorithms.fst
     :language: pulse
     :start-after: //majoritymono$
     :end-before: //majoritymonoend$
@@ -151,15 +151,15 @@ Then we extract it to C as follows (the commands are run in the ``pulse`` root d
 This produces ``PulseTutorial_Algorithms.h`` and ``PulseTutorial_Algorithms.c`` files, with the following
 implementation of ``majority``:
 
-.. literalinclude:: ../code/PulseTutorial_Algorithms.c
+.. literalinclude:: code/PulseTutorial_Algorithms_Client.c
     :language: C
-    :start-after: //majorityc$
-    :end-before: //majoritycend$
+    :start-after: /* SNIPPET_START: majority__uint32_t */
+    :end-before: /* SNIPPET_END: majority__uint32_t */
 
 We can now test it with a client like:
 
-.. literalinclude:: ../code/PulseTutorial_Algorithms_Client.c
-    :language: C
+.. literalinclude:: code/PulseTutorial.Algorithms.Client.fst
+    :language: pulse
 
 
 .. code-block:: shell
@@ -192,10 +192,8 @@ For the Boyer-Moore example, we can extract the program to OCaml as follows:
 
 and the extracted ``majority`` function looks like:
 
-.. literalinclude:: ../code/PulseTutorial_Algorithms.ml
-    :language: C
-    :start-after: //majorityocaml$
-    :end-before: //majorityocamlend$
+.. literalinclude:: code/PulseTutorial_Algorithms.ml
+    :language: OCaml
 
 
 .. Rust extraction
@@ -218,7 +216,7 @@ and the extracted ``majority`` function looks like:
 
 .. We implement the algorithm in Pulse with the following specification:
 
-.. .. literalinclude:: ../code/PulseTutorial.Algorithms.fst
+.. .. literalinclude:: code/PulseTutorial.Algorithms.fst
 ..     :language: pulse
 ..     :start-after: //majorityspec$
 ..     :end-before: //majorityspecend$
@@ -234,7 +232,7 @@ and the extracted ``majority`` function looks like:
 .. ``cand``, it increments ``k`` by one, otherwise it decrements ``k`` by one.
 
 
-.. .. literalinclude:: ../code/PulseTutorial.Algorithms.fst
+.. .. literalinclude:: code/PulseTutorial.Algorithms.fst
 ..     :language: pulse
 ..     :start-after: //majorityphase1$
 ..     :end-before: //majorityphase1end$
@@ -251,14 +249,14 @@ and the extracted ``majority`` function looks like:
 .. the output is written to ``file``). The output of the tool on this example is as shown
 .. below:
 
-.. .. literalinclude:: ../code/voting.rs
+.. .. literalinclude:: code/voting.rs
 ..     :language: pulse
 ..     :start-after: //majorityrust$
 ..     :end-before: //majorityrustend$
 
 .. We can output this code in a file, and then test it as follows:
 
-.. .. literalinclude:: ../code/voting.rs
+.. .. literalinclude:: code/voting.rs
 ..     :language: pulse
 ..     :start-after: //majorityrusttest$
 ..     :end-before: //majorityrusttestend$
@@ -301,7 +299,7 @@ and the extracted ``majority`` function looks like:
 .. .. We illustrate the basics of ``array t`` with the help of the following example
 .. .. that reads an array:
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: ```pulse //readi$
 .. ..    :end-before: ```
@@ -327,7 +325,7 @@ and the extracted ``majority`` function looks like:
 
 .. .. As another example, let's write to the ``i``-th element of an array:
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: ```pulse //writei$
 .. ..    :end-before: ```
@@ -340,7 +338,7 @@ and the extracted ``majority`` function looks like:
 .. .. ``1.0R``.  For example, implementing ``write_i`` without
 .. .. ``1.0R`` is rejected, as shown below.
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: //writeipbegin$
 .. ..    :end-before: //writeipend$
@@ -364,7 +362,7 @@ and the extracted ``majority`` function looks like:
 
 .. .. Let's implement a function that compares two arrays for equality:
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: //comparesigbegin$
 .. ..    :end-before: //comparesigend$
@@ -380,7 +378,7 @@ and the extracted ``majority`` function looks like:
 .. .. One way to implement ``compare`` is to use a ``while`` loop, reading the two arrays
 .. .. using a mutable counter and checking that the corresponding elements are equal.
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: //compareimplbegin$
 .. ..    :end-before: //compareimplend$
@@ -397,7 +395,7 @@ and the extracted ``majority`` function looks like:
 .. .. As our next example, let's implement a ``copy`` function that copies the contents
 .. .. of the array ``a2`` to ``a1``.
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: //copy$
 .. ..    :end-before: ```
@@ -411,7 +409,7 @@ and the extracted ``majority`` function looks like:
 .. .. A better signature would be the following, where we directly state that the
 .. .. contents of ``a1`` are same as ``'s2``:
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: //copy2sigbegin$
 .. ..    :end-before: //copy2sigend$
@@ -419,7 +417,7 @@ and the extracted ``majority`` function looks like:
 .. .. We can implement this signature, but it requires one step of rewriting at the end
 .. .. after the ``while`` loop to get the postcondition in this exact shape:
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: //copy2rewriting$
 .. ..    :end-before: //copy2rewritingend$
@@ -439,7 +437,7 @@ and the extracted ``majority`` function looks like:
 .. .. arrays on the stack and compares them using the ``compare`` function
 .. .. above.
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: ```pulse //compare_stack_arrays$
 .. ..    :end-before: ```
@@ -448,7 +446,7 @@ and the extracted ``majority`` function looks like:
 .. .. dropped, they are reclaimed automatically when the function returns. As a result,
 .. .. returning them from the function is not allowed:
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: //ret_stack_array$
 .. ..    :end-before: //ret_stack_array_end$
@@ -466,7 +464,7 @@ and the extracted ``majority`` function looks like:
 .. .. functions. However, unlike ``array``, the ``Vec`` library provides
 .. .. allocation and free functions.
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: //heaparray$
 .. ..    :end-before: //heaparrayend$
@@ -478,7 +476,7 @@ and the extracted ``majority`` function looks like:
 .. .. The following example illustrates the pattern. It copies the contents of a stack array into a heap array,
 .. .. using the ``copy2`` function we wrote above.
 
-.. .. .. literalinclude:: ../code/PulseTutorial.Array.fst
+.. .. .. literalinclude:: code/PulseTutorial.Array.fst
 .. ..    :language: pulse
 .. ..    :start-after: ```pulse //copyuse$
 .. ..    :end-before: ```

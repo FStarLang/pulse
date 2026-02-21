@@ -7,7 +7,7 @@ A Pulse program is embedded in an F* program by including the
 directive ``#lang-pulse`` in an F* file. The rest of the file can 
 then use a mixture of Pulse and F* syntax, as shown below. 
 
-.. literalinclude:: ../code/PulseByExample.fst
+.. literalinclude:: code/PulseByExample.fst
    :language: pulse
    :start-after: //SNIPPET_START: five
    :end-before: //SNIPPET_END
@@ -149,7 +149,7 @@ that it doesn't touch.
 With this in mind, let's look again at the type of ``incr``, which
 requires permission only to ``x`` and increments it:
 
-.. literalinclude:: ../code/PulseTutorial.Intro.fst
+.. literalinclude:: code/PulseTutorial.Intro.fst
    :language: pulse
    :start-after: //incr$
    :end-before: //end incr$
@@ -158,7 +158,7 @@ Because of the frame rule, we can also call ``incr`` in a context like
 ``incr_frame`` below, and we can prove without any additional work
 that ``y`` is unchanged.
                                                           
-.. literalinclude:: ../code/PulseTutorial.Intro.fst
+.. literalinclude:: code/PulseTutorial.Intro.fst
    :language: pulse
    :start-after: //incr_frame$
    :end-before: //end incr_frame$
@@ -166,7 +166,7 @@ that ``y`` is unchanged.
 In fact, Pulse lets us use the frame rule with any ``f:slprop``, and we
 get, for free, that ``incr x`` does not disturb ``f``.
 
-.. literalinclude:: ../code/PulseTutorial.Intro.fst
+.. literalinclude:: code/PulseTutorial.Intro.fst
    :language: pulse
    :start-after: //incr_frame_any$
    :end-before: //end incr_frame_any$
@@ -178,7 +178,7 @@ int``---we learned about :ref:`erased types in a previous section
 <Part4_Ghost>`. One can also bind logical variables explicitly, e.g.,
 this is equivalent:
 
-.. literalinclude:: ../code/PulseTutorial.Intro.fst
+.. literalinclude:: code/PulseTutorial.Intro.fst
    :language: pulse
    :start-after: //incr_explicit_i$
    :end-before: //end incr_explicit_i$

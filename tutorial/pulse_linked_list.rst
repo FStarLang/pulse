@@ -13,7 +13,7 @@ Representing a Linked List
 
 Let's start by defining the type of a singly linked list:
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: fstar
    :start-after: //llist$
    :end-before: //end llist$
@@ -26,7 +26,7 @@ represented by an option, as :ref:`we saw before
 Next, we need a predicate to relate a linked list to a logical
 representation of the list, for use in specifications. 
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: fstar
    :start-after: //is_list$
    :end-before: //end is_list$
@@ -49,7 +49,7 @@ helper ghost functions to work with ``is_list``. We expect the Pulse
 checker will automate these boilerplate ghost lemmas in the future,
 but, for now, we are forced to write them by hand.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //boilerplate$
    :end-before: //end boilerplate$
@@ -67,14 +67,14 @@ the predicate by recursing on the tail of ``l``. So, below, we have a
 predicate ``is_list_cases x l`` that inverts ``is_list x l`` predicate
 based on whether or not ``x`` is null.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: fstar
    :start-after: //is_list_cases$
    :end-before: //end is_list_cases$
 
 Next, we define a ghost function to invert ``is_list`` into ``is_list_cases``.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //cases_of_is_list$
    :end-before: //end cases_of_is_list$
@@ -82,12 +82,12 @@ Next, we define a ghost function to invert ``is_list`` into ``is_list_cases``.
 We also define two more ghost functions that package up the call to
 ``cases_of_is_list``.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //is_list_case_none$
    :end-before: //end is_list_case_none$
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //is_list_case_some$
    :end-before: //end is_list_case_some$
@@ -98,7 +98,7 @@ Length, Recursively
 With our helper functions in hand, let's get to writing some real
 code, starting with a function to compute the length of an ``llist``.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //length$
    :end-before: //end length$
@@ -147,7 +147,7 @@ permission on a node pointer (``pts_to v n``), we can build a trade
 transforming a permission on the tail into a permission for a cons
 cell starting at the given node.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //tail_for_cons$
    :end-before: //end tail_for_cons$
@@ -191,7 +191,7 @@ that you cannot have permission to ``is_list x 'l`` and ``is_list y
 tl`` at the same time, but once you give up permission on ``y``, you
 can get back the original permission on ``x``.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //tail$
    :end-before: //end tail$
@@ -205,7 +205,7 @@ initialize a current pointer ``cur`` to the head of the list; and
 ``ctr`` to ``0``. Then, while ``cur`` is not null, we move ``cur`` to
 the tail and increment ``ctr``. Finally, we return the ``!ctr``.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //length_iter$
    :end-before: //end length_iter$
@@ -252,7 +252,7 @@ It's fairly straightforward: we recurse until we reach the last node
 of ``x`` (i.e., the ``tail`` field is ``None``; and we set that field
 to point to ``y``.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //append$
    :end-before: //end append$
@@ -272,7 +272,7 @@ the returns ``y`` points to, it can be traded for a pointer to ``x``
 that cons's on to ``tl``. Our previous function ``tail`` can be easily
 recovered by instantiating ``tl'`` to ``tl``.
 
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //tail_alt$
    :end-before: //end tail_alt$
@@ -282,7 +282,7 @@ shown below. The main idea of the implementation is to use a while
 loop to traverse to the last element of the first list ``x``; and then
 to set ``y`` as the ``next`` pointer of this last element.
       
-.. literalinclude:: ../code/PulseTutorial.LinkedList.fst
+.. literalinclude:: code/PulseTutorial.LinkedList.fst
    :language: pulse
    :start-after: //append_iter$
    :end-before: //end append_iter$

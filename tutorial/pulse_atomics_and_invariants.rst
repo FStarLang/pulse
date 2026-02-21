@@ -128,7 +128,7 @@ Let's start by looking at how to create an invariant.
 First, let's define a predicate ``owns x``, to mean that we hold
 full-permission on ``x``.
 
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: fstar
    :start-after: //owns$
    :end-before: //end owns$
@@ -137,7 +137,7 @@ full-permission on ``x``.
 Now, if we can currently prove ``pts_to r x`` then we can turn it into
 an invariant ``inv i (owns r)``, as shown below.
 
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //create_invariant$
    :end-before: //end create_invariant$
@@ -280,7 +280,7 @@ Updating a reference
 Let's try do update a reference, given ``inv i (owns r)``. Our first attempt is
 shown below:
 
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //update_ref_atomic0$
    :end-before: //end update_ref_atomic0$
@@ -293,7 +293,7 @@ also have a ``later_credit 1``.
 
 So, let's try again:
 
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //update_ref_atomic$
    :end-before: //end update_ref_atomic$
@@ -328,7 +328,7 @@ Finally, to call ``update_ref_atomic``, we need to buy a later credit first.
 This is easily done before we call the atomic computation, as shown below:
 
 
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //update_ref$
    :end-before: //end update_ref$
@@ -466,7 +466,7 @@ without a later credit, as shown below.
 First, we prove that ``owns`` is timeless:
 
 
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //owns_timeless$
    :end-before: //end owns_timeless$
@@ -484,7 +484,7 @@ First, we prove that ``owns`` is timeless:
 Next, we can revise ``update_ref_atomic`` to use ``later_elim_timeless``, rather
 than requiring a later credit.
 
-.. literalinclude::  ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude::  code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //update_ref_atomic_alt$
    :end-before: //end update_ref_atomic_alt$
@@ -497,7 +497,7 @@ To see why we have to track the names of the opened invariants,
 consider the example below. If we opened the same invariant twice
 within the same scope, then it's easy to prove ``False``:
 
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //double_open_bad$
    :end-before: //end double_open_bad$
@@ -515,7 +515,7 @@ computations, while forgetting which invariants they opened. For
 example, ``update_ref`` below is not marked atomic, so its type
 doesn't record which invariants were opened internally.
   
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //update_ref$
    :end-before: //end update_ref$
@@ -527,7 +527,7 @@ non-atomic computation in a ``with_invariants`` block produces an
 error, as shown below.
 
 
-.. literalinclude:: ../code/PulseTutorial.AtomicsAndInvariants.fst
+.. literalinclude:: code/PulseTutorial.AtomicsAndInvariants.fst
    :language: pulse
    :start-after: //update_ref_fail$
    :end-before: //end update_ref_fail$
