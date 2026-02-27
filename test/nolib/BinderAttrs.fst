@@ -8,11 +8,10 @@ assume
 val f1 ([@@@123] x:int) :
   stt int emp (fun _ -> emp)
 
-(* Binder attrs currently rejected altogether. Ignore that. *)
-#set-options "--ext pulse:binder_attrs"
-
 fn f2 ([@@@123] x:int)
+  requires emp
   returns  int
+  ensures  emp
 { 1 }
 
 (* f1 and f2 should both have the same binder attributes. *)
