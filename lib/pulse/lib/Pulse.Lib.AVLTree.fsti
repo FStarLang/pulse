@@ -25,40 +25,64 @@ open Pulse.Lib.Pervasives
 module T = Pulse.Lib.Spec.AVLTree
 module G = FStar.Ghost
 
-val tree_t  (a:Type u#0): Type u#0
+val tree_t  (k:Type u#0) (v:Type u#0): Type u#0
 
-val is_tree #t ([@@@mkey] ct:tree_t t) (ft:T.tree t)
+val is_tree #k #v ([@@@mkey] ct:tree_t k v) (ft:T.tree k v)
 : Tot slprop (decreases ft)
 
-fn height (#t:Type0) (x:tree_t t) (#ft:G.erased (T.tree t))
+fn height (#k:Type0) (#v:Type0) (x:tree_t k v) (#ft:G.erased (T.tree k v))
   preserves is_tree x ft
   returns  n : nat
   ensures pure (n == T.height ft)
 
-fn is_empty (#t:Type) (x:tree_t t) (#ft:G.erased(T.tree t))
+fn is_empty (#k:Type) (#v:Type) (x:tree_t k v) (#ft:G.erased(T.tree k v))
   preserves is_tree x ft
   returns  b : bool
   ensures pure (b <==> (T.is_empty ft))
 
-fn create (t:Type0)
-  returns  x : tree_t t
+fn create (k:Type0) (v:Type0)
+  returns  x : tree_t k v
   ensures  is_tree x T.Leaf
 
-fn mem (#t:eqtype) (x:tree_t t) (v: t) (#ft:G.erased (T.tree t))
+fn mem (#k:eqtype) (#v:Type0) (x:tree_t k v) (key: k) (#ft:G.erased (T.tree k v))
   preserves is_tree x ft
   returns  b : bool
-  ensures pure (b <==> (T.mem ft v))
+  ensures pure (b <==> (T.mem ft key))
 
 fn insert_avl
-  (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
-  (#l: G.erased(T.tree t))
+  (#k:Type0) (#v:Type0) (cmp: T.cmp k) (tree:tree_t k v) (key: k) (val_: v)
+  (#l: G.erased(T.tree k v))
   requires is_tree tree l
-  returns  y : tree_t t
-  ensures  is_tree y (T.insert_avl cmp l key)
+  returns  y : tree_t k v
+  ensures  is_tree y (T.insert_avl cmp l key val_)
 
 fn delete_avl
-  (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
-  (#l: G.erased(T.tree t))
+  (#k:Type0) (#v:Type0) (cmp: T.cmp k) (tree:tree_t k v) (key: k)
+  (#l: G.erased(T.tree k v))
   requires is_tree tree l
-  returns  y : tree_t t
+  returns  y : tree_t k v
   ensures  is_tree y (T.delete_avl cmp l key)
+
+fn find_min (#k:Type0) (#v:Type0) (cmp: T.cmp k) (x:tree_t k v) (#ft:G.erased (T.tree k v){T.Node? ft})
+  requires is_tree x ft
+  returns y:(k & v)
+  ensures is_tree x ft ** pure (y == T.tree_min ft)
+
+fn find_max (#k:Type0) (#v:Type0) (cmp: T.cmp k) (x:tree_t k v) (#ft:G.erased (T.tree k v){T.Node? ft})
+  requires is_tree x ft
+  returns y:(k & v)
+  ensures is_tree x ft ** pure (y == T.tree_max ft)
+
+fn find_le (#k:Type0) (#v:Type0) (cmp: T.cmp k) (x:tree_t k v) (key:k) (#ft:G.erased (T.tree k v))
+  preserves is_tree x ft
+  returns y:option (k & v)
+  ensures pure (y == T.find_le cmp ft key)
+
+fn find_ge (#k:Type0) (#v:Type0) (cmp: T.cmp k) (x:tree_t k v) (key:k) (#ft:G.erased (T.tree k v))
+  preserves is_tree x ft
+  returns y:option (k & v)
+  ensures pure (y == T.find_ge cmp ft key)
+
+fn free (#k:Type0) (#v:Type0) (x:tree_t k v) (#ft:G.erased (T.tree k v))
+  requires is_tree x ft
+  ensures emp
