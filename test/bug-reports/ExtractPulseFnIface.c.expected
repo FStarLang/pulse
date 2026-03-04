@@ -15,3 +15,32 @@ krml_checked_int_t ExtractPulseFnIface_pulse_read_ref(krml_checked_int_t *r)
   return *r;
 }
 
+krml_checked_int_t ExtractPulseFnIface_double(krml_checked_int_t x)
+{
+  return ExtractPulseFnIface_pure_add(x, x);
+}
+
+static void private_helper(krml_checked_int_t *r, krml_checked_int_t v)
+{
+  *r = v;
+}
+
+void ExtractPulseFnIface_pulse_write_ref(krml_checked_int_t *r, krml_checked_int_t v)
+{
+  private_helper(r, v);
+}
+
+krml_checked_int_t ExtractPulseFnIface_assign_ref(krml_checked_int_t *r, krml_checked_int_t v)
+{
+  *r = v;
+  return v;
+}
+
+krml_checked_int_t
+(*ExtractPulseFnIface_write_and_return)(krml_checked_int_t *x0, krml_checked_int_t x1) =
+  ExtractPulseFnIface_assign_ref;
+
+krml_checked_int_t
+(*ExtractPulseFnIface_pulse_read_ref2)(krml_checked_int_t *x0) =
+  ExtractPulseFnIface_pulse_read_ref;
+
