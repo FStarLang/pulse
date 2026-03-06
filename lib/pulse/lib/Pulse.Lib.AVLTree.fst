@@ -27,54 +27,55 @@ module Box = Pulse.Lib.Box
 open Pulse.Lib.Box { box, (:=), (!) }
 
 noeq
-type node (t:Type0) = {
-    data : t;
-    left : tree_t t;
-    right : tree_t t;
+type node (k:Type0) (v:Type0) = {
+    key : k;
+    value : v;
+    left : tree_t k v;
+    right : tree_t k v;
 }
 
-and node_ptr (t:Type0) = box (node t)
+and node_ptr (k:Type0) (v:Type0) = box (node k v)
 
 //A nullable pointer to a node
-and tree_t (t:Type0) = option (node_ptr t)
+and tree_t (k:Type0) (v:Type0) = option (node_ptr k v)
 
-let rec is_tree #t ct ft = match ft with
+let rec is_tree #k #v ct ft = match ft with
   | T.Leaf -> pure (ct == None)
-  | T.Node data left' right' ->
-    exists* (p:node_ptr t) (lct:tree_t t) (rct:tree_t t).
+  | T.Node nd_key nd_val left' right' ->
+    exists* (p:node_ptr k v) (lct:tree_t k v) (rct:tree_t k v).
       pure (ct == Some p) **
-      (p |-> { data = data ; left = lct ; right = rct}) **
+      (p |-> { key = nd_key ; value = nd_val ; left = lct ; right = rct}) **
       is_tree lct left' **
       is_tree rct right'
 
 
 ghost
-fn elim_is_tree_leaf (#t:Type0) (x:tree_t t)
+fn elim_is_tree_leaf (#k:Type0) (#v:Type0) (x:tree_t k v)
   requires is_tree x T.Leaf
   ensures pure (x == None)
 {
-   unfold (is_tree x T.Leaf) 
+   unfold (is_tree x T.Leaf)
 }
 
 
 
 ghost
-fn intro_is_tree_leaf (#t:Type0) (x:tree_t t) 
+fn intro_is_tree_leaf (#k:Type0) (#v:Type0) (x:tree_t k v)
   requires pure (x == None)
   ensures is_tree x T.Leaf
 {
-  fold (is_tree x T.Leaf); 
+  fold (is_tree x T.Leaf);
 }
 
 
 
 ghost
-fn elim_is_tree_node (#t:Type0) (ct:tree_t t) (data:t) (ltree:T.tree t) (rtree:T.tree t)
-  requires is_tree ct (T.Node data ltree rtree)
+fn elim_is_tree_node (#k:Type0) (#v:Type0) (ct:tree_t k v) (nd_key:k) (nd_val:v) (ltree:T.tree k v) (rtree:T.tree k v)
+  requires is_tree ct (T.Node nd_key nd_val ltree rtree)
   ensures (
-  exists* (p:node_ptr t) (lct:tree_t t) (rct:tree_t t).
+  exists* (p:node_ptr k v) (lct:tree_t k v) (rct:tree_t k v).
     pure (ct == Some p) **
-    (p |-> { data; left = lct;right = rct }) **
+    (p |-> { key = nd_key; value = nd_val; left = lct; right = rct }) **
     is_tree lct ltree **
     is_tree rct rtree
 )
@@ -87,32 +88,32 @@ module G = FStar.Ghost
 
 
 ghost
-fn intro_is_tree_node (#t:Type0) (ct:tree_t t) (v:node_ptr t) (#node:node t) (#ltree:T.tree t) (#rtree:T.tree t)
+fn intro_is_tree_node (#k:Type0) (#v:Type0) (ct:tree_t k v) (p:node_ptr k v) (#nd:node k v) (#ltree:T.tree k v) (#rtree:T.tree k v)
 requires
-  (v |-> node) **
-  is_tree node.left ltree **
-  is_tree node.right rtree **
-  pure (ct == Some v)
+  (p |-> nd) **
+  is_tree nd.left ltree **
+  is_tree nd.right rtree **
+  pure (ct == Some p)
 ensures
-  is_tree ct (T.Node node.data ltree rtree)
+  is_tree ct (T.Node nd.key nd.value ltree rtree)
 {
-  fold (is_tree ct (T.Node node.data ltree rtree))
+  fold (is_tree ct (T.Node nd.key nd.value ltree rtree))
 }
 
 
 [@@no_mkeys] // internal only
-let is_tree_cases #t (x : option (box (node t))) (ft : T.tree t)
+let is_tree_cases #k #v (x : option (box (node k v))) (ft : T.tree k v)
 = match x with
   | None -> pure (ft == T.Leaf)
-  | Some v -> 
-    exists* (n:node t) (ltree:T.tree t) (rtree:T.tree t).
-      (v |-> n) **
-      pure (ft == T.Node n.data ltree rtree) **
+  | Some p ->
+    exists* (n:node k v) (ltree:T.tree k v) (rtree:T.tree k v).
+      (p |-> n) **
+      pure (ft == T.Node n.key n.value ltree rtree) **
       is_tree n.left ltree **
       is_tree n.right rtree
 
 ghost
-fn cases_of_is_tree #t (x:tree_t t) (ft:T.tree t)
+fn cases_of_is_tree #k #v (x:tree_t k v) (ft:T.tree k v)
   requires is_tree x ft
   ensures  is_tree_cases x ft
 {
@@ -122,8 +123,8 @@ fn cases_of_is_tree #t (x:tree_t t) (ft:T.tree t)
       fold (is_tree_cases None ft);
       rewrite is_tree_cases None ft as is_tree_cases x ft;
     }
-    T.Node data ltree rtree -> {
-      unfold (is_tree x (T.Node data ltree rtree));
+    T.Node nd_key nd_val ltree rtree -> {
+      unfold (is_tree x (T.Node nd_key nd_val ltree rtree));
       with p lct rct. _;
       with n. assert p |-> n;
       with l'. rewrite is_tree lct l' as is_tree n.left l';
@@ -136,9 +137,9 @@ fn cases_of_is_tree #t (x:tree_t t) (ft:T.tree t)
 
 
 
- 
+
 ghost
-fn is_tree_case_none (#t:Type) (x:tree_t t) (#l:T.tree t)
+fn is_tree_case_none (#k:Type) (#v:Type) (x:tree_t k v) (#l:T.tree k v)
   preserves is_tree x l
   requires pure (x == None)
   ensures pure (l == T.Leaf)
@@ -152,29 +153,29 @@ fn is_tree_case_none (#t:Type) (x:tree_t t) (#l:T.tree t)
 
 
 
- 
+
 ghost
-fn is_tree_case_some (#t:Type) (x:tree_t t) (v:node_ptr t) (#ft:T.tree t) 
+fn is_tree_case_some (#k:Type) (#v:Type) (x:tree_t k v) (p:node_ptr k v) (#ft:T.tree k v)
   requires is_tree x ft
-  requires pure (x == Some v)
+  requires pure (x == Some p)
 ensures
-   exists* (node:node t) (ltree:T.tree t) (rtree:T.tree t).
-    (v |-> node) **
-    is_tree node.left ltree **
-    is_tree node.right rtree **
-    pure (ft == T.Node node.data ltree rtree)
-  
+   exists* (nd:node k v) (ltree:T.tree k v) (rtree:T.tree k v).
+    (p |-> nd) **
+    is_tree nd.left ltree **
+    is_tree nd.right rtree **
+    pure (ft == T.Node nd.key nd.value ltree rtree)
+
 {
-  rewrite each x as Some v;
-  cases_of_is_tree (Some v) ft;
+  rewrite each x as Some p;
+  cases_of_is_tree (Some p) ft;
   unfold is_tree_cases;
 }
 
 
 ///////////////////////////////////////////////////////////////////////////////
 
- 
-fn rec height (#t:Type0) (x:tree_t t)
+
+fn rec height (#k:Type0) (#v:Type0) (x:tree_t k v)
   preserves is_tree x 'l
   returns n:nat
   ensures pure (n == T.height 'l)
@@ -202,7 +203,7 @@ fn rec height (#t:Type0) (x:tree_t t)
 
 
 
-fn is_empty (#t:Type) (x:tree_t t) (#ft:G.erased(T.tree t))
+fn is_empty (#k:Type) (#v:Type) (x:tree_t k v) (#ft:G.erased(T.tree k v))
   preserves is_tree x ft
   returns b:bool
   ensures pure (b <==> (T.is_empty ft))
@@ -222,54 +223,38 @@ fn is_empty (#t:Type) (x:tree_t t) (#ft:G.erased(T.tree t))
 }
 
 
-let null_tree_t (t:Type0) : tree_t t = None
+let null_tree_t (k:Type0) (v:Type0) : tree_t k v = None
 
 
 
-fn create (t:Type0)
-  returns x:tree_t t
+fn create (k:Type0) (v:Type0)
+  returns x:tree_t k v
   ensures is_tree x T.Leaf
 {
-  let tree = null_tree_t t;
+  let tree = null_tree_t k v;
   intro_is_tree_leaf tree;
   tree
 }
 
 
-fn node_cons (#t:Type0) (v:t) (ltree:tree_t t) (rtree:tree_t t) (#l:(T.tree t)) (#r:(T.tree t)) 
+fn node_cons (#k:Type0) (#v:Type0) (nd_key:k) (nd_val:v) (ltree:tree_t k v) (rtree:tree_t k v) (#l:(T.tree k v)) (#r:(T.tree k v))
   requires is_tree ltree l  **
-           is_tree rtree r  //functional equivalent of x is 'l; x is the tail of the constructed tree.
-  returns y:tree_t t
-  ensures is_tree y (T.Node v l r)
+           is_tree rtree r
+  returns y:tree_t k v
+  ensures is_tree y (T.Node nd_key nd_val l r)
   ensures (pure (Some? y))
 {
-  let y = Box.alloc { data=v; left =ltree; right = rtree };
+  let y = Box.alloc { key=nd_key; value=nd_val; left=ltree; right=rtree };
   intro_is_tree_node (Some y) y;
   Some y
 }
 
 
 
-/// Appends value [v] at the leftmost leaf of the tree that [ptr] points to.
-
-fn rec append_left_none (#t:Type0) (x:tree_t t) (v:t) (#ft:G.erased (T.tree t))
-  preserves is_tree x ft
-  requires pure (None? x)
-  returns y:tree_t t
-  ensures is_tree y (T.Node v T.Leaf T.Leaf)
-{
-  let left = create t;
-  let right = create t;
-  let y = node_cons v left right;
-  y 
-}
-
-
-
-fn rec append_left (#t:Type0) (x:tree_t t) (v:t) (#ft:G.erased (T.tree t))
+fn rec append_left (#k:Type0) (#v:Type0) (x:tree_t k v) (ak:k) (av:v) (#ft:G.erased (T.tree k v))
   requires is_tree x ft
-  returns y:tree_t t
-  ensures is_tree y  (T.append_left ft v)
+  returns y:tree_t k v
+  ensures is_tree y  (T.append_left ft ak av)
 {
    match x {
     None -> {
@@ -279,18 +264,18 @@ fn rec append_left (#t:Type0) (x:tree_t t) (v:t) (#ft:G.erased (T.tree t))
       elim_is_tree_leaf None;
 
 
-      let left = create t;
-      let right = create t;
-      
-    
-      let y = node_cons v left right;
-      
+      let left = create k v;
+      let right = create k v;
+
+
+      let y = node_cons ak av left right;
+
       let np = Some?.v y;
-      
+
       is_tree_case_some y np;
 
       intro_is_tree_node y np;
-      y 
+      y
     }
     Some vl -> {
 
@@ -298,7 +283,7 @@ fn rec append_left (#t:Type0) (x:tree_t t) (v:t) (#ft:G.erased (T.tree t))
 
       let node = !vl;
 
-      let left_new = append_left node.left v;
+      let left_new = append_left node.left ak av;
 
       vl := {node with left = left_new};
 
@@ -307,15 +292,15 @@ fn rec append_left (#t:Type0) (x:tree_t t) (v:t) (#ft:G.erased (T.tree t))
       x
     }
   }
-} 
+}
 
 
 
 
-fn rec append_right (#t:Type0) (x:tree_t t) (v:t) (#ft:G.erased (T.tree t))
+fn rec append_right (#k:Type0) (#v:Type0) (x:tree_t k v) (ak:k) (av:v) (#ft:G.erased (T.tree k v))
   requires is_tree x ft
-  returns y:tree_t t
-  ensures is_tree y  (T.append_right ft v)
+  returns y:tree_t k v
+  ensures is_tree y  (T.append_right ft ak av)
 {
    match x {
     None -> {
@@ -324,62 +309,43 @@ fn rec append_right (#t:Type0) (x:tree_t t) (v:t) (#ft:G.erased (T.tree t))
 
       elim_is_tree_leaf None;
 
-      let left = create t;
-      let right = create t;
-      
-    
-      let y = node_cons v left right;
-      
+      let left = create k v;
+      let right = create k v;
+
+
+      let y = node_cons ak av left right;
+
       let np = Some?.v y;
-      
+
       is_tree_case_some y np;
 
       intro_is_tree_node y np;
-      
-      y 
+
+      y
     }
     Some np -> {
       is_tree_case_some (Some np) np;
 
       let node = !np;
 
-      let right_new = append_right node.right v;
-      
+      let right_new = append_right node.right ak av;
+
       np := {node with right = right_new};
-      
+
       intro_is_tree_node x np;
-      
+
       x
     }
   }
-} 
-
-
-
-
-fn node_data (#t:Type) (x:tree_t t) (#ft:G.erased (T.tree t))
-    preserves is_tree x ft
-    requires (pure (Some? x))
-    returns v:t
-{
-  let np = Some?.v x;
-      
-  is_tree_case_some x np;
-      
-  let node = !np;
-
-  let v = node.data;
-  
-  intro_is_tree_node x np;
-  v
 }
 
 
 
-fn rec mem (#t:eqtype) (x:tree_t t) (v: t) (#ft:G.erased (T.tree t))
+
+fn rec mem (#k:eqtype) (#v:Type0) (x:tree_t k v) (search_key: k) (#ft:G.erased (T.tree k v))
     preserves is_tree x ft
     returns b:bool
-    ensures pure (b <==> (T.mem ft v))
+    ensures pure (b <==> (T.mem ft search_key))
 {
   match x {
        None -> {
@@ -391,16 +357,16 @@ fn rec mem (#t:eqtype) (x:tree_t t) (v: t) (#ft:G.erased (T.tree t))
            is_tree_case_some (Some vl) vl;
            let n = !vl;
 
-           let dat = n.data;
+           let dat = n.key;
 
-           if (dat = v)
+           if (dat = search_key)
            {
              intro_is_tree_node x vl;
              true
            }
            else{
-             let b1 = mem n.left v;
-             let b2 = mem n.right v;
+             let b1 = mem n.left search_key;
+             let b2 = mem n.right search_key;
 
              let b3 = b1 || b2;
              intro_is_tree_node x vl;
@@ -414,126 +380,127 @@ fn rec mem (#t:eqtype) (x:tree_t t) (v: t) (#ft:G.erased (T.tree t))
 
 
 
-fn get_some_ref (#t:Type) (x:tree_t t)
+fn get_some_ref (#k:Type) (#v:Type) (x:tree_t k v)
   requires is_tree x 'l
   requires pure (T.Node? 'l)
-  returns v:node_ptr t
-ensures  
-  exists* (node:node t) (ltree:T.tree t) (rtree:T.tree t).
-    pure (x == Some v) **
-    pure ('l == T.Node node.data ltree rtree) **
-    (v |-> node) **
-    is_tree node.left ltree **
-    is_tree node.right rtree
+  returns p:node_ptr k v
+ensures
+  exists* (nd:node k v) (ltree:T.tree k v) (rtree:T.tree k v).
+    pure (x == Some p) **
+    pure ('l == T.Node nd.key nd.value ltree rtree) **
+    (p |-> nd) **
+    is_tree nd.left ltree **
+    is_tree nd.right rtree
 {
   match x {
     None -> {
       is_tree_case_none None;
       unreachable ()
     }
-    Some v -> {
-      is_tree_case_some (Some v) v;
-      v
+    Some p -> {
+      is_tree_case_some (Some p) p;
+      p
     }
   }
 }
 
-[@@pulse_unfold] let _left  (t:T.tree 'a{T.Node? t}) = T.Node?.left  t
-[@@pulse_unfold] let _right (t:T.tree 'a{T.Node? t}) = T.Node?.right t
-[@@pulse_unfold] let _data  (t:T.tree 'a{T.Node? t}) = T.Node?.data  t
+[@@pulse_unfold] let _left  (#k:Type) (#v:Type) (t:T.tree k v{T.Node? t}) = T.Node?.left  t
+[@@pulse_unfold] let _right (#k:Type) (#v:Type) (t:T.tree k v{T.Node? t}) = T.Node?.right t
+[@@pulse_unfold] let _key   (#k:Type) (#v:Type) (t:T.tree k v{T.Node? t}) = T.Node?.key   t
+[@@pulse_unfold] let _val   (#k:Type) (#v:Type) (t:T.tree k v{T.Node? t}) = T.Node?.value t
 
 fn read_node
-  (#a:Type0)
-  (tree : tree_t a)
-  (#t : erased (T.tree a){T.Node? t})
+  (#k:Type0) (#v:Type0)
+  (tree : tree_t k v)
+  (#t : erased (T.tree k v){T.Node? t})
   requires is_tree tree t
-  (* ^ Some? p should be trivial, but just kick the ball to the caller *)
-  returns  res : tree_t a & a & tree_t a & squash (Some? tree)
-    (* ^ squash to help with spec well-formedness *)
+  returns  res : tree_t k v & k & v & tree_t k v & squash (Some? tree)
   ensures (
-    let (l, x, r, _) = res in
-    (Some?.v tree |-> {left = l; data = x; right = r})
+    let (l, xk, xv, r, _) = res in
+    (Some?.v tree |-> {left = l; key = xk; value = xv; right = r})
     ** is_tree l (_left t)
     ** is_tree r (_right t)
-    ** pure (x == _data t)
+    ** pure (xk == _key t)
+    ** pure (xv == _val t)
   )
 {
   let p = get_some_ref tree;
-  with node. assert p |-> node;
+  with nd. assert p |-> nd;
   let n = !p;
   rewrite p |-> n as Some?.v tree |-> n;
-  (n.left, n.data, n.right, ())
+  (n.left, n.key, n.value, n.right, ())
 }
 
 fn write_node
-  (#a:Type0)
-  (tree : tree_t a{Some? tree})
-  (lp : tree_t a)
-  (data : a)
-  (rp : tree_t a)
-  (#lt #rt : erased (T.tree a))
+  (#k:Type0) (#v:Type0)
+  (tree : tree_t k v{Some? tree})
+  (lp : tree_t k v)
+  (nd_key : k)
+  (nd_val : v)
+  (rp : tree_t k v)
+  (#lt #rt : erased (T.tree k v))
   requires
     (Some?.v tree |-> 'n0) **
     is_tree lp lt **
     is_tree rp rt
   ensures
-    is_tree tree (T.Node data lt rt)
+    is_tree tree (T.Node nd_key nd_val lt rt)
 {
-  let n = { data = data; left = lp; right = rp };
+  let n = { key = nd_key; value = nd_val; left = lp; right = rp };
   let Some p = tree;
   p := n;
-  fold (is_tree tree (T.Node data lt rt))
+  fold (is_tree tree (T.Node nd_key nd_val lt rt))
 }
 
-fn rotate_left (#t:Type0) (tree:tree_t t) (#l: G.erased (T.tree t){ Some? (T.rotate_left l) })
+fn rotate_left (#k:Type0) (#v:Type0) (tree:tree_t k v) (#l: G.erased (T.tree k v){ Some? (T.rotate_left l) })
   requires is_tree tree l
-  returns  y : tree_t t
+  returns  y : tree_t k v
   ensures  is_tree y (Some?.v (T.rotate_left l))
 {
-  let a, b, p', _  = read_node tree;
-  let c, d, e,  _  = read_node p';
-  write_node p' a b c;
-  write_node tree p' d e;
-  tree (* Note: in-place mutation, we could make this return unit instead. *)
+  let a, bk, bv, p', _  = read_node tree;
+  let c, dk, dv, e,  _  = read_node p';
+  write_node p' a bk bv c;
+  write_node tree p' dk dv e;
+  tree
 }
 
-fn rotate_right (#t:Type0) (tree:tree_t t) (#l:G.erased (T.tree t){ Some? (T.rotate_right l) })
+fn rotate_right (#k:Type0) (#v:Type0) (tree:tree_t k v) (#l:G.erased (T.tree k v){ Some? (T.rotate_right l) })
   requires is_tree tree l
-  returns y:tree_t t
+  returns y:tree_t k v
   ensures (is_tree y (Some?.v (T.rotate_right l)))
 {
-  let p', d, e, _  = read_node tree;
-  let a, b, c, _  = read_node p';
-  write_node p' c d e;
-  write_node tree a b p';
+  let p', dk, dv, e, _  = read_node tree;
+  let a, bk, bv, c, _  = read_node p';
+  write_node p' c dk dv e;
+  write_node tree a bk bv p';
   tree
 }
 
-fn rotate_right_left (#t:Type0) (tree:tree_t t) (#l:G.erased (T.tree t){ Some? (T.rotate_right_left l) })
+fn rotate_right_left (#k:Type0) (#v:Type0) (tree:tree_t k v) (#l:G.erased (T.tree k v){ Some? (T.rotate_right_left l) })
   requires is_tree tree l
-  returns  y : tree_t t
+  returns  y : tree_t k v
   ensures  is_tree y (Some?.v (T.rotate_right_left l))
 {
-  let a, x, zp, _ = read_node tree;
-  let yp, z, d,  _ = read_node zp;
-  let b, y, c,  _ = read_node yp;
-  write_node zp c z d;
-  write_node yp a x b;
-  write_node tree yp y zp;
+  let a, xk, xv, zp, _ = read_node tree;
+  let yp, zk, zv, d,  _ = read_node zp;
+  let b, yk, yv, c,  _ = read_node yp;
+  write_node zp c zk zv d;
+  write_node yp a xk xv b;
+  write_node tree yp yk yv zp;
   tree
 }
 
-fn rotate_left_right (#t:Type0) (tree:tree_t t) (#l:G.erased (T.tree t){ Some? (T.rotate_left_right l) })
+fn rotate_left_right (#k:Type0) (#v:Type0) (tree:tree_t k v) (#l:G.erased (T.tree k v){ Some? (T.rotate_left_right l) })
   requires is_tree tree l
-  returns  y  :tree_t t
+  returns  y  :tree_t k v
   ensures  is_tree y (Some?.v (T.rotate_left_right l))
 {
-  let zp, x, d,  _ = read_node tree;
-  let a, z, yp, _ = read_node zp;
-  let b, y, c,  _ = read_node yp;
-  write_node zp a z b;
-  write_node yp c x d;
-  write_node tree zp y yp;
+  let zp, xk, xv, d,  _ = read_node tree;
+  let a, zk, zv, yp, _ = read_node zp;
+  let b, yk, yv, c,  _ = read_node yp;
+  write_node zp a zk zv b;
+  write_node yp c xk xv d;
+  write_node tree zp yk yv yp;
   tree
 }
 
@@ -541,7 +508,7 @@ fn rotate_left_right (#t:Type0) (tree:tree_t t) (#l:G.erased (T.tree t){ Some? (
 module M = FStar.Math.Lib
 
 
-fn rec is_balanced (#t:Type0) (tree:tree_t t)
+fn rec is_balanced (#k:Type0) (#v:Type0) (tree:tree_t k v)
   preserves is_tree tree 'l
   returns b:bool
   ensures pure (b <==> (T.is_balanced 'l))
@@ -566,9 +533,9 @@ fn rec is_balanced (#t:Type0) (tree:tree_t t)
       let b3 = is_balanced n.left;
 
       let b4 = b1 && b2 && b3;
-      
+
       intro_is_tree_node tree vl;
-      
+
       b4
     }
   }
@@ -577,9 +544,9 @@ fn rec is_balanced (#t:Type0) (tree:tree_t t)
 
 
 
-fn rec  rebalance_avl (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t))
+fn rec  rebalance_avl (#k:Type0) (#v:Type0) (tree:tree_t k v) (#l:G.erased(T.tree k v))
   requires is_tree tree l
-  returns y:tree_t t
+  returns y:tree_t k v
   ensures (is_tree y (T.rebalance_avl l))
 {
   let b = is_balanced tree;
@@ -592,7 +559,7 @@ fn rec  rebalance_avl (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t))
     Some vl -> {
       rewrite each (Some vl) as tree;
       is_tree_case_some tree vl;
-      
+
       if (b)
       {
         intro_is_tree_node tree vl;
@@ -603,15 +570,15 @@ fn rec  rebalance_avl (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t))
         let n = !vl;
         let height_l = height n.left;
         let height_r = height n.right;
-        
+
         let diff_height = height_l - height_r ;
 
-        if (diff_height > 1) 
+        if (diff_height > 1)
         {
           let vll = get_some_ref n.left;
           intro_is_tree_node n.left vll;
           is_tree_case_some n.left vll;
-         
+
           let nl = !vll;
 
           let height_ll = height nl.left;
@@ -621,15 +588,15 @@ fn rec  rebalance_avl (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t))
           {
              (*Only in this branch, this situation happens, Node x (Node z t1 (Node y t2 t3)) t4*)
              let vllr = get_some_ref nl.right;
-             
+
              (*pack tree back in the order it is unpacked*)
              intro_is_tree_node nl.right vllr;
-             
+
              intro_is_tree_node n.left vll;
-            
-             
+
+
              intro_is_tree_node tree vl;
-             
+
              let y = rotate_left_right tree;
              y
           }
@@ -656,7 +623,7 @@ fn rec  rebalance_avl (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t))
           {
              (*Node x t1 (Node z (Node y t2 t3) t4)*)
              let vlrl = get_some_ref nr.left;
-             
+
              (*pack tree back in the order it is unpacked*)
              intro_is_tree_node nr.left vlrl;
              intro_is_tree_node n.right vlr;
@@ -672,14 +639,14 @@ fn rec  rebalance_avl (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t))
             let y = rotate_left tree;
             y
           }
-          
+
         }
         else
         {
           intro_is_tree_node tree vl;
           tree
         }
-        
+
       }
     }
   }
@@ -687,10 +654,10 @@ fn rec  rebalance_avl (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t))
 
 
 
-fn rec insert_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
+fn rec insert_avl (#k:Type0) (#v:Type0) (cmp: T.cmp k) (tree:tree_t k v) (nd_key: k) (nd_val: v)
   requires is_tree tree 'l
-  returns y:tree_t t
-  ensures (is_tree y (T.insert_avl cmp 'l key))
+  returns y:tree_t k v
+  ensures (is_tree y (T.insert_avl cmp 'l nd_key nd_val))
 {
   match tree {
     None -> {
@@ -698,43 +665,43 @@ fn rec insert_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
 
        elim_is_tree_leaf None;
 
-       let left = create t;
-       let right = create t;
-      
-    
-       let y = node_cons key left right;
-      
+       let left = create k v;
+       let right = create k v;
+
+
+       let y = node_cons nd_key nd_val left right;
+
        let np = Some?.v y;
-      
+
        is_tree_case_some y np;
 
        intro_is_tree_node y np;
-       
+
        y
     }
     Some vl -> {
       is_tree_case_some (Some vl) vl;
-      with node. assert vl |-> node;
+      with nd. assert vl |-> nd;
       let n = !vl;
-      let delta = cmp n.data key;
+      let delta = cmp n.key nd_key;
       if (delta >= 0)
       {
-        let new_left = insert_avl cmp n.left key;
-        let vl' = {data = n.data; left = new_left; right = n.right};
+        let new_left = insert_avl cmp n.left nd_key nd_val;
+        let vl' = {key = n.key; value = n.value; left = new_left; right = n.right};
         vl := vl';
         rewrite each new_left as vl'.left;
-        rewrite each node.right as vl'.right;
+        rewrite each nd.right as vl'.right;
         intro_is_tree_node (Some vl) vl #vl';
         let new_tree = rebalance_avl (Some vl);
         new_tree
       }
       else
       {
-        let new_right = insert_avl cmp n.right key;
-        let vl' = {data = n.data; left = n.left; right = new_right };
+        let new_right = insert_avl cmp n.right nd_key nd_val;
+        let vl' = {key = n.key; value = n.value; left = n.left; right = new_right };
         vl := vl';
         rewrite each new_right as vl'.right;
-        rewrite each node.left as vl'.left;
+        rewrite each nd.left as vl'.left;
         intro_is_tree_node (Some vl) vl #vl';
         let new_tree = rebalance_avl (Some vl);
         new_tree
@@ -743,23 +710,23 @@ fn rec insert_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
   }
 }
 
- 
+
 ghost
-fn is_tree_case_some1 (#t:Type) (x:tree_t t) (v:node_ptr t) (#ft:T.tree t) 
+fn is_tree_case_some1 (#k:Type) (#v:Type) (x:tree_t k v) (p:node_ptr k v) (#ft:T.tree k v)
   preserves is_tree x ft
-  requires pure (x == Some v)
+  requires pure (x == Some p)
   ensures pure (T.Node? ft)
 {
-  rewrite each x as Some v;
-  cases_of_is_tree (Some v) ft;
+  rewrite each x as Some p;
+  cases_of_is_tree (Some p) ft;
   unfold is_tree_cases;
-  intro_is_tree_node (Some v) v;
-  with 't. rewrite is_tree (Some v) 't as is_tree x 't;
+  intro_is_tree_node (Some p) p;
+  with 'ft. rewrite is_tree (Some p) 'ft as is_tree x 'ft;
 }
 
-fn rec tree_max_c (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t){T.Node? l})
+fn rec tree_max_c (#k:Type0) (#v:Type0) (tree:tree_t k v) (#l:G.erased(T.tree k v){T.Node? l})
   preserves is_tree tree l
-  returns y:t
+  returns y:(k & v)
   ensures pure (y == T.tree_max l)
 {
   match tree {
@@ -772,10 +739,11 @@ fn rec tree_max_c (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t){T.Node? l})
       let n = !vl;
       match n.right {
         None -> {
-          let d = n.data;
+          let dk = n.key;
+          let dv = n.value;
           is_tree_case_none n.right;
           intro_is_tree_node tree vl;
-          d
+          (dk, dv)
         }
         Some vlr -> {
           is_tree_case_some1 n.right vlr;
@@ -784,15 +752,15 @@ fn rec tree_max_c (#t:Type0) (tree:tree_t t) (#l:G.erased(T.tree t){T.Node? l})
           max
         }
       }
-      
+
     }
   }
 }
 
-fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
+fn rec delete_avl (#k:Type0) (#v:Type0) (cmp: T.cmp k) (tree:tree_t k v) (del_key: k)
   requires is_tree tree 'l
-  returns  y : tree_t t
-  ensures  is_tree y (T.delete_avl cmp 'l key)
+  returns  y : tree_t k v
+  ensures  is_tree y (T.delete_avl cmp 'l del_key)
 {
   match tree {
     None -> {
@@ -802,14 +770,14 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
     }
     Some vl -> {
       is_tree_case_some (Some vl) vl;
-      with node. assert vl |-> node;
+      with nd. assert vl |-> nd;
       let n = !vl;
-      let delta = cmp n.data key;
+      let delta = cmp n.key del_key;
       if (delta = 0) {
         let left = n.left;
         let right = n.right;
-        rewrite each node.left as left;
-        rewrite each node.right as right;
+        rewrite each nd.left as left;
+        rewrite each nd.right as right;
         //explicit ltree and rtree is needed, to find a proof for the existence of func ltree and rtree
         with ltree. assert is_tree left ltree;
         with rtree. assert is_tree right rtree;
@@ -819,18 +787,18 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
             match right {
               None -> { (*Leaf,Leaf*)
                  is_tree_case_none None #rtree;
-                 let tr = create t;
+                 let tr = create k v;
                  Box.free vl;
-                 rewrite each rtree as T.Leaf #t;
-                 rewrite each ltree as T.Leaf #t;
-                 unfold is_tree #t None T.Leaf;
-                 unfold is_tree #t None T.Leaf;
+                 rewrite each rtree as T.Leaf #k #v;
+                 rewrite each ltree as T.Leaf #k #v;
+                 unfold is_tree #k #v None T.Leaf;
+                 unfold is_tree #k #v None T.Leaf;
                  tr
               }
               Some vlr -> {(*Leaf,Node_*)
                 is_tree_case_some (Some vlr) vlr;
                 let rnode = !vlr;
-                let vl' = {data = rnode.data; left = rnode.left; right = rnode.right};
+                let vl' = {key = rnode.key; value = rnode.value; left = rnode.left; right = rnode.right};
                 vl := vl';
                 with ltree.
                   rewrite is_tree rnode.left ltree as is_tree vl'.left ltree;
@@ -838,9 +806,9 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
                   rewrite is_tree rnode.right rtree as is_tree vl'.right rtree;
                 intro_is_tree_node (Some vl) vl #vl';
                 with ltree.
-                  assert (is_tree #t None ltree);
+                  assert (is_tree #k #v None ltree);
                 Box.free vlr;
-                elim_is_tree_leaf #t None;
+                elim_is_tree_leaf #k #v None;
                 (Some vl)
               }
             }
@@ -852,7 +820,7 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
                 is_tree_case_some (Some vll) vll;
                 is_tree_case_none None;
                 let lnode = !vll;
-                let vl' = {data = lnode.data; left = lnode.left; right = lnode.right};
+                let vl' = {key = lnode.key; value = lnode.value; left = lnode.left; right = lnode.right};
                 vl := vl';
                 with ltree.
                   rewrite is_tree lnode.left ltree as is_tree vl'.left ltree;
@@ -867,8 +835,8 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
               Some vlr -> {(*Node_,Node_*)
                 is_tree_case_some1 (Some vlr) vlr;
                 let m = tree_max_c (Some vll);
-                let new_left = delete_avl cmp (Some vll) m;
-                let vl' = {data = m; left = new_left; right = right};
+                let new_left = delete_avl cmp (Some vll) (fst m);
+                let vl' = {key = fst m; value = snd m; left = new_left; right = right};
                 vl := vl';
                 with ltree.
                   rewrite is_tree new_left ltree as is_tree vl'.left ltree;
@@ -876,7 +844,7 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
                   rewrite is_tree (Some vlr) rtree as is_tree vl'.right rtree;
                 intro_is_tree_node (Some vl) vl #vl';
                 let new_tree = rebalance_avl (Some vl);
-                assert (is_tree new_tree (T.delete_avl cmp 'l key));
+                assert (is_tree new_tree (T.delete_avl cmp 'l del_key));
                 new_tree
               }
             }
@@ -885,32 +853,189 @@ fn rec delete_avl (#t:Type0) (cmp: T.cmp t) (tree:tree_t t) (key: t)
       } else {
         if (delta < 0) {
           assert (pure (delta < 0));
-          let new_left = delete_avl cmp n.left key;
-          let vl' = {data = n.data; left = new_left; right = n.right};
-          vl := vl';
-          with ltree.
-            rewrite is_tree new_left ltree as is_tree vl'.left ltree;
-          with rtree.
-            rewrite is_tree n.right rtree as is_tree vl'.right rtree;
-          intro_is_tree_node (Some vl) vl #vl';
-          let new_tree = rebalance_avl (Some vl);
-          new_tree
-        } else {
-          let new_right = delete_avl cmp n.right key;
-          let vl' = {data = n.data; left = n.left; right = new_right};
+          let new_right = delete_avl cmp n.right del_key;
+          let vl' = {key = n.key; value = n.value; left = n.left; right = new_right};
           vl := vl';
           with ltree.
             rewrite is_tree n.left ltree as is_tree vl'.left ltree;
           with rtree.
             rewrite is_tree new_right rtree as is_tree vl'.right rtree;
           intro_is_tree_node (Some vl) vl #vl';
-  
           let new_tree = rebalance_avl (Some vl);
-          assert (is_tree new_tree (T.delete_avl cmp 'l key));
-          
+          new_tree
+        } else {
+          let new_left = delete_avl cmp n.left del_key;
+          let vl' = {key = n.key; value = n.value; left = new_left; right = n.right};
+          vl := vl';
+          with ltree.
+            rewrite is_tree new_left ltree as is_tree vl'.left ltree;
+          with rtree.
+            rewrite is_tree n.right rtree as is_tree vl'.right rtree;
+          intro_is_tree_node (Some vl) vl #vl';
+
+          let new_tree = rebalance_avl (Some vl);
+          assert (is_tree new_tree (T.delete_avl cmp 'l del_key));
+
           new_tree
         }
       }
+    }
+  }
+}
+
+fn rec find_min (#k:Type0) (#v:Type0) (cmp: T.cmp k) (tree:tree_t k v) (#l:G.erased(T.tree k v){T.Node? l})
+  preserves is_tree tree l
+  returns y:(k & v)
+  ensures pure (y == T.tree_min l)
+{
+  match tree {
+    None -> {
+      is_tree_case_none None;
+      unreachable ()
+    }
+    Some vl -> {
+      is_tree_case_some (Some vl) vl;
+      let n = !vl;
+      match n.left {
+        None -> {
+          let dk = n.key;
+          let dv = n.value;
+          is_tree_case_none n.left;
+          intro_is_tree_node tree vl;
+          (dk, dv)
+        }
+        Some vll -> {
+          is_tree_case_some1 n.left vll;
+          let min = find_min cmp n.left;
+          intro_is_tree_node tree vl;
+          min
+        }
+      }
+    }
+  }
+}
+
+fn rec find_max (#k:Type0) (#v:Type0) (cmp: T.cmp k) (tree:tree_t k v) (#l:G.erased(T.tree k v){T.Node? l})
+  preserves is_tree tree l
+  returns y:(k & v)
+  ensures pure (y == T.tree_max l)
+{
+  match tree {
+    None -> {
+      is_tree_case_none None;
+      unreachable ()
+    }
+    Some vl -> {
+      is_tree_case_some (Some vl) vl;
+      let n = !vl;
+      match n.right {
+        None -> {
+          let dk = n.key;
+          let dv = n.value;
+          is_tree_case_none n.right;
+          intro_is_tree_node tree vl;
+          (dk, dv)
+        }
+        Some vr -> {
+          is_tree_case_some1 n.right vr;
+          let max = find_max cmp n.right;
+          intro_is_tree_node tree vl;
+          max
+        }
+      }
+    }
+  }
+}
+
+fn rec find_le (#k:Type0) (#v:Type0) (cmp: T.cmp k) (tree:tree_t k v) (search_key:k) (#ft:G.erased (T.tree k v))
+  preserves is_tree tree ft
+  returns y:option (k & v)
+  ensures pure (y == T.find_le cmp ft search_key)
+{
+  match tree {
+    None -> {
+      is_tree_case_none None;
+      rewrite is_tree None ft as is_tree tree ft;
+      let r : option (k & v) = None;
+      r
+    }
+    Some vl -> {
+      is_tree_case_some (Some vl) vl;
+      let n = !vl;
+      let delta = cmp n.key search_key;
+      if (delta > 0) {
+        let r = find_le cmp n.left search_key;
+        intro_is_tree_node tree vl;
+        r
+      } else if (delta = 0) {
+        intro_is_tree_node tree vl;
+        let r : option (k & v) = Some (n.key, n.value);
+        r
+      } else {
+        let r = find_le cmp n.right search_key;
+        intro_is_tree_node tree vl;
+        match r {
+          Some _ -> { r }
+          None -> { let r2 : option (k & v) = Some (n.key, n.value); r2 }
+        }
+      }
+    }
+  }
+}
+
+fn rec find_ge (#k:Type0) (#v:Type0) (cmp: T.cmp k) (tree:tree_t k v) (search_key:k) (#ft:G.erased (T.tree k v))
+  preserves is_tree tree ft
+  returns y:option (k & v)
+  ensures pure (y == T.find_ge cmp ft search_key)
+{
+  match tree {
+    None -> {
+      is_tree_case_none None;
+      rewrite is_tree None ft as is_tree tree ft;
+      let r : option (k & v) = None;
+      r
+    }
+    Some vl -> {
+      is_tree_case_some (Some vl) vl;
+      let n = !vl;
+      let delta = cmp n.key search_key;
+      if (delta < 0) {
+        let r = find_ge cmp n.right search_key;
+        intro_is_tree_node tree vl;
+        r
+      } else if (delta = 0) {
+        intro_is_tree_node tree vl;
+        let r : option (k & v) = Some (n.key, n.value);
+        r
+      } else {
+        let r = find_ge cmp n.left search_key;
+        intro_is_tree_node tree vl;
+        match r {
+          Some _ -> { r }
+          None -> { let r2 : option (k & v) = Some (n.key, n.value); r2 }
+        }
+      }
+    }
+  }
+}
+
+fn rec free (#k:Type0) (#v:Type0) (x:tree_t k v) (#ft:G.erased (T.tree k v))
+  requires is_tree x ft
+  ensures emp
+{
+  match x {
+    None -> {
+      is_tree_case_none None;
+      rewrite is_tree None ft as is_tree None (T.Leaf #k #v);
+      elim_is_tree_leaf (None #(node_ptr k v));
+      ()
+    }
+    Some vl -> {
+      is_tree_case_some (Some vl) vl;
+      let n = !vl;
+      free n.left;
+      free n.right;
+      Box.free vl
     }
   }
 }
