@@ -25,7 +25,6 @@ include $(PULSE_ROOT)/mk/locate.mk
 
 HINTS_ENABLED?=
 
-OTHERFLAGS += --cmi
 # This warning is really useless.
 OTHERFLAGS += --warn_error -321
 OTHERFLAGS += --warn_error @247 # couldn't write a checked file? FAIL RIGHT NOW

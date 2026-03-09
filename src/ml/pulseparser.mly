@@ -317,7 +317,7 @@ pulseStmtNoSeq:
     { PulseSyntaxExtension_Sugar.mk_break }
 
 matchStmt:
-  | MATCH tm=appTermNoRecordExp c=option(ensuresSLProp) LBRACE brs=list(pulseMatchBranch) RBRACE
+  | MATCH LPAREN tm=pulseStmt RPAREN c=option(ensuresSLProp) LBRACE brs=list(pulseMatchBranch) RBRACE
     { PulseSyntaxExtension_Sugar.mk_match tm c brs }
 
 letMutInit:
@@ -389,7 +389,7 @@ pulseStmt:
     }
 
 ifStmt:
-  | IF tm=appTermNoRecordExp vp=option(ensuresSLProp) LBRACE th=pulseStmt RBRACE e=option(elseBlock)
+  | IF LPAREN tm=pulseStmt RPAREN vp=option(ensuresSLProp) LBRACE th=pulseStmt RBRACE e=option(elseBlock)
     { PulseSyntaxExtension_Sugar.mk_if tm vp th e }
 
 elseBlock:
