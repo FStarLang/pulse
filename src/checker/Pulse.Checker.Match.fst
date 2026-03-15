@@ -481,7 +481,7 @@ let check
         (pre:term)
         (post_hint:post_hint_for_env g)
         (res_ppname:ppname)
-        (sc:term)
+        (sc0:st_term)
         (brs:list branch)
         (check:check_t)
   : T.Tac (checker_result_t g pre (PostHint post_hint))
@@ -489,6 +489,11 @@ let check
 
   let g = Pulse.Typing.Env.push_context_no_range g "check_match" in
 
+  let sc : term =
+    match sc0.term with
+    | Tm_Return { term=sct } -> sct
+    | _ -> fail g (Some sc0.range) "check_match: expected a pure scrutinee (Tm_Return); stateful scrutinees should have been elaborated away"
+  in
   let sc_range = Pulse.RuntimeUtils.range_of_term sc in // save range, it gets lost otherwise
   let orig_brs = brs in
   let nbr = L.length brs in
@@ -538,7 +543,8 @@ let check
   (* Provable *)
   assume (L.map (fun br -> elab_pat br.pat) brs == elab_pats');
   let c_typing = comp_typing_from_post_hint c post_hint in
-  let t = wtag (Some (ctag_of_comp_st c)) (Tm_Match {sc; returns_=None; brs}) in
+  let sc_st = mk_term (Tm_Return { expected_type = sc_ty; insert_eq = false; term = sc }) sc_range in
+  let t = wtag (Some (ctag_of_comp_st c)) (Tm_Match {sc=sc_st; returns_=None; brs}) in
 
   checker_result_for_st_typing (| t, c |) res_ppname
 #pop-options

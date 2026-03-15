@@ -25,7 +25,12 @@ let mk_let (b:binder) (head:term) (body:term) : term =
     S.mk (S.Tm_let {lbs=(false, [lb]); body1=body}) FStarC_Range.dummyRange in
   S.mk (S.Tm_meta {tm2=tm_let; meta=S.Meta_monadic (C.effect_DIV_lid, S.tun)}) FStarC_Range.dummyRange
 let mk_if (b:term) (then_:term) (else_:term) : term =
-  U.if_then_else b then_ else_
+  (* Bind the (potentially monadic) condition to a fresh variable, then branch *)
+  let bv = S.new_bv None FStarC_Syntax_Util.t_bool in
+  let binder = S.mk_binder bv in
+  let body = U.if_then_else (S.bv_to_name bv) then_ else_ in
+  let body = FStarC_Syntax_Subst.close [binder] body in
+  mk_let binder b body
 
 let mk_extracted_as_attr (impl: term) : term =
   S.mk_Tm_app (S.tconst FStarC_Parser_Const_ExtractAs.extract_as_lid)

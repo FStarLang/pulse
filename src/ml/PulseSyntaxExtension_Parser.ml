@@ -213,6 +213,108 @@ let wrap_lexer lexbuf () =
   let tok = FStarC_Parser_LexFStar.token lexbuf in
   rewrite_token tok, lexbuf.start_p, lexbuf.cur_p
 
+(* Check if a token list is fully wrapped in matching LPAREN...RPAREN *)
+let is_wrapped_in_parens tokens =
+  match tokens with
+  | (PP.LPAREN, _, _) :: rest ->
+    let rec check rest depth =
+      match rest with
+      | [(PP.RPAREN, _, _)] -> depth = 1
+      | (PP.LPAREN, _, _) :: rest -> check rest (depth + 1)
+      | (PP.RPAREN, _, _) :: rest ->
+        if depth <= 1 then false else check rest (depth - 1)
+      | _ :: rest -> check rest depth
+      | [] -> false
+    in
+    check rest 1
+  | _ -> false
+
+(* Token-stream preprocessor: auto-inserts LPAREN/RPAREN around IF/MATCH
+   conditions when the user omits them, for backward compatibility.
+   
+   After IF/MATCH, buffers tokens tracking paren/bracket depth:
+   - LBRACE at depth 0 → Pulse-level if/match, insert parens if missing
+   - RETURNS/ENSURES at depth 0 → same (annotation before body)
+   - THEN at depth 0 (for IF) → F*-level if/then/else, no modification
+   - WITH at depth 0 (for MATCH) → F*-level match/with, no modification *)
+let make_auto_paren_lexer (base_lexer: unit -> PP.token * Lexing.position * Lexing.position)
+  : unit -> PP.token * Lexing.position * Lexing.position
+=
+  (* Use a list ref instead of Queue — prepending ensures correct ordering
+     when nested IF/MATCH processing inserts tokens *)
+  let pending = ref [] in
+  let push_front tokens = pending := tokens @ !pending in
+  let next_raw () =
+    match !pending with
+    | x :: rest -> pending := rest; x
+    | [] -> base_lexer ()
+  in
+  let process_if_match ((tok, sp, ep) as triple) =
+    let is_match = (tok = PP.MATCH) in
+    let buffered = ref [] in
+    let depth = ref 0 in
+    let terminator = ref None in
+    let is_fstar = ref false in
+    let rec scan () =
+      let ((t, _s, _e) as tr) = next_raw () in
+      match t with
+      | PP.LPAREN | PP.LBRACK
+      | PP.DOT_LPAREN | PP.DOT_LBRACK | PP.DOT_LBRACK_BAR
+      | PP.DOT_LENS_PAREN_LEFT | PP.LENS_PAREN_LEFT ->
+        incr depth; buffered := tr :: !buffered; scan ()
+      | PP.RPAREN | PP.RBRACK
+      | PP.BAR_RBRACK | PP.LENS_PAREN_RIGHT ->
+        decr depth; buffered := tr :: !buffered; scan ()
+      | PP.THEN when !depth = 0 && not is_match ->
+        is_fstar := true; buffered := tr :: !buffered
+      | PP.WITH when !depth = 0 && is_match ->
+        is_fstar := true; buffered := tr :: !buffered
+      | PP.LBRACE when !depth = 0 ->
+        terminator := Some tr
+      | PP.RETURNS when !depth = 0 ->
+        terminator := Some tr
+      | PP.ENSURES when !depth = 0 ->
+        terminator := Some tr
+      | PP.EOF ->
+        terminator := Some tr
+      | _ ->
+        buffered := tr :: !buffered; scan ()
+    in
+    scan ();
+    let buffered_tokens = List.rev !buffered in
+    let term_list = match !terminator with Some t -> [t] | None -> [] in
+    if !is_fstar then begin
+      push_front buffered_tokens;
+      triple
+    end else begin
+      if is_wrapped_in_parens buffered_tokens then begin
+        push_front (buffered_tokens @ term_list);
+        triple
+      end else begin
+        let first_pos = match buffered_tokens with
+          | (_, s, _) :: _ -> s
+          | [] -> sp
+        in
+        let last_pos = match List.rev buffered_tokens with
+          | (_, _, e) :: _ -> e
+          | [] -> ep
+        in
+        push_front ([(PP.LPAREN, first_pos, first_pos)]
+                    @ buffered_tokens
+                    @ [(PP.RPAREN, last_pos, last_pos)]
+                    @ term_list);
+        triple
+      end
+    end
+  in
+  let rec next () =
+    let ((tok, _, _) as triple) = next_raw () in
+    match tok with
+    | PP.IF | PP.MATCH -> process_if_match triple
+    | _ -> triple
+  in
+  next
+
 let lexbuf_and_lexer (s:string) (r:range) = 
   let lexbuf =
     S.create s
@@ -220,7 +322,7 @@ let lexbuf_and_lexer (s:string) (r:range) =
              (Z.to_int (line_of_pos (start_of_range r)))
              (Z.to_int (col_of_pos (start_of_range r)))
   in
-  lexbuf, wrap_lexer lexbuf
+  lexbuf, make_auto_paren_lexer (wrap_lexer lexbuf)
   
 
 let parse_decl (s:string) (r:range) =
