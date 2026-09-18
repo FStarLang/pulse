@@ -142,6 +142,6 @@ let check
           in
           assert (freshv g x);
           assert (~(Set.mem x (freevars_st body)));
-          let st = wrst c (Tm_WithLocal { binder = mk_binder_ppname (mk_ref init_t) binder.binder_ppname; initializer=init; body }) in
+          let st = wrst c (Tm_WithLocal { binder = mk_binder_with_attrs (mk_ref init_t) binder.binder_ppname binder.binder_attrs; initializer=init; body }) in
           checker_result_for_st_typing (| st, c |) res_ppname
 #pop-options

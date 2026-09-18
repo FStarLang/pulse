@@ -755,12 +755,13 @@ and desugar_bind (env:env_t) (lb:_) (s2:Sugar.stmt) (r:R.range)
   : err SW.st_term
   = let open Sugar in
     let! annot = desugar_term_opt env lb.typ in
-    let id = 
+    let id, attrs =
       match lb.pat.pat with
-      | A.PatWild _ -> Ident.mk_ident ("_", r)
-      | A.PatVar (id, _, _) -> id
+      | A.PatWild _ -> Ident.mk_ident ("_", r), []
+      | A.PatVar (id, _, attrs) -> id, attrs
     in
-    let b = SW.mk_binder id annot in
+    let! attrs = mapM (desugar_term env) attrs in
+    let b = SW.mk_binder_with_attrs id annot attrs in
     let! s2 =
       let env, bv = push_bv env id in
       let! s2 = desugar_stmt env s2 in
@@ -839,7 +840,7 @@ and desugar_bind (env:env_t) (lb:_) (s2:Sugar.stmt) (r:R.range)
       )
       | Some MUT //these are handled the same for now
       | Some REF ->
-        let b = SW.mk_binder id annot in
+        let b = SW.mk_binder_with_attrs id annot attrs in
         match e1 with
         | Sugar.Array_initializer {init; len} ->
           let! init = 
